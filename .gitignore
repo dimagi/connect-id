@@ -1,0 +1,8 @@
+*.pyc
+*.pyo
+*~
+*.swp
+*.swo
+/localsettings*
+!localsettings.example.py
+*.log*
