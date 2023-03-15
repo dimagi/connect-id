@@ -2,7 +2,7 @@ import json
 
 from django.core.exceptions import ValidationError
 from django.shortcuts import render
-from django.http import HttpResponse, HttpResponseBadRequest
+from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
@@ -20,11 +20,14 @@ def register(request):
     try:
         u.full_clean()
     except ValidationError as e:
-        print(e.message_dict)
-        return HttpResponseBadRequest(e.message_dict)
+        return JsonResponse(e.message_dict, status=400)
     u.save()
     return HttpResponse()
 
 
 def login(request):
     pass
+
+def test(request):
+    return HttpResponse('pong')
+
