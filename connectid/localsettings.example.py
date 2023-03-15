@@ -17,3 +17,7 @@ DATABASES = {
         'PORT': '5433'
     }
 }
+
+ALLOWED_HOSTS = [
+    '127.0.0.1'
+]
