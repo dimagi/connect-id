@@ -66,19 +66,6 @@ TEMPLATES = [
 WSGI_APPLICATION = 'connectid.wsgi.application'
 
 
-# Database
-# https://docs.djangoproject.com/en/4.1/ref/settings/#databases
-
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'connect',
-        'USER': 'connect',
-        'PASSWORD': 'connect',
-        'HOST': 'localhost',
-        'PORT': '5433'
-    }
-}
 
 
 # Password validation
@@ -124,5 +111,5 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'users.ConnectUser'
 
-from localsettings import *
+from .localsettings import *
 
