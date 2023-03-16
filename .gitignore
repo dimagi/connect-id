@@ -6,3 +6,4 @@
 *localsettings*
 !*localsettings.example.py
 *.log*
+/staticfiles/
