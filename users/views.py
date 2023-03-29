@@ -41,7 +41,6 @@ def test(request):
 def validate_phone(request):
     # create otp device for user
     # send otp code via twilio
-    print("hello")
     user = request.user
     otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.phone_number, user=user)
     otp_device.save()
