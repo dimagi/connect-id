@@ -22,3 +22,7 @@ ALLOWED_HOSTS = [
     '127.0.0.1',
     'localhost'
 ]
+
+TWILIO_ACCOUNT_SID = None
+TWILIO_AUTH_TOKEN = None
+TWILIO_MESSAGING_SERVICE = None
