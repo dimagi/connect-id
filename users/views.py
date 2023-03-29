@@ -13,10 +13,8 @@ from .models import ConnectUser
 @require_POST
 @csrf_exempt
 def register(request):
-    print(request.body)
-    print(type(request.body.decode('utf-8')))
     data = json.loads(request.body)
-    u = ConnectUser(**data)
+    u = ConnectUser.objects.create_user(**data)
     try:
         u.full_clean()
     except ValidationError as e:
