@@ -18,7 +18,11 @@ from utils import basicauth
 @csrf_exempt
 def register(request):
     data = json.loads(request.body)
-    u = ConnectUser.objects.create_user(**data)
+    fields = ['username', 'password', 'phone_number', 'recovery_phone', 'name', 'dob']
+    user_data = {}
+    for field in fields:
+        user_data[field] = data['field']
+    u = ConnectUser.objects.create_user(**user_data)
     try:
         u.full_clean()
     except ValidationError as e:
