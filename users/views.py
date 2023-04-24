@@ -1,5 +1,7 @@
 import json
 
+from secrets import token_hex
+
 from django.core.exceptions import ValidationError
 from django.shortcuts import render
 from django.http import HttpResponse, JsonResponse
@@ -66,4 +68,128 @@ def confirm_otp(request):
         return JsonResponse({"error": "OTP token is incorrect"}, status=401)
     user.phone_validated = True
     user.save()
+    return HttpResponse()
+
+
+@require_POST
+@csrf_exempt
+@basicauth()
+def validate_secondary_phone(request):
+    # create otp device for user
+    # send otp code via twilio
+    user = request.user
+    otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.recovery_phone, user=user)
+    otp_device.save()
+    otp_device.generate_challenge()
+    return HttpResponse()
+
+
+@require_POST
+@csrf_exempt
+@basicauth()
+def confirm_secondary_otp(request):
+    # check otp code for user
+    # mark phone as confirmed on user model
+    user = request.user
+    device = PhoneDevice.objects.get(phone_number=user.recovery_phone, user=user)
+    data = json.loads(request.body)
+    verified = device.verify_token(data.get('token'))
+    if not verified:
+        return JsonResponse({"error": "OTP token is incorrect"}, status=401)
+    user.recovery_phone_validated = True
+    user.save()
+    return HttpResponse()
+
+
+@require_POST
+@csrf_exempt
+def recover_account(request):
+    data = json.loads(request.body)
+    user = ConnectUser.objects.get(phone=data['phone'])
+    device = PhoneDevice.objects.get(phone_number=user.phone, user=user)
+    device.generate_challenge()
+    secret = token_hex()
+    status = RecoveryStatus.objects.get_or_create(user=user)
+    status.secret_key = secret
+    status.step = RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY
+    status.save()
+    return JsonResponse({'secret': secret})
+
+
+@require_POST
+@csrf_exempt
+def confirm_recovery_otp(request):
+    data = json.loads(request.body)
+    phone_number = data["phone"]
+    token = data["token"]
+    user = ConnectUser.objects.get(phone_number=phone_number)
+    status = RecoveryStatus.objects.get(user=user)
+    if status.token != token:
+        return HttpResponse(status=401)
+    if status.step != RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY:
+        return HttpResponse(status=401)
+    device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
+    verified = device.verify_token(data.get('token'))
+    if not verified:
+        return JsonResponse({"error": "OTP token is incorrect"}, status=401)
+    status.step = RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
+    status.save()
+    return HttpResponse()
+
+
+@require_POST
+@csrf_exempt
+def recover_secondary_phone(request):
+    data = json.loads(request.body)
+    phone_number = data["phone"]
+    token = data["token"]
+    user = ConnectUser.objects.get(phone_number=phone_number)
+    status = RecoveryStatus.objects.get(user=user)
+    if status.token != token:
+        return HttpResponse(status=401)
+    if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
+        return HttpResponse(status=401)
+    device = PhoneDevice.objects.get(phone_number=user.recovery_phone, user=user)
+    device.generate_challenge()
+    status.step = RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
+    status.save()
+    return HttpResponse()
+
+
+@require_POST
+@csrf_exempt
+def confirm_secondary_recovery_otp(request):
+    data = json.loads(request.body)
+    phone_number = data["phone"]
+    token = data["token"]
+    user = ConnectUser.objects.get(phone_number=phone_number)
+    status = RecoveryStatus.objects.get(user=user)
+    if status.token != token:
+        return HttpResponse(status=401)
+    if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
+        return HttpResponse(status=401)
+    device = PhoneDevice.objects.get(phone_number=user.recovery_phone, user=user)
+    verified = device.verify_token(data.get('token'))
+    if not verified:
+        return JsonResponse({"error": "OTP token is incorrect"}, status=401)
+    status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
+    status.save()
+    return HttpResponse()
+
+
+@require_POST
+@csrf_exempt
+def reset_password(request):
+    data = json.loads(request.body)
+    phone_number = data["phone"]
+    token = data["token"]
+    user = ConnectUser.objects.get(phone_number=phone_number)
+    status = RecoveryStatus.objects.get(user=user)
+    if status.token != token:
+        return HttpResponse(status=401)
+    if status.step != RecoveryStatus.RecoverySteps.RESET_PASSWORD:
+        return HttpResponse(status=401)
+    user.set_password(data["password"])
+    user.save()
+    status.delete()
     return HttpResponse()
