@@ -121,15 +121,15 @@ def recover_account(request):
 def confirm_recovery_otp(request):
     data = json.loads(request.body)
     phone_number = data["phone"]
-    token = data["token"]
+    secret_key = data["secret_key"]
     user = ConnectUser.objects.get(phone_number=phone_number)
     status = RecoveryStatus.objects.get(user=user)
-    if status.secret_key != token:
+    if status.secret_key != secret_key:
         return HttpResponse(status=401)
     if status.step != RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY:
         return HttpResponse(status=401)
     device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
-    verified = device.verify_token(data.get('token'))
+    verified = device.verify_token(data.get("token"))
     if not verified:
         return JsonResponse({"error": "OTP token is incorrect"}, status=401)
     status.step = RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
@@ -142,10 +142,10 @@ def confirm_recovery_otp(request):
 def recover_secondary_phone(request):
     data = json.loads(request.body)
     phone_number = data["phone"]
-    token = data["token"]
+    secret_key = data["secret_key"]
     user = ConnectUser.objects.get(phone_number=phone_number)
     status = RecoveryStatus.objects.get(user=user)
-    if status.secret_key != token:
+    if status.secret_key != secret_key:
         return HttpResponse(status=401)
     if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
         return HttpResponse(status=401)
@@ -161,10 +161,10 @@ def recover_secondary_phone(request):
 def confirm_secondary_recovery_otp(request):
     data = json.loads(request.body)
     phone_number = data["phone"]
-    token = data["token"]
+    secret_key = data["secret_key"]
     user = ConnectUser.objects.get(phone_number=phone_number)
     status = RecoveryStatus.objects.get(user=user)
-    if status.secret_key != token:
+    if status.secret_key != secret_key:
         return HttpResponse(status=401)
     if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
         return HttpResponse(status=401)
@@ -182,10 +182,10 @@ def confirm_secondary_recovery_otp(request):
 def reset_password(request):
     data = json.loads(request.body)
     phone_number = data["phone"]
-    token = data["token"]
+    secret_key = data["secret_key"]
     user = ConnectUser.objects.get(phone_number=phone_number)
     status = RecoveryStatus.objects.get(user=user)
-    if status.secret_key != token:
+    if status.secret_key != secret_key:
         return HttpResponse(status=401)
     if status.step != RecoveryStatus.RecoverySteps.RESET_PASSWORD:
         return HttpResponse(status=401)
