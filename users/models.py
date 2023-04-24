@@ -36,3 +36,14 @@ class PhoneDevice(SideChannelDevice):
         constraints = [
             models.UniqueConstraint(fields=['phone_number', 'user'], name='phone_number_user')
         ]
+
+
+class RecoveryStatus(models.Model):
+    class RecoverySteps(models.TextChoices):
+        CONFIRM_PRIMARY = 'primary'
+        CONFIRM_SECONDARY = 'secondary'
+        RESET_PASSWORD = 'password'
+        
+    secret_key = models.TextField()
+    user = models.ForeignKey(ConnectUser, on_delete=models.CASCADE, unique=True)
+    step = models.TextField(choices=RecoverySteps.choices)
