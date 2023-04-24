@@ -10,7 +10,7 @@ from django.views.decorators.http import require_POST
 
 from django_otp import match_token
 
-from .models import ConnectUser, PhoneDevice
+from .models import ConnectUser, PhoneDevice, RecoveryStatus
 
 from utils import basicauth
 
