@@ -109,7 +109,7 @@ def recover_account(request):
     device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
     device.generate_challenge()
     secret = token_hex()
-    status = RecoveryStatus.objects.get_or_create(user=user)
+    status, _ = RecoveryStatus.objects.get_or_create(user=user)
     status.secret_key = secret
     status.step = RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY
     status.save()
