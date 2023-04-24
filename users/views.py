@@ -105,8 +105,8 @@ def confirm_secondary_otp(request):
 @csrf_exempt
 def recover_account(request):
     data = json.loads(request.body)
-    user = ConnectUser.objects.get(phone=data['phone'])
-    device = PhoneDevice.objects.get(phone_number=user.phone, user=user)
+    user = ConnectUser.objects.get(phone_number=data['phone'])
+    device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
     device.generate_challenge()
     secret = token_hex()
     status = RecoveryStatus.objects.get_or_create(user=user)
