@@ -124,7 +124,7 @@ def confirm_recovery_otp(request):
     token = data["token"]
     user = ConnectUser.objects.get(phone_number=phone_number)
     status = RecoveryStatus.objects.get(user=user)
-    if status.token != token:
+    if status.secret_key != token:
         return HttpResponse(status=401)
     if status.step != RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY:
         return HttpResponse(status=401)
@@ -145,7 +145,7 @@ def recover_secondary_phone(request):
     token = data["token"]
     user = ConnectUser.objects.get(phone_number=phone_number)
     status = RecoveryStatus.objects.get(user=user)
-    if status.token != token:
+    if status.secret_key != token:
         return HttpResponse(status=401)
     if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
         return HttpResponse(status=401)
@@ -164,7 +164,7 @@ def confirm_secondary_recovery_otp(request):
     token = data["token"]
     user = ConnectUser.objects.get(phone_number=phone_number)
     status = RecoveryStatus.objects.get(user=user)
-    if status.token != token:
+    if status.secret_key != token:
         return HttpResponse(status=401)
     if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
         return HttpResponse(status=401)
@@ -185,7 +185,7 @@ def reset_password(request):
     token = data["token"]
     user = ConnectUser.objects.get(phone_number=phone_number)
     status = RecoveryStatus.objects.get(user=user)
-    if status.token != token:
+    if status.secret_key != token:
         return HttpResponse(status=401)
     if status.step != RecoveryStatus.RecoverySteps.RESET_PASSWORD:
         return HttpResponse(status=401)
