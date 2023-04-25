@@ -192,4 +192,4 @@ def reset_password(request):
     user.set_password(data["password"])
     user.save()
     status.delete()
-    return HttpResponse()
+    return JsonResponse({"name": user.name, "username": user.username})
