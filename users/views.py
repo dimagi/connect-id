@@ -23,7 +23,7 @@ def register(request):
     fields = ['username', 'password', 'phone_number', 'recovery_phone', 'name', 'dob']
     user_data = {}
     for field in fields:
-        user_data[field] = data['field']
+        user_data[field] = data[field]
     u = ConnectUser.objects.create_user(**user_data)
     try:
         u.full_clean()
