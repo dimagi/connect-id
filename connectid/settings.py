@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     'phonenumber_field',
     'users.apps.UsersConfig',
     'oauth2_provider',
+    'rest_framework'
 ]
 
 MIDDLEWARE = [
@@ -153,6 +154,12 @@ LOGGING = {
             'propagate': False,
         },
     },
+}
+
+REST_FRAMEWORK  = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.BasicAuthentication',
+    ]
 }
 
 from .localsettings import *
