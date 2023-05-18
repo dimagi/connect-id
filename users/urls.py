@@ -14,5 +14,7 @@ urlpatterns = [
     path('recover/confirm_otp', views.confirm_recovery_otp, name='confirm_recovery_otp'),
     path('recover/secondary', views.recover_secondary_phone , name='recover_secondary_phone'),
     path('recover/confirm_secondary_otp', views.confirm_secondary_recovery_otp , name='confirm_secondary_recovery_otp'),
-    path('recovery/reset_password', views.reset_password , name='reset_password'),
+    path('recover/reset_password', views.reset_password , name='reset_password'),
+    path('phone_available', views.phone_available, name='phone_available'),
+    path('change_phone', views.change_phone, name='change_phone'),
 ]

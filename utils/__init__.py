@@ -14,21 +14,8 @@ def send_sms(to, body):
         messaging_service_sid=settings.TWILIO_MESSAGING_SERVICE
     )
 
-def basicauth(realm=''):
-    # stolen and modified from: https://djangosnippets.org/snippets/243/
-    def real_decorator(view):
-        def wrapper(request, *args, **kwargs):
-            if 'HTTP_AUTHORIZATION' in request.META:
-                auth = request.META['HTTP_AUTHORIZATION'].split()
-                if len(auth) == 2:
-                    if auth[0].lower() == "basic":
-                        uname, passwd = base64.b64decode(auth[1]).decode('utf-8').split(':')
-                        user = authenticate(username=uname, password=passwd)
-                        if user is not None and user.is_active:
-                            request.user = user
-                            return view(request, *args, **kwargs)
-            response = HttpResponse(status=401)
-            response['WWW-Authenticate'] = 'Basic realm="%s"' % realm
-            return response
-        return wrapper
-    return real_decorator
+
+def get_ip(request):
+    ip_address = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', '127.0.0.1'))
+    return ip_address.split(',')[0]
+
