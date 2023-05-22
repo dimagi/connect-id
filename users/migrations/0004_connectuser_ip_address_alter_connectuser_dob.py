@@ -18,6 +18,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='connectuser',
             name='dob',
-            field=models.DateField(blank=True),
+            field=models.DateField(blank=True, null=True),
         ),
     ]

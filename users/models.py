@@ -13,7 +13,7 @@ class ConnectUser(AbstractUser):
     recovery_phone = PhoneNumberField(blank=True)
     recovery_phone_validated = models.BooleanField(default=False)
     name = models.TextField(max_length=150, blank=True)
-    dob = models.DateField(blank=True)
+    dob = models.DateField(blank=True, null=True)
     ip_address = models.GenericIPAddressField(blank=True, null=True)
 
     # removed from base class
