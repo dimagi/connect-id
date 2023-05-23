@@ -223,3 +223,12 @@ def change_phone(request):
         return JsonResponse(e.message_dict, status=400)
     user.save()
     return HttpResponse()
+
+
+@api_view(['POST'])
+def change_password(request):
+    data = request.data
+    user = request.user
+    user.set_password(data["password"])
+    user.save()
+    return HttpResponse()
