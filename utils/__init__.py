@@ -1,5 +1,6 @@
 import base64
 
+from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle, UserRateThrottle
 from twilio.rest import Client
 
 from django.conf import settings
@@ -19,3 +20,25 @@ def get_ip(request):
     ip_address = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', '127.0.0.1'))
     return ip_address.split(',')[0]
 
+
+class ConnectIDRateParser:
+
+    def parse_rate(self, rate):
+        if rate is None:
+            return (None, None)
+        num, period = rate.split('/')
+        num_requests = int(num)
+        duration = int(period)
+        return (num_requests, duration)
+
+
+class ConnectIDUserRateThrottle(ConnectIDRateParser, UserRateThrottle):
+    pass
+
+
+class ConnectIDAnonRateThrottle(ConnectIDRateParser, AnonRateThrottle):
+    pass
+
+
+class ConnectIDScopedRateThrottle(ConnectIDRateParser, ScopedRateThrottle):
+    pass
