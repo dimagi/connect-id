@@ -7,3 +7,4 @@ phonenumberslite
 psycopg2
 twilio
 pip-tools
+zxcvbn
