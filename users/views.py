@@ -2,6 +2,7 @@ import json
 
 from secrets import token_hex
 
+from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.shortcuts import render
 from django.http import HttpResponse, JsonResponse
@@ -184,7 +185,12 @@ def reset_password(request):
         return HttpResponse(status=401)
     if status.step != RecoveryStatus.RecoverySteps.RESET_PASSWORD:
         return HttpResponse(status=401)
-    user.set_password(data["password"])
+    password = data["password"]
+    try:
+        validate_password(password)
+    except ValidationError as e:
+        return JsonResponse(e.message_dict, status=400)
+    user.set_password(password)
     user.save()
     status.delete()
     return JsonResponse({"name": user.name, "username": user.username})
@@ -229,6 +235,11 @@ def change_phone(request):
 def change_password(request):
     data = request.data
     user = request.user
-    user.set_password(data["password"])
+    password = data["password"]
+    try:
+        validate_password(password)
+    except ValidationError as e:
+        return JsonResponse(e.message_dict, status=400)
+    user.set_password(password)
     user.save()
     return HttpResponse()
