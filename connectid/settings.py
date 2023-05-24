@@ -85,6 +85,12 @@ AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
+    {
+        'NAME': 'users.validators.EntropyPasswordValidator',
+        'OPTIONS': {
+            'min_strength': 2
+        }
+    },
 ]
 
 
