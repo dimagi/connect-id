@@ -2,6 +2,7 @@ import json
 
 from secrets import token_hex
 
+from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.shortcuts import render
@@ -171,6 +172,25 @@ def confirm_secondary_recovery_otp(request):
     status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
     status.save()
     return HttpResponse()
+
+
+@api_view(['POST'])
+@permission_classes([])
+def confirm_password(request):
+    data = request.data
+    phone_number = data["phone"]
+    secret_key = data["secret_key"]
+    user = ConnectUser.objects.get(phone_number=phone_number)
+    status = RecoveryStatus.objects.get(user=user)
+    if status.secret_key != secret_key:
+        return HttpResponse(status=401)
+    if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
+        return HttpResponse(status=401)
+    password = data["password"]
+    if not check_password(password, user.password):
+        return HttpResponse(status=401)
+    status.delete()
+    return JsonResponse({"name": user.name, "username": user.username})
 
 
 @api_view(['POST'])
