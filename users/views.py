@@ -171,7 +171,7 @@ def confirm_secondary_recovery_otp(request):
         return JsonResponse({"error": "OTP token is incorrect"}, status=401)
     status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
     status.save()
-    return HttpResponse()
+    return JsonResponse({"name": user.name, "username": user.username})
 
 
 @api_view(['POST'])
@@ -213,7 +213,7 @@ def reset_password(request):
     user.set_password(password)
     user.save()
     status.delete()
-    return JsonResponse({"name": user.name, "username": user.username})
+    return HttpResponse()
 
 
 @api_view(['GET'])
