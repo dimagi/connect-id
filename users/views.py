@@ -244,7 +244,7 @@ def change_phone(request):
         return JsonResponse({'error': error}, status=400)
     user.phone_number = data['new_phone_number']
     try:
-        u.full_clean()
+        user.full_clean()
     except ValidationError as e:
         return JsonResponse(e.message_dict, status=400)
     user.save()
