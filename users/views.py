@@ -234,7 +234,7 @@ def phone_available(request):
 @permission_classes([])
 def change_phone(request):
     data = request.data
-    user = ConnectUser.objects.get(phone_number=phone_number)
+    user = request.user
     error = None
     if user.phone_validated:
         error = 'You cannot change a validated number'
@@ -242,7 +242,7 @@ def change_phone(request):
         error = 'Old phone number does not match'
     if error:
         return JsonResponse({'error': error}, status=400)
-    user.phone_number = data['phone_number']
+    user.phone_number = data['new_phone_number']
     try:
         u.full_clean()
     except ValidationError as e:
