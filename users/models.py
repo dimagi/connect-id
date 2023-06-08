@@ -13,13 +13,14 @@ class ConnectUser(AbstractUser):
     recovery_phone = PhoneNumberField(blank=True)
     recovery_phone_validated = models.BooleanField(default=False)
     name = models.TextField(max_length=150, blank=True)
-    dob = models.DateField()
+    dob = models.DateField(blank=True, null=True)
+    ip_address = models.GenericIPAddressField(blank=True, null=True)
 
     # removed from base class
     first_name = None
     last_name = None
 
-    REQUIRED_FIELDS = ["phone_number", "dob", "name"]
+    REQUIRED_FIELDS = ["phone_number", "name"]
 
 
 class PhoneDevice(SideChannelDevice):

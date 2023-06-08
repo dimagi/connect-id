@@ -1,0 +1,10 @@
+Django
+django-otp
+django-phonenumber-field
+djangorestframework
+gunicorn
+phonenumberslite
+psycopg2
+twilio
+pip-tools
+zxcvbn
