@@ -150,7 +150,7 @@ def recover_secondary_phone(request):
     device.generate_challenge()
     status.step = RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
     status.save()
-    return JsonResponse({"secondary_phone": user.recovery_phone})
+    return JsonResponse({"secondary_phone": user.recovery_phone.as_e164})
 
 
 @api_view(['POST'])
