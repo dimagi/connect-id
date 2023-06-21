@@ -148,7 +148,7 @@ def recover_secondary_phone(request):
         return HttpResponse(status=401)
     otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.recovery_phone, user=user)
     otp_device.save()
-    device.generate_challenge()
+    otp_device.generate_challenge()
     status.step = RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
     status.save()
     return JsonResponse({"secondary_phone": user.recovery_phone.as_e164})
