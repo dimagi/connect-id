@@ -146,7 +146,8 @@ def recover_secondary_phone(request):
         return HttpResponse(status=401)
     if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
         return HttpResponse(status=401)
-    device = PhoneDevice.objects.get(phone_number=user.recovery_phone, user=user)
+    otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.recovery_phone, user=user)
+    otp_device.save()
     device.generate_challenge()
     status.step = RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
     status.save()
