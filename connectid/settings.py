@@ -32,7 +32,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'phonenumber_field',
     'users.apps.UsersConfig',
-    'rest_framework'
+    'rest_framework',
+    'axes'
 ]
 
 MIDDLEWARE = [
@@ -43,6 +44,13 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'axes.middleware.AxesMiddleware',
+]
+
+AUTHENTICATION_BACKENDS = [
+    # AxesStandaloneBackend should be the first backend in the AUTHENTICATION_BACKENDS list.
+    'axes.backends.AxesStandaloneBackend',
+    'django.contrib.auth.backends.ModelBackend',
 ]
 
 ROOT_URLCONF = 'connectid.urls'
@@ -179,6 +187,13 @@ REST_FRAMEWORK = {
     }
 
 }
+
+
+AXES_COOLOFF_TIME = 6
+AXES_IPWARE_META_PRECEDENCE_ORDER = [
+    'HTTP_X_FORWARDED_FOR',
+    'REMOTE_ADDR',
+]
 
 
 from .localsettings import *
