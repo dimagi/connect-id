@@ -264,3 +264,23 @@ def change_password(request):
     user.set_password(password)
     user.save()
     return HttpResponse()
+
+
+@api_view(['POST'])
+def update_profile(request):
+    data = request.data
+    user = request.user
+    changed = False
+    if data.get("name"):
+        user.name = data["name"]
+        changed = True
+    if data.get("secondary_phone"):
+        user.recovery_phone = data["secondary_phone"]
+        changed = True
+    if changed:
+        try:
+            u.full_clean()
+        except ValidationError as e:
+            return JsonResponse(e.message_dict, status=400)
+        user.save()
+    return HttpResponse()
