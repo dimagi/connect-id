@@ -279,7 +279,7 @@ def update_profile(request):
         changed = True
     if changed:
         try:
-            u.full_clean()
+            user.full_clean()
         except ValidationError as e:
             return JsonResponse(e.message_dict, status=400)
         user.save()
