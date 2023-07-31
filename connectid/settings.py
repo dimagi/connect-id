@@ -186,9 +186,12 @@ REST_FRAMEWORK = {
 LOGIN_URL = '/admin/login/'
 
 OAUTH2_PROVIDER = {
+    "OIDC_ENABLED": True,
+    "OIDC_RSA_PRIVATE_KEY": """
+INSERT PRIVATE KEY HERE
+""",
     "SCOPES": {
         "openid": "OpenID Connect scope",
-        "sync": "sync with commcarehq"
     },
     "PKCE_REQUIRED": False,
     "OAUTH2_VALIDATOR_CLASS": "users.oauth.ConnectOAuth2Validator",

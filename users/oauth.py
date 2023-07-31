@@ -8,4 +8,3 @@ class ConnectOAuth2Validator(OAuth2Validator):
         claims["name"] = request.user.name
         claims["phone"] = request.user.phone_number
         return claims
-
