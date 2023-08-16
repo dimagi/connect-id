@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'phonenumber_field',
     'users.apps.UsersConfig',
+    'oauth2_provider',
     'rest_framework'
 ]
 
@@ -165,6 +166,7 @@ LOGGING = {
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.BasicAuthentication',
+        'oauth2_provider.contrib.rest_framework.OAuth2Authentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -180,6 +182,21 @@ REST_FRAMEWORK = {
 
 }
 
+
+LOGIN_URL = '/admin/login/'
+
+OAUTH2_PROVIDER = {
+    "OIDC_ENABLED": True,
+    "OIDC_RSA_PRIVATE_KEY": """
+INSERT PRIVATE KEY HERE
+""",
+    "SCOPES": {
+        "openid": "OpenID Connect scope",
+    },
+    "PKCE_REQUIRED": False,
+    "OAUTH2_VALIDATOR_CLASS": "users.oauth.ConnectOAuth2Validator",
+    # ... any other settings you want
+}
 
 from .localsettings import *
 
