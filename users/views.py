@@ -264,3 +264,15 @@ def change_password(request):
     user.set_password(password)
     user.save()
     return HttpResponse()
+
+
+@api_view(['GET'])
+def fetch_users(request):
+    data = request.data
+    numbers = data.get('phone_numbers')
+    results = {}
+    found_users = list(User.objects.filter(phone_number__in=numbers).values('username', 'phone_number'))
+    results["found_users"] = found_users
+    missing_numbers = set(numbers) - {u["phone_number"] for u in found_users}
+    results["missing_users"] = missing_users
+    return JsonResponse(results)
