@@ -20,4 +20,5 @@ urlpatterns = [
     path('change_phone', views.change_phone, name='change_phone'),
     path('change_password', views.change_password, name='change_password'),
     path('update_profile', views.update_profile, name='update_profile'),
+    path('fetch_users', views.FetchUsers.as_view(), name='fetch_users'),
 ]
