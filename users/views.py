@@ -12,6 +12,8 @@ from django.views.decorators.http import require_POST
 
 from django_otp import match_token
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.views import APIView
+from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 
 from .models import ConnectUser, PhoneDevice, RecoveryStatus
 
@@ -266,13 +268,11 @@ def change_password(request):
     return HttpResponse()
 
 
-@api_view(['GET'])
-def fetch_users(request):
-    data = request.data
-    numbers = data.get('phone_numbers')
-    results = {}
-    found_users = list(User.objects.filter(phone_number__in=numbers).values('username', 'phone_number'))
-    results["found_users"] = found_users
-    missing_numbers = set(numbers) - {u["phone_number"] for u in found_users}
-    results["missing_users"] = missing_users
-    return JsonResponse(results)
+class FetchUsers(ClientProtectedResourceMixin, APIView):
+    def get(request):
+        data = request.data
+        numbers = data.get('phone_numbers')
+        results = {}
+        found_users = list(User.objects.filter(phone_number__in=numbers).values('username', 'phone_number'))
+        results["found_users"] = found_users
+        return JsonResponse(results)
