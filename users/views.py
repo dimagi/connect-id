@@ -7,6 +7,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.shortcuts import render
 from django.http import HttpResponse, JsonResponse
+from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
@@ -268,11 +269,10 @@ def change_password(request):
     return HttpResponse()
 
 
-class FetchUsers(ClientProtectedResourceMixin, APIView):
-    def get(request):
-        data = request.data
-        numbers = data.get('phone_numbers')
+class FetchUsers(ClientProtectedResourceMixin, View):
+    def get(self, request, *args, **kwargs):
+        numbers = request.GET.getlist('phone_numbers')
         results = {}
-        found_users = list(User.objects.filter(phone_number__in=numbers).values('username', 'phone_number'))
+        found_users = list(ConnectUser.objects.filter(phone_number__in=numbers).values('username', 'phone_number'))
         results["found_users"] = found_users
         return JsonResponse(results)
