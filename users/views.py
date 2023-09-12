@@ -273,6 +273,6 @@ class FetchUsers(ClientProtectedResourceMixin, View):
     def get(self, request, *args, **kwargs):
         numbers = request.GET.getlist('phone_numbers')
         results = {}
-        found_users = list(ConnectUser.objects.filter(phone_number__in=numbers).values('username', 'phone_number'))
+        found_users = list(ConnectUser.objects.filter(phone_number__in=numbers).values('username', 'phone_number', 'name'))
         results["found_users"] = found_users
         return JsonResponse(results)
