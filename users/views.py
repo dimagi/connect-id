@@ -270,6 +270,8 @@ def change_password(request):
 
 
 class FetchUsers(ClientProtectedResourceMixin, View):
+    required_scopes = ['user_fetch']
+
     def get(self, request, *args, **kwargs):
         numbers = request.GET.getlist('phone_numbers')
         results = {}
