@@ -1,5 +1,6 @@
 Django
 django-axes[ipware]
+django-oauth-toolkit
 django-otp
 django-phonenumber-field
 djangorestframework
