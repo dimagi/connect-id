@@ -7,11 +7,14 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.shortcuts import render
 from django.http import HttpResponse, JsonResponse
+from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from django_otp import match_token
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.views import APIView
+from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 
 from .models import ConnectUser, PhoneDevice, RecoveryStatus
 
@@ -264,3 +267,14 @@ def change_password(request):
     user.set_password(password)
     user.save()
     return HttpResponse()
+
+
+class FetchUsers(ClientProtectedResourceMixin, View):
+    required_scopes = ['user_fetch']
+
+    def get(self, request, *args, **kwargs):
+        numbers = request.GET.getlist('phone_numbers')
+        results = {}
+        found_users = list(ConnectUser.objects.filter(phone_number__in=numbers).values('username', 'phone_number', 'name'))
+        results["found_users"] = found_users
+        return JsonResponse(results)
