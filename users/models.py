@@ -4,7 +4,7 @@ from django_otp.models import SideChannelDevice
 
 from phonenumber_field.modelfields import PhoneNumberField
 
-from utils import send_sms
+from utils import get_sms_sender, send_sms
 # Create your models here.
 
 class ConnectUser(AbstractUser):
@@ -30,7 +30,8 @@ class PhoneDevice(SideChannelDevice):
     def generate_challenge(self):
         self.generate_token(valid_secs=600)
         message = f"Your verification token from commcare connect is {self.token}"
-        send_sms(self.phone_number.as_e164, message)
+        get_sms_sender(self.phone_number.country_code)
+        send_sms(self.phone_number.as_e164, message, sender)
         return message
 
     class Meta:
