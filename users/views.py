@@ -12,6 +12,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from django_otp import match_token
+from fcm_django.models import FCMDevice, DeviceType
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.views import APIView
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
@@ -38,7 +39,10 @@ def register(request):
         u.full_clean()
     except ValidationError as e:
         return JsonResponse(e.message_dict, status=400)
-    u = ConnectUser.objects.create_user(**user_data)
+
+    user = ConnectUser.objects.create_user(**user_data)
+    if data.get('fcm_token'):
+        FCMDevice.objects.create(user=user, registration_id=data['fcm_token'], type=DeviceType.ANDROID)
     return HttpResponse()
 
 
