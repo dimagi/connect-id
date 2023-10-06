@@ -1,7 +1,7 @@
 from http import HTTPStatus
 
 from django.http import JsonResponse
-from fcm_django.models import FCMDevice, _validate_exception_for_deactivation, FirebaseResponseDict
+from fcm_django.models import FCMDevice, _validate_exception_for_deactivation
 from firebase_admin import messaging, exceptions
 from rest_framework.views import APIView
 
@@ -45,6 +45,20 @@ class SendMessageBulk(APIView):
             },
         ]
     }
+
+    Response:
+    {
+        "all_success": false,
+        "messages": [
+            {
+                "all_success": false,
+                "responses": [
+                    {"status": "success", "username": "user1"},
+                    {"status": "deactivated", "username": "user2"}
+                ]
+            },
+        ]
+    }
     """
     authentication_classes = [ClientProtectedResourceAuth]
 
@@ -53,26 +67,34 @@ class SendMessageBulk(APIView):
         if not messages:
             return JsonResponse({}, status=HTTPStatus.NO_CONTENT)
 
+        global_all_success = True
         results = []
         for message in messages:
-            usernames = set(message.pop('usernames', []))
+            message_result = {"responses": []}
+            results.append(message_result)
+            message_all_success = True
+            usernames = message.pop('usernames', [])
             if not usernames:
-                results.append({"status": "success"})
+                message_result["all_success"] = message_all_success
                 continue
 
             active_devices = FCMDevice.objects.filter(
                 user__username__in=usernames, active=True
             ).values_list('registration_id', 'user__username')
             registration_id_to_username = {reg_id: username for reg_id, username in active_devices}
+
             batch_response = FCMDevice.objects.send_message(
                 _build_message(message),
                 additional_registration_ids=list(registration_id_to_username),
                 skip_registration_id_lookup=True
             )
+
             for response, registration_id in zip(batch_response.response.responses, batch_response.registration_ids_sent):
                 result = {"username": registration_id_to_username[registration_id]}
-                results.append(result)
+                message_result["responses"].append(result)
                 if response.exception:
+                    global_all_success = False
+                    message_all_success = False
                     result["status"] = "error"
                     if registration_id in response.deactivated_registration_ids:
                         result["status"] = "deactivated"
@@ -83,10 +105,15 @@ class SendMessageBulk(APIView):
 
             missing_usernames = set(usernames) - set(registration_id_to_username.values())
             for username in missing_usernames:
+                global_all_success = False
+                message_all_success = False
                 result = {"status": "deactivated", "username": username}
-                results.append(result)
+                message_result["responses"].append(result)
 
-        return JsonResponse({"results": results}, status=200)
+            message_result["all_success"] = message_all_success
+            message_result["responses"].sort(key=lambda r: usernames.index(r["username"]))
+
+        return JsonResponse({"messages": results, "all_success": global_all_success}, status=200)
 
 
 def _build_message(data):

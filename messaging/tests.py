@@ -7,6 +7,8 @@ from django.urls import reverse
 from firebase_admin import messaging
 from oauth2_provider.models import Application
 
+from users.factories import FCMDeviceFactory
+
 
 @pytest.fixture
 def oauth_app(user):
@@ -43,46 +45,67 @@ def test_send_message(authed_client, fcm_device):
         mock_send_message.assert_called_once()
         message = mock_send_message.call_args_list[0].args[0]
         assert json.loads(str(message)) == {
-            "data": {"test": "data"}, "notification": {"body": "test message"}, "token": "testregid"
+            "data": {"test": "data"}, "notification": {"body": "test message"}, "token": fcm_device.registration_id
         }
 
 
 def test_send_message_bulk(authed_client, fcm_device):
     url = reverse('messaging:send_message_bulk')
 
-    with mock.patch("fcm_django.models.messaging.send_all") as mock_send_message:
-        mock_send_message.return_value = messaging.BatchResponse([
-            messaging.SendResponse({'name': 'message_id_1'}, None),
-        ])
+    fcm_device2 = FCMDeviceFactory()
+    fcm_device3 = FCMDeviceFactory(active=False)
+
+    with mock.patch("fcm_django.models.messaging.send_all", wraps=_fake_send) as mock_send_message:
         response = authed_client.post(url, data={
             "messages": [
                 {
-                    "usernames": [fcm_device.user.username, fcm_device.user.username],
-                    "title": "test title",
-                    "body": "test message",
-                    "data": {"test": "data"},
+                    "usernames": [fcm_device.user.username, fcm_device.user.username, fcm_device2.user.username],
+                    "title": "test title1",
+                    "body": "test message1",
+                    "data": {"test": "data1"},
                 },
                 {
-                    "usernames": ['nonexistent-user'],
-                    "title": "test title",
-                    "body": "test message",
-                    "data": {"test": "data"},
+                    "usernames": [fcm_device.user.username, 'nonexistent-user', fcm_device3.user.username],
+                    "title": "test title2",
+                    "body": "test message2",
+                    "data": {"test": "data2"},
                 }
             ]
         }, content_type="application/json")
 
         assert response.status_code == 200, response.content
-        mock_send_message.assert_called_once()
+        assert mock_send_message.call_count == 2
         messages = mock_send_message.call_args_list[0].args[0]
-        assert len(messages) == 1
+        assert len(messages) == 2
         assert json.loads(str(messages[0])) == {
-            "data": {"test": "data"},
-            "notification": {"body": "test message", "title": "test title"},
-            "token": "testregid"
+            "data": {"test": "data1"},
+            "notification": {"body": "test message1", "title": "test title1"},
+            "token": fcm_device.registration_id,
         }
 
-        results = response.json()['results']
+        assert response.json()['all_success'] is False
+        results = response.json()['messages']
         assert results == [
-            {'status': 'success', 'username': 'testuser'},
-            {'status': 'deactivated', 'username': 'nonexistent-user'},
+            {
+                "all_success": True,
+                "responses": [
+                    {'status': 'success', 'username': fcm_device.user.username},
+                    {'status': 'success', 'username': fcm_device2.user.username},
+                ]
+            },
+            {
+                "all_success": False,
+                "responses": [
+                    {'status': 'success', 'username': fcm_device.user.username},
+                    {'status': 'deactivated', 'username': 'nonexistent-user'},
+                    {'status': 'deactivated', 'username': fcm_device3.user.username},
+                ]
+            }
         ]
+
+
+def _fake_send(messages, **kwargs):
+    return messaging.BatchResponse([
+        messaging.SendResponse({'name': f'message_id_{i}'}, None)
+        for i, message in enumerate(messages)
+    ])
