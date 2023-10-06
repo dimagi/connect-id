@@ -17,6 +17,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.views import APIView
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 
+from .fcm_utils import create_update_device
 from .models import ConnectUser, PhoneDevice, RecoveryStatus
 
 from utils import get_ip
@@ -42,7 +43,7 @@ def register(request):
 
     user = ConnectUser.objects.create_user(**user_data)
     if data.get('fcm_token'):
-        FCMDevice.objects.create(user=user, registration_id=data['fcm_token'], type=DeviceType.ANDROID)
+        create_update_device(user, data['fcm_token'])
     return HttpResponse()
 
 
@@ -271,6 +272,17 @@ def change_password(request):
     user.set_password(password)
     user.save()
     return HttpResponse()
+
+
+@api_view(['GET'])
+def heartbeat(request):
+    data = request.data
+    user = request.user
+    if not data.get('fcm_token'):
+        return JsonResponse({}, status=200)
+
+    fcm_token = data['fcm_token']
+    return create_update_device(user, fcm_token)
 
 
 class FetchUsers(ClientProtectedResourceMixin, View):
