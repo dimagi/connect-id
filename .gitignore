@@ -7,3 +7,6 @@
 !*localsettings.example.py
 *.log*
 /staticfiles/
+/.idea
+/.direnv
+/.envrc
