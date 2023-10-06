@@ -5,15 +5,6 @@ from users.fcm_utils import create_update_device
 from users.models import ConnectUser
 
 
-@pytest.fixture
-def user(db):
-    return ConnectUser.objects.create_user(
-        username='testuser',
-        password='testpass',
-        phone_number='+27734567657',
-    )
-
-
 @pytest.mark.django_db
 def test_registration(client):
     response = client.post('/users/register', {
