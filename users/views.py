@@ -1,26 +1,16 @@
-import json
-
 from secrets import token_hex
 
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
-from django.shortcuts import render
 from django.http import HttpResponse, JsonResponse
 from django.views import View
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
-
-from django_otp import match_token
-from fcm_django.models import FCMDevice, DeviceType
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.views import APIView
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
-
-from .fcm_utils import create_update_device
-from .models import ConnectUser, PhoneDevice, RecoveryStatus
+from rest_framework.decorators import api_view, permission_classes
 
 from utils import get_ip
+from .fcm_utils import create_update_device
+from .models import ConnectUser, PhoneDevice, RecoveryStatus
 
 
 # Create your views here.
