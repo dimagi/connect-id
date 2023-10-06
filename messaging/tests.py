@@ -35,16 +35,21 @@ def authed_client(client, oauth_app):
 def test_send_message(authed_client, fcm_device):
     url = reverse('messaging:send_message')
 
-    with mock.patch("fcm_django.models.messaging.send") as mock_send_message:
+    with mock.patch("fcm_django.models.messaging.send_all", wraps=_fake_send) as mock_send_message:
         response = authed_client.post(url, data={
             "username": fcm_device.user.username,
             "body": "test message",
             "data": {"test": "data"},
         }, content_type="application/json")
         assert response.status_code == 200, response.content
+        assert response.json() == {
+            'all_success': True,
+            'responses': [{'username': fcm_device.user.username, 'status': 'success'}]
+        }
         mock_send_message.assert_called_once()
-        message = mock_send_message.call_args_list[0].args[0]
-        assert json.loads(str(message)) == {
+        messages = mock_send_message.call_args_list[0].args[0]
+        assert len(messages) == 1
+        assert json.loads(str(messages[0])) == {
             "data": {"test": "data"}, "notification": {"body": "test message"}, "token": fcm_device.registration_id
         }
 
