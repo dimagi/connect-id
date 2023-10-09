@@ -264,7 +264,7 @@ def change_password(request):
     return HttpResponse()
 
 
-@api_view(['GET'])
+@api_view(['POST'])
 def heartbeat(request):
     data = request.data
     user = request.user
