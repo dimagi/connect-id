@@ -10,15 +10,7 @@ class ClientProtectedResourceAuth(OAuthLibMixin, BaseAuthentication):
     def authenticate(self, request):
         # Validate either with HTTP basic or client creds in request body.
         valid = self.authenticate_client(request)
-        if not valid:
-            # Alternatively allow access tokens
-            # check if the request is valid and the protected resource may be accessed
-            valid, r = self.verify_request(request)
-            if valid:
-                request.resource_owner = r.user
-                return r.user, r.access_token
-            return None
-        else:
+        if valid:
             return OauthClientUser(), None
 
 
