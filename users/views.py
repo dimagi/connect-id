@@ -1,24 +1,16 @@
-import json
-
 from secrets import token_hex
 
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
-from django.shortcuts import render
 from django.http import HttpResponse, JsonResponse
 from django.views import View
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
-
-from django_otp import match_token
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.views import APIView
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
-
-from .models import ConnectUser, PhoneDevice, RecoveryStatus
+from rest_framework.decorators import api_view, permission_classes
 
 from utils import get_ip
+from .fcm_utils import create_update_device
+from .models import ConnectUser, PhoneDevice, RecoveryStatus
 
 
 # Create your views here.
@@ -38,7 +30,10 @@ def register(request):
         u.full_clean()
     except ValidationError as e:
         return JsonResponse(e.message_dict, status=400)
-    u = ConnectUser.objects.create_user(**user_data)
+
+    user = ConnectUser.objects.create_user(**user_data)
+    if data.get('fcm_token'):
+        create_update_device(user, data['fcm_token'])
     return HttpResponse()
 
 
@@ -287,6 +282,17 @@ def update_profile(request):
             return JsonResponse(e.message_dict, status=400)
         user.save()
     return HttpResponse()
+
+
+@api_view(['POST'])
+def heartbeat(request):
+    data = request.data
+    user = request.user
+    if not data.get('fcm_token'):
+        return JsonResponse({}, status=200)
+
+    fcm_token = data['fcm_token']
+    return create_update_device(user, fcm_token)
 
 
 class FetchUsers(ClientProtectedResourceMixin, View):

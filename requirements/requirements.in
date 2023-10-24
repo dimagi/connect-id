@@ -8,5 +8,5 @@ gunicorn
 phonenumberslite
 psycopg2
 twilio
-pip-tools
 zxcvbn
+fcm-django

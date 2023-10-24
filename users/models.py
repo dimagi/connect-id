@@ -30,7 +30,7 @@ class PhoneDevice(SideChannelDevice):
     def generate_challenge(self):
         self.generate_token(valid_secs=600)
         message = f"Your verification token from commcare connect is {self.token}"
-        get_sms_sender(self.phone_number.country_code)
+        sender = get_sms_sender(self.phone_number.country_code)
         send_sms(self.phone_number.as_e164, message, sender)
         return message
 
