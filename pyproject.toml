@@ -1,0 +1,7 @@
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "connectid.settings"
+addopts = "--reuse-db"
+python_files = [
+    "tests.py",
+    "test_*.py",
+]

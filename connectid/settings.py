@@ -32,8 +32,10 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'phonenumber_field',
     'users.apps.UsersConfig',
+    'messaging',
     'oauth2_provider',
-    'rest_framework'
+    'rest_framework',
+    'fcm_django',
 ]
 
 MIDDLEWARE = [
@@ -198,5 +200,18 @@ INSERT PRIVATE KEY HERE
     # ... any other settings you want
 }
 
+FCM_CREDENTIALS = None
+
+FCM_DJANGO_SETTINGS = {
+    "DEFAULT_FIREBASE_APP": None,  # use the default app
+    "ONE_DEVICE_PER_USER": True,
+    "DELETE_INACTIVE_DEVICES": False,
+}
+
 from .localsettings import *
 
+# Firebase
+if FCM_CREDENTIALS:
+    from firebase_admin import credentials, initialize_app
+    creds = credentials.Certificate(FCM_CREDENTIALS)
+    default_app = initialize_app(credential=creds)
