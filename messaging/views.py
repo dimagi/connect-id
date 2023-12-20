@@ -107,7 +107,7 @@ def send_bulk_message(message):
         if response.exception:
             message_all_success = False
             result["status"] = "error"
-            if registration_id in response.deactivated_registration_ids:
+            if registration_id in batch_response.deactivated_registration_ids:
                 result["status"] = "deactivated"
             else:
                 result["error"] = response.exception.code
