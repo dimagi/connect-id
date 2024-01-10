@@ -3,8 +3,8 @@
 *~
 *.swp
 *.swo
-*localsettings*
-!*localsettings.example.py
+*.env
+!*.env_example
 *.log*
 /staticfiles/
 /.idea
