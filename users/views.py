@@ -9,6 +9,7 @@ from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, permission_classes
 
 from utils import get_ip
+from .const import TEST_NUMBER_PREFIX
 from .fcm_utils import create_update_device
 from .models import ConnectUser, PhoneDevice, RecoveryStatus
 
@@ -24,12 +25,14 @@ def register(request):
         if data.get(field):
             user_data[field] = data[field]
     user_data['ip_address'] = get_ip(request)
-    # avoid create_user since it saves to the db without validation
-    u = ConnectUser(**user_data)
-    try:
-        u.full_clean()
-    except ValidationError as e:
-        return JsonResponse(e.message_dict, status=400)
+
+    # skip validation if number starts with special prefix
+    if not u.startswith(TEST_NUMBER_PREFIX):
+        u = ConnectUser(**user_data)
+        try:
+            u.full_clean()
+        except ValidationError as e:
+            return JsonResponse(e.message_dict, status=400)
 
     user = ConnectUser.objects.create_user(**user_data)
     if data.get('fcm_token'):
@@ -283,4 +286,15 @@ class FetchUsers(ClientProtectedResourceMixin, View):
         results = {}
         found_users = list(ConnectUser.objects.filter(phone_number__in=numbers).values('username', 'phone_number', 'name'))
         results["found_users"] = found_users
+        return JsonResponse(results)
+
+
+class GetDemoUsers(ClientProtectedResourceMixin, View):
+    required_scopes = ['user_fetch']
+
+    def get(self, request, *args, **kwargs):
+        test_users = PhoneDevice.objects.filter(phone_number__startswith=TEST_NUMBER_PREFIX)
+        results = {}
+        for user in test_users:
+            results[user.phone_number] = user.token
         return JsonResponse(results)
