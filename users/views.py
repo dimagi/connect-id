@@ -293,9 +293,6 @@ class GetDemoUsers(ClientProtectedResourceMixin, View):
     required_scopes = ['user_fetch']
 
     def get(self, request, *args, **kwargs):
-        test_devices = PhoneDevice.objects.filter(phone_number__startswith=TEST_NUMBER_PREFIX)
-        demo_users = []
-        for user in test_devices:
-            demo_users.append({"phone_number": user.phone_number, "token": user.token})
-        results = {"demo_users": demo_users}
+        demo_users = PhoneDevice.objects.filter(phone_number__startswith=TEST_NUMBER_PREFIX).values('phone_number', 'token')
+        results = {"demo_users": list(demo_users)}
         return JsonResponse(results)
