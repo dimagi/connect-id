@@ -27,7 +27,7 @@ def register(request):
     user_data['ip_address'] = get_ip(request)
 
     # skip validation if number starts with special prefix
-    if not u.startswith(TEST_NUMBER_PREFIX):
+    if not user_data.get("phone_number", "").startswith(TEST_NUMBER_PREFIX):
         u = ConnectUser(**user_data)
         try:
             u.full_clean()
