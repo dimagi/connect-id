@@ -21,5 +21,5 @@ urlpatterns = [
     path('change_password', views.change_password, name='change_password'),
     path('fetch_users', views.FetchUsers.as_view(), name='fetch_users'),
     path('heartbeat', views.heartbeat, name='heartbeat'),
-    path('demo_users', views.GetDemoUsers, name='demo_users'),
+    path('demo_users', views.GetDemoUsers.as_view(), name='demo_users'),
 ]
