@@ -22,5 +22,5 @@ urlpatterns = [
     path('update_profile', views.update_profile, name='update_profile'),
     path('fetch_users', views.FetchUsers.as_view(), name='fetch_users'),
     path('heartbeat', views.heartbeat, name='heartbeat'),
-    path('demo_users', views.GetDemoUsers, name='demo_users'),
+    path('demo_users', views.GetDemoUsers.as_view(), name='demo_users'),
 ]
