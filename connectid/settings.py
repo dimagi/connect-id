@@ -9,13 +9,14 @@ https://docs.djangoproject.com/en/4.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.1/ref/settings/
 """
-import os
+import environ
 
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
+env = environ.Env()
+env.read_env(str(BASE_DIR / ".env"))
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.1/howto/deployment/checklist/
@@ -196,10 +197,38 @@ FCM_DJANGO_SETTINGS = {
     "DELETE_INACTIVE_DEVICES": False,
 }
 
-from .localsettings import *
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = env(
+    "SECRET_KEY",
+    default="django-insecure-yofpqrszrdtv0ftihjd09cuim2al9^n9j^b85%-y0v*^_lj18d",
+)
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = env("DEBUG", default=False)
+
+# Database
+# https://docs.djangoproject.com/en/4.1/ref/settings/#databases
+
+DATABASES = {
+    "default": env.db(
+        "DATABASE_URL",
+        default="postgres:///connect",
+    ),
+}
+
+ALLOWED_HOSTS = ["127.0.0.1", "localhost"] + env.list(
+    "DJANGO_ALLOWED_HOSTS", default=[]
+)
+
+TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN")
+TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE")
+
+FCM_CREDENTIALS = env("FCM_CREDENTIALS", default=None)
 
 # Firebase
 if FCM_CREDENTIALS:
     from firebase_admin import credentials, initialize_app
+
     creds = credentials.Certificate(FCM_CREDENTIALS)
     default_app = initialize_app(credential=creds)
