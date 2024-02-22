@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/vendor/
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    env_file:
+      - ./docker.env
+  db:
+    image: postgres:15
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_USER=connect
+      - POSTGRES_PASSWORD=connect
+      - POSTGRES_DB=connect
+    ports:
+      - "5433:5432"
+
+volumes:
+  postgres_data:
