@@ -1,8 +1,12 @@
+from datetime import timedelta
+from re import A
+from django.utils.timezone import now
 import pytest
 from fcm_django.models import FCMDevice
+from unittest import mock
 
 from users.fcm_utils import create_update_device
-from users.models import ConnectUser
+from users.models import ConnectUser, PhoneDevice
 
 
 @pytest.mark.django_db
@@ -73,3 +77,55 @@ def test_create_update_device__update_old_device(user):
     response = create_update_device(user, "testtoken")
     assert response.status_code == 202, response.content
     assert response.content == b'{"warning": "Another device is already active"}'
+
+
+def test_otp_generation(user):
+    with mock.patch("users.models.send_sms"):
+        phone_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.phone_number, user=user)
+        phone_device.generate_challenge()
+
+        assert phone_device.token is not None
+        assert phone_device.otp_last_sent is not None
+
+def test_otp_generation_after_two_minutes(user):
+    with mock.patch("users.models.send_sms") as send_sms:
+        phone_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.phone_number, user=user)
+        phone_device.generate_challenge()
+        token =  phone_device.token
+        assert token is not None
+        assert phone_device.otp_last_sent is not None
+        assert send_sms.call_count == 1
+
+        phone_device.generate_challenge()
+        assert phone_device.token == token
+        assert send_sms.call_count == 1
+
+        phone_device.otp_last_sent -= timedelta(minutes=2)
+        phone_device.save()
+        phone_device.generate_challenge()
+        assert phone_device.token == token
+        assert send_sms.call_count == 2
+
+
+def test_otp_generation_after_five_minutes(user):
+    with mock.patch("users.models.send_sms") as send_sms:
+        phone_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.phone_number, user=user)
+        phone_device.generate_challenge()
+        token = phone_device.token
+        assert phone_device.token is not None
+        assert phone_device.otp_last_sent is not None
+        assert send_sms.call_count == 1
+
+        phone_device.otp_last_sent -= timedelta(minutes=3)
+        phone_device.save()
+        phone_device.generate_challenge()
+        assert phone_device.token is not None
+        assert phone_device.token == token
+        assert send_sms.call_count == 2
+
+        phone_device.valid_until -= timedelta(minutes=5)
+        phone_device.save()
+        phone_device.generate_challenge()
+        assert phone_device.token is not None
+        assert phone_device.token != token
+        assert send_sms.call_count == 3
