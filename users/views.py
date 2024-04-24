@@ -268,6 +268,36 @@ def change_password(request):
 
 
 @api_view(['POST'])
+def set_recovery_pin(request):
+    data = request.data
+    user = request.user
+    recovery_pin = data["recovery_pin"]
+    user.set_recovery_pin(recovery_pin)
+    user.save()
+    return HttpResponse()
+
+
+@api_view(['POST'])
+@permission_classes([])
+def confirm_recovery_pin(request):
+    data = request.data
+    phone_number = data["phone"]
+    secret_key = data["secret_key"]
+    user = ConnectUser.objects.get(phone_number=phone_number)
+    status = RecoveryStatus.objects.get(user=user)
+    if status.secret_key != secret_key:
+        return HttpResponse(status=401)
+    if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
+        return HttpResponse(status=401)
+    recovery_pin = data["recovery_pin"]
+    if not user.check_recovery_pin(recovery_pin)
+        return JsonResponse({"error": "Recovery PIN is incorrect"}, status=401)
+    status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
+    status.save()
+    return JsonResponse({"name": user.name, "username": user.username})
+
+
+@api_view(['POST'])
 def heartbeat(request):
     data = request.data
     user = request.user
