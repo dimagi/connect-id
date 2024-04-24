@@ -284,6 +284,7 @@ def update_profile(request):
         except ValidationError as e:
             return JsonResponse(e.message_dict, status=400)
         user.save()
+    return HttpResponse()
 
 
 @api_view(['POST'])
