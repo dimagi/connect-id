@@ -20,7 +20,7 @@ class ConnectUser(AbstractUser):
     ip_address = models.GenericIPAddressField(blank=True, null=True)
     # this is effectively a password so store use set_recovery_pin to
     # store a hashed value rather than setting it directly
-    recovery_pin = models.CharField(null=True, max_length=128)
+    recovery_pin = models.CharField(null=True, blank=True, max_length=128)
 
     # removed from base class
     first_name = None
