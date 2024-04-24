@@ -290,7 +290,7 @@ def confirm_recovery_pin(request):
     if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
         return HttpResponse(status=401)
     recovery_pin = data["recovery_pin"]
-    if not user.check_recovery_pin(recovery_pin)
+    if not user.check_recovery_pin(recovery_pin):
         return JsonResponse({"error": "Recovery PIN is incorrect"}, status=401)
     status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
     status.save()
