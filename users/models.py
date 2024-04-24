@@ -1,3 +1,4 @@
+from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django_otp.models import SideChannelDevice
@@ -17,12 +18,22 @@ class ConnectUser(AbstractUser):
     name = models.TextField(max_length=150, blank=True)
     dob = models.DateField(blank=True, null=True)
     ip_address = models.GenericIPAddressField(blank=True, null=True)
+    # this is effectively a password so store use set_recovery_pin to
+    # store a hashed value rather than setting it directly
+    recovery_pin = models.CharField(null=True)
 
     # removed from base class
     first_name = None
     last_name = None
 
     REQUIRED_FIELDS = ["phone_number", "name"]
+
+    def set_recovery_pin(self, pin):
+        hashed_value = make_password(pin)
+        user.recovery_pin = hashed_value
+
+    def check_recovery_pin(self, pin):
+        return check_password(pin, user.recovery_pin)
 
 
 class PhoneDevice(SideChannelDevice):

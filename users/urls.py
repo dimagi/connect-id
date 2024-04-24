@@ -23,4 +23,6 @@ urlpatterns = [
     path('fetch_users', views.FetchUsers.as_view(), name='fetch_users'),
     path('heartbeat', views.heartbeat, name='heartbeat'),
     path('demo_users', views.GetDemoUsers.as_view(), name='demo_users'),
+    path('recover/confirm_pin', views.confirm_recovery_pin, name='confirm_recovery_pin'),
+    path('set_recovery_pin', views.set_recovery_pin, name='set_recovery_pin'),
 ]
