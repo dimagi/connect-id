@@ -152,7 +152,7 @@ def recover_secondary_phone(request):
     otp_device.generate_challenge()
     status.step = RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
     status.save()
-    return HttpResponse()
+    return JsonResponse({"secondary_phone": user.recovery_phone.as_e164})
 
 
 @api_view(['POST'])
@@ -264,6 +264,26 @@ def change_password(request):
         return JsonResponse(e.message_dict, status=400)
     user.set_password(password)
     user.save()
+    return HttpResponse()
+
+
+@api_view(['POST'])
+def update_profile(request):
+    data = request.data
+    user = request.user
+    changed = False
+    if data.get("name"):
+        user.name = data["name"]
+        changed = True
+    if data.get("secondary_phone"):
+        user.recovery_phone = data["secondary_phone"]
+        changed = True
+    if changed:
+        try:
+            user.full_clean()
+        except ValidationError as e:
+            return JsonResponse(e.message_dict, status=400)
+        user.save()
     return HttpResponse()
 
 

@@ -30,10 +30,10 @@ class ConnectUser(AbstractUser):
 
     def set_recovery_pin(self, pin):
         hashed_value = make_password(pin)
-        user.recovery_pin = hashed_value
+        self.recovery_pin = hashed_value
 
     def check_recovery_pin(self, pin):
-        return check_password(pin, user.recovery_pin)
+        return check_password(pin, self.recovery_pin)
 
 
 class PhoneDevice(SideChannelDevice):
