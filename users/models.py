@@ -20,7 +20,7 @@ class ConnectUser(AbstractUser):
     ip_address = models.GenericIPAddressField(blank=True, null=True)
     # this is effectively a password so store use set_recovery_pin to
     # store a hashed value rather than setting it directly
-    recovery_pin = models.CharField(null=True)
+    recovery_pin = models.CharField(null=True, blank=True, max_length=128)
 
     # removed from base class
     first_name = None
@@ -30,10 +30,10 @@ class ConnectUser(AbstractUser):
 
     def set_recovery_pin(self, pin):
         hashed_value = make_password(pin)
-        user.recovery_pin = hashed_value
+        self.recovery_pin = hashed_value
 
     def check_recovery_pin(self, pin):
-        return check_password(pin, user.recovery_pin)
+        return check_password(pin, self.recovery_pin)
 
 
 class PhoneDevice(SideChannelDevice):

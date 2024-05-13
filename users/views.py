@@ -152,7 +152,7 @@ def recover_secondary_phone(request):
     otp_device.generate_challenge()
     status.step = RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
     status.save()
-    return HttpResponse()
+    return JsonResponse({"secondary_phone": user.recovery_phone.as_e164})
 
 
 @api_view(['POST'])
@@ -268,6 +268,26 @@ def change_password(request):
 
 
 @api_view(['POST'])
+def update_profile(request):
+    data = request.data
+    user = request.user
+    changed = False
+    if data.get("name"):
+        user.name = data["name"]
+        changed = True
+    if data.get("secondary_phone"):
+        user.recovery_phone = data["secondary_phone"]
+        changed = True
+    if changed:
+        try:
+            user.full_clean()
+        except ValidationError as e:
+            return JsonResponse(e.message_dict, status=400)
+        user.save()
+    return HttpResponse()
+
+
+@api_view(['POST'])
 def set_recovery_pin(request):
     data = request.data
     user = request.user
@@ -290,7 +310,7 @@ def confirm_recovery_pin(request):
     if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
         return HttpResponse(status=401)
     recovery_pin = data["recovery_pin"]
-    if not user.check_recovery_pin(recovery_pin)
+    if not user.check_recovery_pin(recovery_pin):
         return JsonResponse({"error": "Recovery PIN is incorrect"}, status=401)
     status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
     status.save()
