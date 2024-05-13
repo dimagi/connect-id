@@ -7,8 +7,13 @@ class CurrentVersionMiddleware:
 
     def __call__(self, request):
         response = self.get_response(request)
-
-        if request.versioning_scheme is not None:
-            response.headers["X-CURRENT-API-VERSION"] = api_settings.DEFAULT_VERSION
+        if request.include_version_headers:
+            response.headers["X-API-Current-Version"] = api_settings.DEFAULT_VERSION
 
         return response
+
+    def process_view(self, request, view_func, view_args, view_kwargs):
+        if hasattr(view_func, 'cls'):
+            if view_func.cls.versioning_class is not None:
+                request.include_version_headers = True
+
