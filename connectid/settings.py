@@ -9,13 +9,14 @@ https://docs.djangoproject.com/en/4.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.1/ref/settings/
 """
-import os
+import environ
 
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
+env = environ.Env()
+env.read_env(str(BASE_DIR / ".env"))
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.1/howto/deployment/checklist/
@@ -213,10 +214,63 @@ FCM_DJANGO_SETTINGS = {
     "DELETE_INACTIVE_DEVICES": False,
 }
 
-from .localsettings import *
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = env(
+    "SECRET_KEY",
+    default="django-insecure-yofpqrszrdtv0ftihjd09cuim2al9^n9j^b85%-y0v*^_lj18d",
+)
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = env("DEBUG", default=False)
+
+# Database
+# https://docs.djangoproject.com/en/4.1/ref/settings/#databases
+
+DATABASES = {
+    "default": env.db(
+        "DATABASE_URL",
+        default="postgres:///connect",
+    ),
+}
+
+ALLOWED_HOSTS = ["127.0.0.1", "localhost"] + env.list(
+    "DJANGO_ALLOWED_HOSTS", default=[]
+)
+
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[]) 
+
+TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN")
+TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE")
+
+FCM_CREDENTIALS = {
+    "type": "service_account",
+    "project_id": env("FCM_PROJECT_ID", default=""),
+    "private_key_id": env("FCM_PRIVATE_KEY_ID", default=""),
+    "private_key": env("FCM_PRIVATE_KEY", default=""),
+    "client_email": env("FCM_CLIENT_EMAIL", default=""),
+    "client_id": env("FCM_CLIENT_ID", default=""),
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "client_x509_cert_url": env("FCM_CLIENT_X509_CERT_URL", default=""),
+    "universe_domain": "googleapis.com"
+}
+
+OAUTH2_PROVIDER = {                                                                                                                                                   
+    "OIDC_ENABLED": True,                                                                                                                                             
+    "OIDC_RSA_PRIVATE_KEY": env("OIDC_RSA_PRIVATE_KEY", default=""),
+    "SCOPES": {
+        "openid": "OpenID Connect scope", 
+        "sync": "sync with commcarehq"
+    },
+    "PKCE_REQUIRED": False,
+    "OAUTH2_VALIDATOR_CLASS": "users.oauth.ConnectOAuth2Validator",
+}
 
 # Firebase
 if FCM_CREDENTIALS:
     from firebase_admin import credentials, initialize_app
+
     creds = credentials.Certificate(FCM_CREDENTIALS)
     default_app = initialize_app(credential=creds)
