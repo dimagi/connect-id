@@ -9,6 +9,7 @@ from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, permission_classes
 
 from utils import get_ip
+from .const import TEST_NUMBER_PREFIX
 from .fcm_utils import create_update_device
 from .models import ConnectUser, PhoneDevice, RecoveryStatus
 
@@ -24,12 +25,14 @@ def register(request):
         if data.get(field):
             user_data[field] = data[field]
     user_data['ip_address'] = get_ip(request)
-    # avoid create_user since it saves to the db without validation
-    u = ConnectUser(**user_data)
-    try:
-        u.full_clean()
-    except ValidationError as e:
-        return JsonResponse(e.message_dict, status=400)
+
+    # skip validation if number starts with special prefix
+    if not user_data.get("phone_number", "").startswith(TEST_NUMBER_PREFIX):
+        u = ConnectUser(**user_data)
+        try:
+            u.full_clean()
+        except ValidationError as e:
+            return JsonResponse(e.message_dict, status=400)
 
     user = ConnectUser.objects.create_user(**user_data)
     if data.get('fcm_token'):
@@ -149,7 +152,7 @@ def recover_secondary_phone(request):
     otp_device.generate_challenge()
     status.step = RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
     status.save()
-    return HttpResponse()
+    return JsonResponse({"secondary_phone": user.recovery_phone.as_e164})
 
 
 @api_view(['POST'])
@@ -265,6 +268,56 @@ def change_password(request):
 
 
 @api_view(['POST'])
+def update_profile(request):
+    data = request.data
+    user = request.user
+    changed = False
+    if data.get("name"):
+        user.name = data["name"]
+        changed = True
+    if data.get("secondary_phone"):
+        user.recovery_phone = data["secondary_phone"]
+        changed = True
+    if changed:
+        try:
+            user.full_clean()
+        except ValidationError as e:
+            return JsonResponse(e.message_dict, status=400)
+        user.save()
+    return HttpResponse()
+
+
+@api_view(['POST'])
+def set_recovery_pin(request):
+    data = request.data
+    user = request.user
+    recovery_pin = data["recovery_pin"]
+    user.set_recovery_pin(recovery_pin)
+    user.save()
+    return HttpResponse()
+
+
+@api_view(['POST'])
+@permission_classes([])
+def confirm_recovery_pin(request):
+    data = request.data
+    phone_number = data["phone"]
+    secret_key = data["secret_key"]
+    user = ConnectUser.objects.get(phone_number=phone_number)
+    status = RecoveryStatus.objects.get(user=user)
+    if status.secret_key != secret_key:
+        return HttpResponse(status=401)
+    if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
+        return HttpResponse(status=401)
+    recovery_pin = data["recovery_pin"]
+    if not user.check_recovery_pin(recovery_pin):
+        return JsonResponse({"error": "Recovery PIN is incorrect"}, status=401)
+    status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
+    status.save()
+    return JsonResponse({"name": user.name, "username": user.username})
+
+
+@api_view(['POST'])
 def heartbeat(request):
     data = request.data
     user = request.user
@@ -283,4 +336,13 @@ class FetchUsers(ClientProtectedResourceMixin, View):
         results = {}
         found_users = list(ConnectUser.objects.filter(phone_number__in=numbers).values('username', 'phone_number', 'name'))
         results["found_users"] = found_users
+        return JsonResponse(results)
+
+
+class GetDemoUsers(ClientProtectedResourceMixin, View):
+    required_scopes = ['user_fetch']
+
+    def get(self, request, *args, **kwargs):
+        demo_users = PhoneDevice.objects.filter(phone_number__startswith=TEST_NUMBER_PREFIX).values('phone_number', 'token')
+        results = {"demo_users": list(demo_users)}
         return JsonResponse(results)

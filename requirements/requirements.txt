@@ -25,6 +25,14 @@ deprecated==1.2.14
 django==4.1.7
     # via
     #   -r requirements.in
+    #   django-axes
+    #   django-otp
+    #   django-phonenumber-field
+    #   djangorestframework
+django-axes[ipware]==6.0.3
+    # via -r requirements.in
+django-ipware==5.0.0
+    # via django-axes
     #   django-oauth-toolkit
     #   django-otp
     #   django-phonenumber-field
@@ -152,5 +160,10 @@ zxcvbn==4.4.28
     # via -r requirements.in
 
 # The following packages are considered to be unsafe in a requirements file:
-setuptools==69.0.3
-    # via gunicorn
+pip==23.1.2
+    # via pip-tools
+setuptools==67.8.0
+    # via
+    #   django-axes
+    #   gunicorn
+    #   pip-tools
