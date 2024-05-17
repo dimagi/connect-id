@@ -45,13 +45,12 @@ class ConnectUser(AbstractUser):
 
 class UserKey(models.Model):
     user = models.ForeignKey(ConnectUser, on_delete=models.CASCADE)
-    key = models.TextField()
+    key = models.CharField(max_length=60)
     valid = models.BooleanField(default=True)
     created = models.DateTimeField(auto_now_add=True)
 
     @classmethod
     def get_or_create_key_for_user(cls, user):
-        now = now()
         user_key = cls.objects.filter(user=user, valid=True).first()
         if not user_key:
             user_key = UserKey(user=user)
