@@ -369,7 +369,8 @@ class AddCredential(ClientProtectedResourceMixin, View):
         org_name = request.data["organization_name"]
         org_slug = request.data["organization"]
         credential_name = request.data["credential"]
-        credential = Credential.objects.get_or_create(name=credential_name, organization=org_slug)
+        slug = f"{credential_name.lower().replace(' ', '_')}_{org_slug}"
+        credential, _ = Credential.objects.get_or_create(name=credential_name, organization_slug=org_slug, defaults={"credential_slug": slug})
         users = ConnectUser.object.filter(phone_number__in=phone_numbers)
         for u in users:
             UserCredential.add_credential(user, credential, request)

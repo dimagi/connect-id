@@ -89,7 +89,7 @@ class UserCredential(models.Model):
         location = reverse("users:accept_credential", args=(user_credential.invite_id,))
         url = request.build_absolute_uri(location)
         message = (
-            "You have been given credential 'f{credential.name}'."
+            f"You have been given credential '{credential.name}'."
             "Please click the following link to accept "
         )
         sender = get_sms_sender(user.phone_number.country_code)
