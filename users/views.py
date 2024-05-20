@@ -11,7 +11,7 @@ from rest_framework.decorators import api_view, permission_classes
 from utils import get_ip
 from .const import TEST_NUMBER_PREFIX
 from .fcm_utils import create_update_device
-from .models import ConnectUser, PhoneDevice, RecoveryStatus
+from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential
 
 
 # Create your views here.
@@ -346,3 +346,55 @@ class GetDemoUsers(ClientProtectedResourceMixin, View):
         demo_users = PhoneDevice.objects.filter(phone_number__startswith=TEST_NUMBER_PREFIX).values('phone_number', 'token')
         results = {"demo_users": list(demo_users)}
         return JsonResponse(results)
+
+
+class FilterUsers(ClientProtectedResourceMixin, View):
+    required_scopes = ['user_fetch']
+
+    def get(self, request, *args, **kwargs):
+        country = request.data["country"]
+        credential = request.data["credential"]
+        users = UserCredential.objects.filter(credential__slug=credential, user__phone_number__startswith=country, accepted=True).select_related('user')
+        user_list = [{"username": u.user.username, "phone_number": u.user.phone_number, "name": u.user.name} for u in users]
+        result = {"found_users": user_list}
+        return JsonResponse(result)
+        
+
+
+class AddCredential(ClientProtectedResourceMixin, View):
+    required_scopes = ['user_fetch']
+
+    def post(self, request, *args, **kwargs):
+        phone_numbers = request.data["users"]
+        org_name = request.data["organization_name"]
+        org_slug = request.data["organization"]
+        credential_name = request.data["credential"]
+        credential = Credential.objects.get_or_create(name=credential_name, organization=org_slug)
+        users = ConnectUser.object.filter(phone_number__in=phone_numbers)
+        for u in users:
+            UserCredential.add_credential(user, credential, request)
+        return HttpResponse()
+
+
+@api_view(['GET'])
+@permission_classes([])
+def accept_credential(request, invite_id):
+    try:
+        credential = UserCredential.objects.get(invite_id=invite_id)
+    except UserCredential.DoesNotExist:
+        return HttpResponse("This link is invalid. Please try again", status=404)
+    credential.accepted = True
+    credential.save()
+    return HttpResponse(
+        "Thank you for accepting this credential. You will now have access to opportunities open "
+        "to holders of this credential."
+    )
+
+
+
+class FetchCredentials(ClientProtectedResourceMixin, View):
+    required_scopes = ['user_fetch']
+
+    def get(self, request, *args, **kwargs):
+        credentials = Credential.objects.all().values('name', 'slug')
+        return JsonResponse(list(credentials))
