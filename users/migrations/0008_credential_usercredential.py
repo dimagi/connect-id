@@ -8,7 +8,7 @@ import uuid
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("users", "0006_alter_connectuser_recovery_pin"),
+        ("users", "0007_connectuser_recovery_phone_validation_deadline_and_more"),
     ]
 
     operations = [

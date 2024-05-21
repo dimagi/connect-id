@@ -12,6 +12,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.views import APIView
 
 from utils import get_ip
+from utils.rest_framework import ClientProtectedResourceAuth
 from .const import TEST_NUMBER_PREFIX
 from .fcm_utils import create_update_device
 from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
@@ -348,7 +349,7 @@ class FetchUsers(ClientProtectedResourceMixin, View):
         return JsonResponse(results)
 
 
-class GetDemoUsers(ClientProtectedResourceMixin, APIView):
+class GetDemoUsers(ClientProtectedResourceMixin, View):
     required_scopes = ['user_fetch']
 
     def get(self, request, *args, **kwargs):
@@ -357,8 +358,8 @@ class GetDemoUsers(ClientProtectedResourceMixin, APIView):
         return JsonResponse(results)
 
 
-class FilterUsers(ClientProtectedResourceMixin, APIView):
-    required_scopes = ['user_fetch']
+class FilterUsers(APIView):
+    authentication_classes = [ClientProtectedResourceAuth]
 
     def get(self, request, *args, **kwargs):
         country = request.query_params.get("country")
@@ -370,8 +371,8 @@ class FilterUsers(ClientProtectedResourceMixin, APIView):
         
 
 
-class AddCredential(ClientProtectedResourceMixin, APIView):
-    required_scopes = ['user_fetch']
+class AddCredential(APIView):
+    authentication_classes = [ClientProtectedResourceAuth]
 
     def post(self, request, *args, **kwargs):
         phone_numbers = request.data["users"]
@@ -380,7 +381,7 @@ class AddCredential(ClientProtectedResourceMixin, APIView):
         credential_name = request.data["credential"]
         slug = f"{credential_name.lower().replace(' ', '_')}_{org_slug}"
         credential, _ = Credential.objects.get_or_create(name=credential_name, organization_slug=org_slug, defaults={"slug": slug})
-        users = ConnectUser.object.filter(phone_number__in=phone_numbers)
+        users = ConnectUser.objects.filter(phone_number__in=phone_numbers)
         for u in users:
             UserCredential.add_credential(user, credential, request)
         return HttpResponse()
@@ -401,11 +402,10 @@ def accept_credential(request, invite_id):
     )
 
 
-
 class FetchCredentials(ClientProtectedResourceMixin, View):
     required_scopes = ['user_fetch']
 
     def get(self, request, *args, **kwargs):
         credentials = Credential.objects.all().values('name', 'slug')
-        results = {"credentials":  list(crendentials)}
+        results = {"credentials":  list(credentials)}
         return JsonResponse(results)
