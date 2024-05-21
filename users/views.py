@@ -349,7 +349,7 @@ class GetDemoUsers(ClientProtectedResourceMixin, APIView):
         return JsonResponse(results)
 
 
-class FilterUsers(ClientProtectedResourceMixin, View):
+class FilterUsers(ClientProtectedResourceMixin, APIView):
     required_scopes = ['user_fetch']
 
     def get(self, request, *args, **kwargs):
