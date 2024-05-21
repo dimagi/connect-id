@@ -55,7 +55,7 @@ class UserKey(models.Model):
         if not user_key:
             user_key = UserKey(user=user)
             bin_key = os.urandom(32)
-            user_key.key = base64.b64encode(bin_key)
+            user_key.key = base64.b64encode(bin_key).decode('utf-8')
         user_key.save()
         return user_key
 

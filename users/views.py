@@ -13,7 +13,7 @@ from rest_framework.decorators import api_view, permission_classes
 from utils import get_ip
 from .const import TEST_NUMBER_PREFIX
 from .fcm_utils import create_update_device
-from .models import ConnectUser, PhoneDevice, RecoveryStatus
+from .models import ConnectUser, PhoneDevice, RecoveryStatus, UserKey
 
 
 # Create your views here.
@@ -41,7 +41,7 @@ def register(request):
     if data.get('fcm_token'):
         create_update_device(user, data['fcm_token'])
     db_key = UserKey.get_or_create_key_for_user(user)
-    return JsonResponse({"secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key})
+    return JsonResponse({"secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key})
 
 
 def login(request):
@@ -199,7 +199,7 @@ def confirm_password(request):
         return HttpResponse(status=401)
     status.delete()
     db_key = UserKey.get_or_create_key_for_user(user)
-    return JsonResponse({"name": user.name, "username": user.username, "secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key})
+    return JsonResponse({"name": user.name, "username": user.username, "secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key})
 
 
 @api_view(['POST'])
@@ -322,7 +322,7 @@ def confirm_recovery_pin(request):
     status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
     status.save()
     db_key = UserKey.get_or_create_key_for_user(user)
-    return JsonResponse({"name": user.name, "username": user.username, "secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key})
+    return JsonResponse({"name": user.name, "username": user.username, "secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key})
 
 
 @api_view(['POST'])
