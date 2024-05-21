@@ -1,9 +1,11 @@
+from datetime import timedelta
 from secrets import token_hex
 
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse, JsonResponse
+from django.utils.timezone import now
 from django.views import View
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, permission_classes
@@ -12,7 +14,7 @@ from rest_framework.views import APIView
 from utils import get_ip
 from .const import TEST_NUMBER_PREFIX
 from .fcm_utils import create_update_device
-from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential
+from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
 
 
 # Create your views here.
@@ -30,6 +32,7 @@ def register(request):
     # skip validation if number starts with special prefix
     if not user_data.get("phone_number", "").startswith(TEST_NUMBER_PREFIX):
         u = ConnectUser(**user_data)
+        u.recovery_phone_validation_deadline = now().date() + timedelta(days=7)
         try:
             u.full_clean()
         except ValidationError as e:
@@ -38,7 +41,8 @@ def register(request):
     user = ConnectUser.objects.create_user(**user_data)
     if data.get('fcm_token'):
         create_update_device(user, data['fcm_token'])
-    return HttpResponse()
+    db_key = UserKey.get_or_create_key_for_user(user)
+    return JsonResponse({"secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key})
 
 
 def login(request):
@@ -47,6 +51,7 @@ def login(request):
 
 def test(request):
     return HttpResponse('pong')
+
 
 @api_view(['POST'])
 def validate_phone(request):
@@ -96,6 +101,7 @@ def confirm_secondary_otp(request):
     if not verified:
         return JsonResponse({"error": "OTP token is incorrect"}, status=401)
     user.recovery_phone_validated = True
+    user.recovery_phone_validation_deadline = None
     user.save()
     return HttpResponse()
 
@@ -193,7 +199,8 @@ def confirm_password(request):
     if not check_password(password, user.password):
         return HttpResponse(status=401)
     status.delete()
-    return JsonResponse({"name": user.name, "username": user.username})
+    db_key = UserKey.get_or_create_key_for_user(user)
+    return JsonResponse({"name": user.name, "username": user.username, "secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key})
 
 
 @api_view(['POST'])
@@ -315,7 +322,8 @@ def confirm_recovery_pin(request):
         return JsonResponse({"error": "Recovery PIN is incorrect"}, status=401)
     status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
     status.save()
-    return JsonResponse({"name": user.name, "username": user.username})
+    db_key = UserKey.get_or_create_key_for_user(user)
+    return JsonResponse({"name": user.name, "username": user.username, "secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key})
 
 
 @api_view(['POST'])

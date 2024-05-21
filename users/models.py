@@ -1,3 +1,6 @@
+import base64
+import os
+
 from uuid import uuid4
 
 from django.contrib.auth.hashers import check_password, make_password
@@ -21,9 +24,10 @@ class ConnectUser(AbstractUser):
     name = models.TextField(max_length=150, blank=True)
     dob = models.DateField(blank=True, null=True)
     ip_address = models.GenericIPAddressField(blank=True, null=True)
-    # this is effectively a password so store use set_recovery_pin to
+    # this is effectively a password so use set_recovery_pin to
     # store a hashed value rather than setting it directly
     recovery_pin = models.CharField(null=True, blank=True, max_length=128)
+    recovery_phone_validation_deadline = models.DateField(blank=True, null=True)
 
     # removed from base class
     first_name = None
@@ -37,6 +41,23 @@ class ConnectUser(AbstractUser):
 
     def check_recovery_pin(self, pin):
         return check_password(pin, self.recovery_pin)
+
+
+class UserKey(models.Model):
+    user = models.ForeignKey(ConnectUser, on_delete=models.CASCADE)
+    key = models.CharField(max_length=60)
+    valid = models.BooleanField(default=True)
+    created = models.DateTimeField(auto_now_add=True)
+
+    @classmethod
+    def get_or_create_key_for_user(cls, user):
+        user_key = cls.objects.filter(user=user, valid=True).first()
+        if not user_key:
+            user_key = UserKey(user=user)
+            bin_key = os.urandom(32)
+            user_key.key = base64.b64encode(bin_key).decode('utf-8')
+        user_key.save()
+        return user_key
 
 
 class PhoneDevice(SideChannelDevice):
