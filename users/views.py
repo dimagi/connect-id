@@ -7,6 +7,7 @@ from django.http import HttpResponse, JsonResponse
 from django.views import View
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.views import APIView
 
 from utils import get_ip
 from .const import TEST_NUMBER_PREFIX
@@ -339,7 +340,7 @@ class FetchUsers(ClientProtectedResourceMixin, View):
         return JsonResponse(results)
 
 
-class GetDemoUsers(ClientProtectedResourceMixin, View):
+class GetDemoUsers(ClientProtectedResourceMixin, APIView):
     required_scopes = ['user_fetch']
 
     def get(self, request, *args, **kwargs):
@@ -352,8 +353,8 @@ class FilterUsers(ClientProtectedResourceMixin, View):
     required_scopes = ['user_fetch']
 
     def get(self, request, *args, **kwargs):
-        country = request.data["country"]
-        credential = request.data["credential"]
+        country = request.query_params.get("country")
+        credential = request.query_params.get("credential")
         users = UserCredential.objects.filter(credential__slug=credential, user__phone_number__startswith=country, accepted=True).select_related('user')
         user_list = [{"username": u.user.username, "phone_number": u.user.phone_number, "name": u.user.name} for u in users]
         result = {"found_users": user_list}
@@ -361,7 +362,7 @@ class FilterUsers(ClientProtectedResourceMixin, View):
         
 
 
-class AddCredential(ClientProtectedResourceMixin, View):
+class AddCredential(ClientProtectedResourceMixin, APIView):
     required_scopes = ['user_fetch']
 
     def post(self, request, *args, **kwargs):
@@ -370,7 +371,7 @@ class AddCredential(ClientProtectedResourceMixin, View):
         org_slug = request.data["organization"]
         credential_name = request.data["credential"]
         slug = f"{credential_name.lower().replace(' ', '_')}_{org_slug}"
-        credential, _ = Credential.objects.get_or_create(name=credential_name, organization_slug=org_slug, defaults={"credential_slug": slug})
+        credential, _ = Credential.objects.get_or_create(name=credential_name, organization_slug=org_slug, defaults={"slug": slug})
         users = ConnectUser.object.filter(phone_number__in=phone_numbers)
         for u in users:
             UserCredential.add_credential(user, credential, request)
@@ -398,4 +399,5 @@ class FetchCredentials(ClientProtectedResourceMixin, View):
 
     def get(self, request, *args, **kwargs):
         credentials = Credential.objects.all().values('name', 'slug')
-        return JsonResponse(list(credentials))
+        results = {"credentials":  list(crendentials)}
+        return JsonResponse(results)

@@ -71,7 +71,7 @@ class RecoveryStatus(models.Model):
 class Credential(models.Model):
     name = models.CharField(max_length=300)
     slug = models.CharField(max_length=100)
-    organization_slug = models.IntegerField()
+    organization_slug = models.CharField(max_length=255)
 
 
 class UserCredential(models.Model):

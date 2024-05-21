@@ -26,7 +26,7 @@ class Migration(migrations.Migration):
                 ),
                 ("name", models.CharField(max_length=300)),
                 ("slug", models.CharField(max_length=100)),
-                ("organization_slug", models.IntegerField()),
+                ("organization_slug", models.CharField(max_length=255)),
             ],
         ),
         migrations.CreateModel(
