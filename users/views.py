@@ -382,7 +382,7 @@ class AddCredential(APIView):
         slug = f"{credential_name.lower().replace(' ', '_')}_{org_slug}"
         credential, _ = Credential.objects.get_or_create(name=credential_name, organization_slug=org_slug, defaults={"slug": slug})
         users = ConnectUser.objects.filter(phone_number__in=phone_numbers)
-        for u in users:
+        for user in users:
             UserCredential.add_credential(user, credential, request)
         return HttpResponse()
 
