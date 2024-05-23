@@ -106,12 +106,13 @@ class UserCredential(models.Model):
 
     @classmethod
     def add_credential(cls, user, credential, request):
-        user_credential = cls.objects.create(user=u, credential=credential)
-        location = reverse("users:accept_credential", args=(user_credential.invite_id,))
-        url = request.build_absolute_uri(location)
-        message = (
-            f"You have been given credential '{credential.name}'."
-            "Please click the following link to accept "
-        )
-        sender = get_sms_sender(user.phone_number.country_code)
-        send_sms(user.phone_number.as_e164, message, sender)
+        user_credential, created = cls.objects.get_or_create(user=user, credential=credential)
+        if created:
+            location = reverse("accept_credential", args=(user_credential.invite_id,))
+            url = request.build_absolute_uri(location)
+            message = (
+                f"You have been given credential '{credential.name}'."
+                "Please click the following link to accept "
+            )
+            sender = get_sms_sender(user.phone_number.country_code)
+            send_sms(user.phone_number.as_e164, message, sender)
