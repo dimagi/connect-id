@@ -25,4 +25,8 @@ urlpatterns = [
     path('demo_users', views.GetDemoUsers.as_view(), name='demo_users'),
     path('recover/confirm_pin', views.confirm_recovery_pin, name='confirm_recovery_pin'),
     path('set_recovery_pin', views.set_recovery_pin, name='set_recovery_pin'),
+    path('filter_users', views.FilterUsers.as_view(), name='filter_users'),
+    path('add_credential', views.AddCredential.as_view(), name='add_credential'),
+    path('accept_credential/<slug:invite_id>', views.accept_credential, name='accept_credential'),
+    path('fetch_credentials', views.FetchCredentials.as_view(), name='fetch_credentials'),
 ]

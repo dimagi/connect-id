@@ -9,11 +9,13 @@ from django.utils.timezone import now
 from django.views import View
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.views import APIView
 
 from utils import get_ip
+from utils.rest_framework import ClientProtectedResourceAuth
 from .const import TEST_NUMBER_PREFIX
 from .fcm_utils import create_update_device
-from .models import ConnectUser, PhoneDevice, RecoveryStatus, UserKey
+from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
 
 
 # Create your views here.
@@ -353,4 +355,57 @@ class GetDemoUsers(ClientProtectedResourceMixin, View):
     def get(self, request, *args, **kwargs):
         demo_users = PhoneDevice.objects.filter(phone_number__startswith=TEST_NUMBER_PREFIX).values('phone_number', 'token')
         results = {"demo_users": list(demo_users)}
+        return JsonResponse(results)
+
+
+class FilterUsers(APIView):
+    authentication_classes = [ClientProtectedResourceAuth]
+
+    def get(self, request, *args, **kwargs):
+        country = request.query_params.get("country")
+        credential = request.query_params.get("credential")
+        users = UserCredential.objects.filter(credential__slug=credential, user__phone_number__startswith=country, accepted=True).select_related('user')
+        user_list = [{"username": u.user.username, "phone_number": u.user.phone_number, "name": u.user.name} for u in users]
+        result = {"found_users": user_list}
+        return JsonResponse(result)
+        
+
+
+class AddCredential(APIView):
+    authentication_classes = [ClientProtectedResourceAuth]
+
+    def post(self, request, *args, **kwargs):
+        phone_numbers = request.data["users"]
+        org_name = request.data["organization_name"]
+        org_slug = request.data["organization"]
+        credential_name = request.data["credential"]
+        slug = f"{credential_name.lower().replace(' ', '_')}_{org_slug}"
+        credential, _ = Credential.objects.get_or_create(name=credential_name, organization_slug=org_slug, defaults={"slug": slug})
+        users = ConnectUser.objects.filter(phone_number__in=phone_numbers)
+        for user in users:
+            UserCredential.add_credential(user, credential, request)
+        return HttpResponse()
+
+
+@api_view(['GET'])
+@permission_classes([])
+def accept_credential(request, invite_id):
+    try:
+        credential = UserCredential.objects.get(invite_id=invite_id)
+    except UserCredential.DoesNotExist:
+        return HttpResponse("This link is invalid. Please try again", status=404)
+    credential.accepted = True
+    credential.save()
+    return HttpResponse(
+        "Thank you for accepting this credential. You will now have access to opportunities open "
+        "to holders of this credential."
+    )
+
+
+class FetchCredentials(ClientProtectedResourceMixin, View):
+    required_scopes = ['user_fetch']
+
+    def get(self, request, *args, **kwargs):
+        credentials = Credential.objects.all().values('name', 'slug')
+        results = {"credentials":  list(credentials)}
         return JsonResponse(results)
