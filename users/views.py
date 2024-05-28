@@ -29,11 +29,11 @@ def register(request):
         if data.get(field):
             user_data[field] = data[field]
     user_data['ip_address'] = get_ip(request)
+    user_data['recovery_phone_validation_deadline'] = now().date() + timedelta(days=7)
 
     # skip validation if number starts with special prefix
     if not user_data.get("phone_number", "").startswith(TEST_NUMBER_PREFIX):
         u = ConnectUser(**user_data)
-        u.recovery_phone_validation_deadline = now().date() + timedelta(days=7)
         try:
             u.full_clean()
         except ValidationError as e:
