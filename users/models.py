@@ -112,7 +112,7 @@ class UserCredential(models.Model):
             url = request.build_absolute_uri(location)
             message = (
                 f"You have been given credential '{credential.name}'."
-                "Please click the following link to accept "
+                f"Please click the following link to accept {url}"
             )
             sender = get_sms_sender(user.phone_number.country_code)
             send_sms(user.phone_number.as_e164, message, sender)
