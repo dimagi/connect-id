@@ -327,6 +327,12 @@ def confirm_recovery_pin(request):
     return JsonResponse({"name": user.name, "username": user.username, "secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key})
 
 
+@api_view(['GET'])
+def get_db_key(request):
+    db_key = UserKey.get_or_create_key_for_user(request.user)
+    return JsonResponse({"db_key": db_key.key})
+
+
 @api_view(['POST'])
 def heartbeat(request):
     data = request.data
