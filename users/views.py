@@ -181,7 +181,8 @@ def confirm_secondary_recovery_otp(request):
         return JsonResponse({"error": "OTP token is incorrect"}, status=401)
     status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
     status.save()
-    return JsonResponse({"name": user.name, "username": user.username})
+    db_key = UserKey.get_or_create_key_for_user(user)
+    return JsonResponse({"name": user.name, "username": user.username, "db_key": db_key.key})
 
 
 @api_view(['POST'])
@@ -325,6 +326,12 @@ def confirm_recovery_pin(request):
     status.save()
     db_key = UserKey.get_or_create_key_for_user(user)
     return JsonResponse({"name": user.name, "username": user.username, "secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key})
+
+
+@api_view(['GET'])
+def fetch_db_key(request):
+    db_key = UserKey.get_or_create_key_for_user(request.user)
+    return JsonResponse({"db_key": db_key.key})
 
 
 @api_view(['POST'])
