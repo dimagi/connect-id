@@ -372,7 +372,7 @@ class FilterUsers(APIView):
         country = request.query_params.get("country")
         credential = request.query_params.get("credential")
         users = UserCredential.objects.filter(credential__slug=credential, user__phone_number__startswith=country, accepted=True).select_related('user')
-        user_list = [{"username": u.user.username, "phone_number": u.user.phone_number, "name": u.user.name} for u in users]
+        user_list = [{"username": u.user.username, "phone_number": u.user.phone_number.as_e164, "name": u.user.name} for u in users]
         result = {"found_users": user_list}
         return JsonResponse(result)
         
