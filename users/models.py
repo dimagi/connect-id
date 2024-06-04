@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import AbstractUser
+from django.contrib.sites.models import Site
 from django.db import models
 from django.urls import reverse
 from django_otp.models import SideChannelDevice
@@ -108,8 +109,9 @@ class UserCredential(models.Model):
     def add_credential(cls, user, credential, request):
         user_credential, created = cls.objects.get_or_create(user=user, credential=credential)
         if created:
+            domain = Site.objects.get_current().domain
             location = reverse("accept_credential", args=(user_credential.invite_id,))
-            url = request.build_absolute_uri(location)
+            url = f"https://{domain}{location}"
             message = (
                 f"You have been given credential '{credential.name}'."
                 f"Please click the following link to accept {url}"
