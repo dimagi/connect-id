@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'axes',
     'fcm_django',
+    'django.contrib.sites',
 ]
 
 MIDDLEWARE = [
@@ -212,6 +213,8 @@ FCM_DJANGO_SETTINGS = {
     "ONE_DEVICE_PER_USER": True,
     "DELETE_INACTIVE_DEVICES": False,
 }
+
+SITE_ID = 1
 
 from .localsettings import *
 
