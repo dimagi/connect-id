@@ -369,9 +369,16 @@ class FilterUsers(APIView):
     authentication_classes = [ClientProtectedResourceAuth]
 
     def get(self, request, *args, **kwargs):
-        country = request.query_params.get("country")
         credential = request.query_params.get("credential")
-        users = UserCredential.objects.filter(credential__slug=credential, user__phone_number__startswith=country, accepted=True).select_related('user')
+        country = request.query_params.get("country")
+        if not country and not credential:
+            return JsonResponse({"error": "you must have a country or a credential"}, status=400)
+        query = UserCredential.objects.filter(accepted=True)
+        if credential is not None:
+            query = query.filter(credential__slug=credential)
+        if country is not None:
+            query = query.filter(user__phone_number__startswith=country)
+        users = query.select_related("user")
         user_list = [{"username": u.user.username, "phone_number": u.user.phone_number.as_e164, "name": u.user.name} for u in users]
         result = {"found_users": user_list}
         return JsonResponse(result)
