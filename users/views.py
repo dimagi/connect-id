@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
 from django.views import View
+from django.db.models import Q
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.views import APIView
@@ -371,7 +372,7 @@ class FilterUsers(APIView):
     def get(self, request, *args, **kwargs):
         country = request.query_params.get("country")
         credential = request.query_params.get("credential")
-        users = UserCredential.objects.filter(credential__slug=credential, user__phone_number__startswith=country, accepted=True).select_related('user')
+        users = UserCredential.objects.filter(Q(credential__slug=credential) | Q(user__phone_number__startswith=country), accepted=True).select_related('user')
         user_list = [{"username": u.user.username, "phone_number": u.user.phone_number.as_e164, "name": u.user.name} for u in users]
         result = {"found_users": user_list}
         return JsonResponse(result)
