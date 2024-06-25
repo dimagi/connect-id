@@ -35,7 +35,9 @@ INSTALLED_APPS = [
     'messaging',
     'oauth2_provider',
     'rest_framework',
+    'axes',
     'fcm_django',
+    'django.contrib.sites',
 ]
 
 MIDDLEWARE = [
@@ -46,6 +48,14 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'axes.middleware.AxesMiddleware',
+    'utils.middleware.CurrentVersionMiddleware'
+]
+
+AUTHENTICATION_BACKENDS = [
+    # AxesStandaloneBackend should be the first backend in the AUTHENTICATION_BACKENDS list.
+    'axes.backends.AxesStandaloneBackend',
+    'django.contrib.auth.backends.ModelBackend',
 ]
 
 ROOT_URLCONF = 'connectid.urls'
@@ -168,10 +178,18 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/day',
         'user': '1000/day'
-    }
-
+    },
+    "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
+    "DEFAULT_VERSION": "1.0",
+    "ALLOWED_VERSIONS": ["1.0"]
 }
 
+
+AXES_COOLOFF_TIME = 6
+AXES_IPWARE_META_PRECEDENCE_ORDER = [
+    'HTTP_X_FORWARDED_FOR',
+    'REMOTE_ADDR',
+]
 
 LOGIN_URL = '/admin/login/'
 
@@ -195,6 +213,8 @@ FCM_DJANGO_SETTINGS = {
     "ONE_DEVICE_PER_USER": True,
     "DELETE_INACTIVE_DEVICES": False,
 }
+
+SITE_ID = 1
 
 from .localsettings import *
 
