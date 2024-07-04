@@ -3,6 +3,7 @@ import os
 
 from uuid import uuid4
 
+from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import AbstractUser
 from django.contrib.sites.models import Site
@@ -67,7 +68,7 @@ class PhoneDevice(SideChannelDevice):
 
     def generate_challenge(self):
         self.generate_token(valid_secs=600)
-        message = f"Your verification token from commcare connect is {self.token}"
+        message = f"Your verification token from commcare connect is {self.token} \n\n {settings.APP_HASH}"
         if not self.phone_number.raw_input.startswith(TEST_NUMBER_PREFIX):
             sender = get_sms_sender(self.phone_number.country_code)
             send_sms(self.phone_number.as_e164, message, sender)

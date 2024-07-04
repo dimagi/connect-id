@@ -216,6 +216,8 @@ FCM_DJANGO_SETTINGS = {
 
 SITE_ID = 1
 
+APP_HASH = "apphash"
+
 from .localsettings import *
 
 # Firebase
