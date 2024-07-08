@@ -8,6 +8,7 @@ from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
 from django.views import View
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
+from oauth2_provider.models import AccessToken, RefreshToken
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.views import APIView
 
@@ -15,7 +16,14 @@ from utils import get_ip
 from utils.rest_framework import ClientProtectedResourceAuth
 from .const import TEST_NUMBER_PREFIX
 from .fcm_utils import create_update_device
-from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
+from .models import (
+    ConnectUser,
+    Credential,
+    PhoneDevice,
+    RecoveryStatus,
+    UserCredential,
+    UserKey,
+)
 
 
 # Create your views here.
@@ -423,3 +431,39 @@ class FetchCredentials(ClientProtectedResourceMixin, View):
         credentials = Credential.objects.all().values('name', 'slug')
         results = {"credentials":  list(credentials)}
         return JsonResponse(results)
+
+
+@api_view(["POST"])
+@permission_classes([])
+def initiate_suspension(request):
+    username = request.POST.get("username")
+    phone_number = request.POST.get("phone_number")
+    try:
+        phone_device = PhoneDevice(phone_number=phone_number, user__username=username)
+    except PhoneDevice.DoesNotExist:
+        return JsonResponse({"success": False})
+    phone_device.generate_challenge()
+    return JsonResponse({"success": True})
+
+
+@api_view(["POST"])
+@permission_classes([])
+def confirm_suspension(request):
+    username = request.POST.get("username")
+    phone_number = request.POST.get("phone_number")
+    token = request.POST.get("token")
+    try:
+        phone_device = PhoneDevice(phone_number=phone_number, user__username=username)
+    except PhoneDevice.DoesNotExist:
+        return JsonResponse({"success": False})
+    user = phone_device.user
+    if phone_device.verify_token(token):
+        user.is_active = False
+        user.save()
+        tokens = list(AccessToken.objects.filter(user=user)) + list(
+            RefreshToken.objects.filter(user=user)
+        )
+        for token in tokens:
+            token.revoke()
+        return JsonResponse({"success": True})
+    return JsonResponse({"success": False})
