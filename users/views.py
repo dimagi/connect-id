@@ -435,7 +435,7 @@ class FetchCredentials(ClientProtectedResourceMixin, View):
 
 @api_view(["POST"])
 @permission_classes([])
-def initiate_suspension(request):
+def initiate_deactivation(request):
     username = request.POST.get("username")
     phone_number = request.POST.get("phone_number")
     try:
@@ -448,7 +448,7 @@ def initiate_suspension(request):
 
 @api_view(["POST"])
 @permission_classes([])
-def confirm_suspension(request):
+def confirm_deactivation(request):
     username = request.POST.get("username")
     phone_number = request.POST.get("phone_number")
     token = request.POST.get("token")

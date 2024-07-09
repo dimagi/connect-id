@@ -30,4 +30,6 @@ urlpatterns = [
     path('accept_credential/<slug:invite_id>', views.accept_credential, name='accept_credential'),
     path('fetch_credentials', views.FetchCredentials.as_view(), name='fetch_credentials'),
     path('fetch_db_key', views.fetch_db_key, name='fetch_db_key'),
+    path('recover/initiate_deactivation', views.initiate_deactivation, name='initiate_deactivation'),
+    path('recover/confirm_deactivation', views.confirm_deactivation, name='confirm_deactivation'),
 ]
