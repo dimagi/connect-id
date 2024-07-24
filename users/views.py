@@ -442,7 +442,8 @@ def initiate_deactivation(request):
         phone_device = PhoneDevice(phone_number=phone_number, user__username=username)
     except PhoneDevice.DoesNotExist:
         return JsonResponse({"success": False})
-    phone_device.generate_challenge()
+    user = phone_device.user
+    user.initiate_deactivation()
     return JsonResponse({"success": True})
 
 
@@ -451,13 +452,13 @@ def initiate_deactivation(request):
 def confirm_deactivation(request):
     username = request.POST.get("username")
     phone_number = request.POST.get("phone_number")
-    token = request.POST.get("token")
+    deactivation_token = request.POST.get("token")
     try:
         phone_device = PhoneDevice(phone_number=phone_number, user__username=username)
     except PhoneDevice.DoesNotExist:
         return JsonResponse({"success": False})
     user = phone_device.user
-    if phone_device.verify_token(token):
+    if user.deactivation_token == deactivation_token:
         user.is_active = False
         user.save()
         tokens = list(AccessToken.objects.filter(user=user)) + list(
