@@ -13,5 +13,4 @@ class ConnectOAuth2Validator(OAuth2Validator):
         claims["name"] = request.user.name
         claims["phone"] = request.user.phone_number.as_e164
         claims["is_active"] = request.user.is_active
-        print(claims)
         return claims
