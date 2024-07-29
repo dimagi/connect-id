@@ -1,4 +1,5 @@
 import base64
+from datetime import timedelta
 import os
 
 from uuid import uuid4
@@ -50,7 +51,7 @@ class ConnectUser(AbstractUser):
 
     def initiate_deactivation(self):
         self.deactivation_token = random_hex(7)
-        self.deactivation_token_valid_until = now()
+        self.deactivation_token_valid_until = now() + timedelta(seconds=600)
         message = (
             f"Your account deactivation request is pending. Please enter this token {self.deactivation_token} to confirm account deactivation."
             f"Warning: This action is irreversible. If you didn't request deactivation, please ignore this message. \n\n {settings.APP_HASH}"
