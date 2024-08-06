@@ -436,13 +436,17 @@ class FetchCredentials(ClientProtectedResourceMixin, View):
 @api_view(["POST"])
 @permission_classes([])
 def initiate_deactivation(request):
-    username = request.POST.get("username")
-    phone_number = request.POST.get("phone_number")
+    data = request.data
+    phone_number = data["phone_number"]
+    secret_key = data["secret_key"]
     try:
-        phone_device = PhoneDevice(phone_number=phone_number, user__username=username)
+        phone_device = PhoneDevice(phone_number=phone_number)
     except PhoneDevice.DoesNotExist:
         return JsonResponse({"success": False})
     user = phone_device.user
+    status = RecoveryStatus.objects.get(user=user)
+    if status.secret_key != secret_key:
+        return HttpResponse(status=401)
     user.initiate_deactivation()
     return JsonResponse({"success": True})
 
@@ -450,14 +454,18 @@ def initiate_deactivation(request):
 @api_view(["POST"])
 @permission_classes([])
 def confirm_deactivation(request):
-    username = request.POST.get("username")
-    phone_number = request.POST.get("phone_number")
-    deactivation_token = request.POST.get("token")
+    data = request.data
+    phone_number = data["phone_number"]
+    secret_key = data["secret_key"]
+    deactivation_token = data["token"]
     try:
-        phone_device = PhoneDevice(phone_number=phone_number, user__username=username)
+        phone_device = PhoneDevice(phone_number=phone_number)
     except PhoneDevice.DoesNotExist:
         return JsonResponse({"success": False})
     user = phone_device.user
+    status = RecoveryStatus.objects.get(user=user)
+    if status.secret_key != secret_key:
+        return HttpResponse(status=401)
     if user.deactivation_token == deactivation_token:
         user.is_active = False
         user.save()
