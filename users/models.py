@@ -61,6 +61,15 @@ class ConnectUser(AbstractUser):
             send_sms(self.phone_number.as_e164, message, sender)
         return message
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["phone_number"],
+                condition=models.Q(is_active=True),
+                name="phone_number_active_user",
+            )
+        ]
+
 
 class UserKey(models.Model):
     user = models.ForeignKey(ConnectUser, on_delete=models.CASCADE)
