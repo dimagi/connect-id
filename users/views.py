@@ -440,10 +440,9 @@ def initiate_deactivation(request):
     phone_number = data["phone_number"]
     secret_key = data["secret_key"]
     try:
-        phone_device = PhoneDevice(phone_number=phone_number)
-    except PhoneDevice.DoesNotExist:
+        user = ConnectUser.objects.get(phone_number=phone_number)
+    except ConnectUser.DoesNotExist:
         return JsonResponse({"success": False})
-    user = phone_device.user
     status = RecoveryStatus.objects.get(user=user)
     if status.secret_key != secret_key:
         return HttpResponse(status=401)
@@ -459,10 +458,9 @@ def confirm_deactivation(request):
     secret_key = data["secret_key"]
     deactivation_token = data["token"]
     try:
-        phone_device = PhoneDevice(phone_number=phone_number)
-    except PhoneDevice.DoesNotExist:
+        user = ConnectUser.objects.get(phone_number=phone_number)
+    except ConnectUser.DoesNotExist:
         return JsonResponse({"success": False})
-    user = phone_device.user
     status = RecoveryStatus.objects.get(user=user)
     if status.secret_key != secret_key:
         return HttpResponse(status=401)
