@@ -1,4 +1,5 @@
 import base64
+from datetime import timedelta
 import os
 
 from uuid import uuid4
@@ -9,14 +10,16 @@ from django.contrib.auth.models import AbstractUser
 from django.contrib.sites.models import Site
 from django.db import models
 from django.urls import reverse
+from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
 
+from django_otp.util import random_hex
 from phonenumber_field.modelfields import PhoneNumberField
 
 from utils import get_sms_sender, send_sms
 
 from .const import TEST_NUMBER_PREFIX
-# Create your models here.
+
 
 class ConnectUser(AbstractUser):
     phone_number = PhoneNumberField(unique=True)
@@ -30,6 +33,8 @@ class ConnectUser(AbstractUser):
     # store a hashed value rather than setting it directly
     recovery_pin = models.CharField(null=True, blank=True, max_length=128)
     recovery_phone_validation_deadline = models.DateField(blank=True, null=True)
+    deactivation_token = models.CharField(max_length=25, blank=True, null=True)
+    deactivation_token_valid_until = models.DateTimeField(blank=True, null=True)
 
     # removed from base class
     first_name = None
@@ -43,6 +48,27 @@ class ConnectUser(AbstractUser):
 
     def check_recovery_pin(self, pin):
         return check_password(pin, self.recovery_pin)
+
+    def initiate_deactivation(self):
+        self.deactivation_token = random_hex(7)
+        self.deactivation_token_valid_until = now() + timedelta(seconds=600)
+        message = (
+            f"Your account deactivation request is pending. Please enter this token {self.deactivation_token} to confirm account deactivation."
+            f"Warning: This action is irreversible. If you didn't request deactivation, please ignore this message. \n\n {settings.APP_HASH}"
+        )
+        if not self.phone_number.raw_input.startswith(TEST_NUMBER_PREFIX):
+            sender = get_sms_sender(self.phone_number.country_code)
+            send_sms(self.phone_number.as_e164, message, sender)
+        return message
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["phone_number"],
+                condition=models.Q(is_active=True),
+                name="phone_number_active_user",
+            )
+        ]
 
 
 class UserKey(models.Model):
