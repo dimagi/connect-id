@@ -8,6 +8,7 @@ from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
 from django.views import View
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
+from oauth2_provider.models import AccessToken, RefreshToken
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.views import APIView
 
@@ -15,7 +16,14 @@ from utils import get_ip
 from utils.rest_framework import ClientProtectedResourceAuth
 from .const import TEST_NUMBER_PREFIX
 from .fcm_utils import create_update_device
-from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
+from .models import (
+    ConnectUser,
+    Credential,
+    PhoneDevice,
+    RecoveryStatus,
+    UserCredential,
+    UserKey,
+)
 
 
 # Create your views here.
@@ -111,7 +119,7 @@ def confirm_secondary_otp(request):
 @permission_classes([])
 def recover_account(request):
     data = request.data
-    user = ConnectUser.objects.get(phone_number=data['phone'])
+    user = ConnectUser.objects.get(phone_number=data["phone"], is_active=True)
     device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
     device.generate_challenge()
     secret = token_hex()
@@ -128,7 +136,7 @@ def confirm_recovery_otp(request):
     data = request.data
     phone_number = data["phone"]
     secret_key = data["secret_key"]
-    user = ConnectUser.objects.get(phone_number=phone_number)
+    user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
     status = RecoveryStatus.objects.get(user=user)
     if status.secret_key != secret_key:
         return HttpResponse(status=401)
@@ -149,7 +157,7 @@ def recover_secondary_phone(request):
     data = request.data
     phone_number = data["phone"]
     secret_key = data["secret_key"]
-    user = ConnectUser.objects.get(phone_number=phone_number)
+    user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
     status = RecoveryStatus.objects.get(user=user)
     if status.secret_key != secret_key:
         return HttpResponse(status=401)
@@ -169,7 +177,7 @@ def confirm_secondary_recovery_otp(request):
     data = request.data
     phone_number = data["phone"]
     secret_key = data["secret_key"]
-    user = ConnectUser.objects.get(phone_number=phone_number)
+    user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
     status = RecoveryStatus.objects.get(user=user)
     if status.secret_key != secret_key:
         return HttpResponse(status=401)
@@ -191,7 +199,7 @@ def confirm_password(request):
     data = request.data
     phone_number = data["phone"]
     secret_key = data["secret_key"]
-    user = ConnectUser.objects.get(phone_number=phone_number)
+    user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
     status = RecoveryStatus.objects.get(user=user)
     if status.secret_key != secret_key:
         return HttpResponse(status=401)
@@ -211,7 +219,7 @@ def reset_password(request):
     data = request.data
     phone_number = data["phone"]
     secret_key = data["secret_key"]
-    user = ConnectUser.objects.get(phone_number=phone_number)
+    user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
     status = RecoveryStatus.objects.get(user=user)
     if status.secret_key != secret_key:
         return HttpResponse(status=401)
@@ -235,7 +243,7 @@ def phone_available(request):
     if not phone_number:
         return HttpResponse(status=400)
     try:
-        ConnectUser.objects.get(phone_number=phone_number)
+        ConnectUser.objects.get(phone_number=phone_number, is_active=True)
     except ConnectUser.DoesNotExist:
         return HttpResponse()
     else:
@@ -313,7 +321,7 @@ def confirm_recovery_pin(request):
     data = request.data
     phone_number = data["phone"]
     secret_key = data["secret_key"]
-    user = ConnectUser.objects.get(phone_number=phone_number)
+    user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
     status = RecoveryStatus.objects.get(user=user)
     if status.secret_key != secret_key:
         return HttpResponse(status=401)
@@ -351,7 +359,11 @@ class FetchUsers(ClientProtectedResourceMixin, View):
     def get(self, request, *args, **kwargs):
         numbers = request.GET.getlist('phone_numbers')
         results = {}
-        found_users = list(ConnectUser.objects.filter(phone_number__in=numbers).values('username', 'phone_number', 'name'))
+        found_users = list(
+            ConnectUser.objects.filter(phone_number__in=numbers, is_active=True).values(
+                "username", "phone_number", "name"
+            )
+        )
         results["found_users"] = found_users
         return JsonResponse(results)
 
@@ -377,7 +389,9 @@ class FilterUsers(APIView):
         if credential is not None:
             query = query.filter(credential__slug=credential)
         if country is not None:
-            query = query.filter(user__phone_number__startswith=country)
+            query = query.filter(
+                user__phone_number__startswith=country, user__is_active=True
+            )
         users = query.select_related("user")
         user_list = [{"username": u.user.username, "phone_number": u.user.phone_number.as_e164, "name": u.user.name} for u in users]
         result = {"found_users": user_list}
@@ -395,7 +409,9 @@ class AddCredential(APIView):
         credential_name = request.data["credential"]
         slug = f"{credential_name.lower().replace(' ', '_')}_{org_slug}"
         credential, _ = Credential.objects.get_or_create(name=credential_name, organization_slug=org_slug, defaults={"slug": slug})
-        users = ConnectUser.objects.filter(phone_number__in=phone_numbers)
+        users = ConnectUser.objects.filter(
+            phone_number__in=phone_numbers, is_active=True
+        )
         for user in users:
             UserCredential.add_credential(user, credential, request)
         return HttpResponse()
@@ -423,3 +439,46 @@ class FetchCredentials(ClientProtectedResourceMixin, View):
         credentials = Credential.objects.all().values('name', 'slug')
         results = {"credentials":  list(credentials)}
         return JsonResponse(results)
+
+
+@api_view(["POST"])
+@permission_classes([])
+def initiate_deactivation(request):
+    data = request.data
+    phone_number = data["phone_number"]
+    secret_key = data["secret_key"]
+    try:
+        user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
+    except ConnectUser.DoesNotExist:
+        return JsonResponse({"success": False})
+    status = RecoveryStatus.objects.get(user=user)
+    if status.secret_key != secret_key:
+        return HttpResponse(status=401)
+    user.initiate_deactivation()
+    return JsonResponse({"success": True})
+
+
+@api_view(["POST"])
+@permission_classes([])
+def confirm_deactivation(request):
+    data = request.data
+    phone_number = data["phone_number"]
+    secret_key = data["secret_key"]
+    deactivation_token = data["token"]
+    try:
+        user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
+    except ConnectUser.DoesNotExist:
+        return JsonResponse({"success": False})
+    status = RecoveryStatus.objects.get(user=user)
+    if status.secret_key != secret_key:
+        return HttpResponse(status=401)
+    if user.deactivation_token == deactivation_token:
+        user.is_active = False
+        user.save()
+        tokens = list(AccessToken.objects.filter(user=user)) + list(
+            RefreshToken.objects.filter(user=user)
+        )
+        for token in tokens:
+            token.revoke()
+        return JsonResponse({"success": True})
+    return JsonResponse({"success": False})
