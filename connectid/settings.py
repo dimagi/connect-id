@@ -110,45 +110,34 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'users.ConnectUser'
 
-LOG_DIR = BASE_DIR
-DJANGO_LOG_FILE = LOG_DIR / 'django.log'
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'django.server': {
-            '()': 'django.utils.log.ServerFormatter',
-            'format': '[{server_time}] {message}',
-            'style': '{',
-        }
-    },
-    'handlers': {
-        'file' : {
-            'level': 'INFO',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': DJANGO_LOG_FILE,
-            'maxBytes': 10 * 1024 * 1024,  # 10 MB
-            'backupCount': 20  # Backup 200 MB of logs
-        },
-        'console': {
-            'class': 'logging.StreamHandler',
-        },
-        'django.server': {
-            'level': 'INFO',
-            'class': 'logging.StreamHandler',
-            'formatter': 'django.server',
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "%(levelname)s %(asctime)s %(name)s %(message)s",
         },
     },
-    'loggers': {
-        'django': {
-            'handlers': ['file', 'console'],
-            'level': 'INFO',
-            'propagate': True,
+    "handlers": {
+        "console": {
+            "level": "DEBUG",
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
         },
-        'django.server': {
-            'handlers': ['django.server'],
-            'level': 'INFO',
-            'propagate': False,
+        "null": {
+            "class": "logging.NullHandler",
+        },
+    },
+    "root": {"level": "INFO", "handlers": ["console"]},
+    "django.template": {
+        "handlers": ["console"],
+        "level": env("DJANGO_TEMPLATE_LOG_LEVEL", default="WARN"),
+        "propagate": False,
+    },
+    "loggers": {
+        "django.security.DisallowedHost": {
+            "handlers": ["null"],
+            "propagate": False,
         },
     },
 }
@@ -178,8 +167,8 @@ LOGIN_URL = '/admin/login/'
 
 OAUTH2_PROVIDER = {
     "OIDC_ENABLED": True,
-    "OIDC_RSA_PRIVATE_KEY": """
-INSERT PRIVATE KEY HERE
+    "OIDC_RSA_PRIVATE_KEY": f"""
+{env("OAUTH2_PROVIDER_PRIVATE_KEY", default="Insert Private Key Here")}
 """,
     "SCOPES": {
         "openid": "OpenID Connect scope",
@@ -189,7 +178,7 @@ INSERT PRIVATE KEY HERE
     # ... any other settings you want
 }
 
-FCM_CREDENTIALS = None
+FCM_CREDENTIALS = env("FCM_CREDENTIALS", default=None)
 
 FCM_DJANGO_SETTINGS = {
     "DEFAULT_FIREBASE_APP": None,  # use the default app
@@ -208,23 +197,36 @@ DEBUG = env("DEBUG", default=False)
 
 # Database
 # https://docs.djangoproject.com/en/4.1/ref/settings/#databases
-
-DATABASES = {
-    "default": env.db(
-        "DATABASE_URL",
-        default="postgres:///connect",
-    ),
-}
+if env("RDS_HOSTNAME", default=""):
+    # For Prod
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": env("RDS_DB_NAME"),
+            "USER": env("RDS_USERNAME"),
+            "PASSWORD": env("RDS_PASSWORD"),
+            "HOST": env("RDS_HOSTNAME"),
+            "PORT": env("RDS_PORT"),
+        }
+    }
+else:
+    # For local
+    DATABASES = {
+        "default": env.db(
+            "DATABASE_URL",
+            default="postgres:///connect",
+        ),
+    }
 
 ALLOWED_HOSTS = ["127.0.0.1", "localhost"] + env.list(
     "DJANGO_ALLOWED_HOSTS", default=[]
 )
 
-TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID")
-TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN")
-TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE")
+TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default="")
+TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default="")
+TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default="")
 
-FCM_CREDENTIALS = env("FCM_CREDENTIALS", default=None)
+FCM_CREDENTIALS = env("FCM_CREDENTIALS", default={})
 
 # Firebase
 if FCM_CREDENTIALS:

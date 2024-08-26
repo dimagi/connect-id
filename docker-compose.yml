@@ -5,7 +5,7 @@ services:
     build: .
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
-      - .:/vendor/
+      - .:/app/
     ports:
       - "8000:8000"
     depends_on:
@@ -13,7 +13,7 @@ services:
     env_file:
       - ./docker.env
   db:
-    image: postgres:15
+    image: postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     environment:
@@ -22,6 +22,10 @@ services:
       - POSTGRES_DB=connect
     ports:
       - "5433:5432"
+    healthcheck:
+      test: pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}
+      interval: 2s
+      retries: 10
 
 volumes:
   postgres_data:
