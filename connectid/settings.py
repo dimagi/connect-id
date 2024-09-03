@@ -238,10 +238,8 @@ TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default="")
 TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default="")
 TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default="")
 
-FCM_CREDENTIALS = env("FCM_CREDENTIALS", default={})
-
 # Firebase
-if FCM_CREDENTIALS:
+if FCM_CREDENTIALS.get("project_id"):
     from firebase_admin import credentials, initialize_app
 
     creds = credentials.Certificate(FCM_CREDENTIALS)
