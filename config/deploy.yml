@@ -8,12 +8,12 @@ ssh:
 
 # Deploy to these servers.
 servers:
-  - 54.204.231.206
+  - 54.234.6.153
 
 registry:
   server: 037129986032.dkr.ecr.us-east-1.amazonaws.com
   username: AWS
-  password: <%= %x(./registry_password.sh) %>
+  password: <%= %x(./config/registry_password.sh) %>
 
 
 builder:

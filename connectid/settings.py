@@ -178,7 +178,19 @@ OAUTH2_PROVIDER = {
     # ... any other settings you want
 }
 
-FCM_CREDENTIALS = env("FCM_CREDENTIALS", default=None)
+FCM_CREDENTIALS = {
+    "type": "service_account",
+    "project_id": env("FCM_PROJECT_ID", default=""),
+    "private_key_id": env("FCM_PRIVATE_KEY_ID", default=""),
+    "private_key": env("FCM_PRIVATE_KEY", default=""),
+    "client_email": env("FCM_CLIENT_EMAIL", default=""),
+    "client_id": env("FCM_CLIENT_ID", default=""),
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "client_x509_cert_url": env("FCM_CLIENT_X509_CERT_URL", default=""),
+    "universe_domain": "googleapis.com"
+}
 
 FCM_DJANGO_SETTINGS = {
     "DEFAULT_FIREBASE_APP": None,  # use the default app
