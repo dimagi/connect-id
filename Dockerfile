@@ -29,6 +29,8 @@ RUN pip install -r requirements.txt
 COPY ./docker/* /
 RUN chmod +x /entrypoint /start*
 RUN chown django /entrypoint /start*
+RUN python /app/manage.py collectstatic --noinput
+RUN chown django:django -R staticfiles
 
 USER django
 
