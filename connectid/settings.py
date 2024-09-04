@@ -182,7 +182,7 @@ FCM_CREDENTIALS = {
     "type": "service_account",
     "project_id": env("FCM_PROJECT_ID", default=""),
     "private_key_id": env("FCM_PRIVATE_KEY_ID", default=""),
-    "private_key": env("FCM_PRIVATE_KEY", default=""),
+    "private_key": env("FCM_PRIVATE_KEY", default="").replace(r'\n', '\n'),
     "client_email": env("FCM_CLIENT_EMAIL", default=""),
     "client_id": env("FCM_CLIENT_ID", default=""),
     "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -239,7 +239,7 @@ TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default="")
 TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default="")
 
 # Firebase
-if FCM_CREDENTIALS.get("project_id"):
+if FCM_CREDENTIALS and FCM_CREDENTIALS.get("project_id"):
     from firebase_admin import credentials, initialize_app
 
     creds = credentials.Certificate(FCM_CREDENTIALS)
