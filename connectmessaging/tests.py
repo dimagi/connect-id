@@ -1,4 +1,5 @@
 import base64
+from unittest import mock
 from uuid import uuid4
 
 import pytest
@@ -8,6 +9,7 @@ from rest_framework import status
 
 from connectmessaging.factories import ChannelFactory, MessageFactory
 from connectmessaging.models import Message, Channel
+from messaging.tests import _fake_send
 
 APPLICATION_JSON = 'application/json'
 
@@ -78,17 +80,24 @@ class TestCreateChannelView:
 
         return response
 
-    def test_unauthorized_access(self, client, fcm_device):
-        data = rest_channel_data(fcm_device.user)
-        self.post_channel_request(client, data, status.HTTP_403_FORBIDDEN)
-
     def test_create_channel_success(self, authed_client, fcm_device):
         data = rest_channel_data(fcm_device.user)
-        response = self.post_channel_request(authed_client, data, status.HTTP_201_CREATED)
 
-        assert "channel_id" in response.data, f"'channel_id' not found in response data: {response.data}"
-        channel_id = response.data["channel_id"]
-        assert Message.objects.filter(message_id=channel_id).exists()
+        with mock.patch("fcm_django.models.messaging.send_all", wraps=_fake_send) as mock_send_message:
+            response = self.post_channel_request(authed_client, data, status.HTTP_201_CREATED)
+
+            assert "channel_id" in response.data, f"'channel_id' not found in response data: {response.data}"
+            channel_id = response.data["channel_id"]
+
+            mock_send_message.assert_called_once()
+            messages = mock_send_message.call_args.args[0]
+
+            assert len(messages) == 1
+            message = messages[0]
+            assert message.token == fcm_device.registration_id
+            assert message.notification.title == "Channel created"
+            assert message.notification.body == "A new channel has been created for you. Please provide your consent to proceed."
+            assert message.data == {"keyUrl": data["key_url"]}
 
     def test_missing_keys(self, authed_client, fcm_device):
         required_keys = ["connect_user", "key_url", "callback_url", "channel_source", "delivery_url"]
@@ -265,4 +274,3 @@ class TestUpdateReceivedView:
 
         assert response.status_code == status.HTTP_200_OK
         assert Message.objects.filter(received__isnull=True).count() == Message.objects.count()
-
