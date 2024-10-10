@@ -22,7 +22,7 @@ from .const import TEST_NUMBER_PREFIX
 
 
 class ConnectUser(AbstractUser):
-    phone_number = PhoneNumberField(unique=True)
+    phone_number = PhoneNumberField()
     phone_validated = models.BooleanField(default=False)
     recovery_phone = PhoneNumberField(blank=True)
     recovery_phone_validated = models.BooleanField(default=False)
@@ -50,7 +50,7 @@ class ConnectUser(AbstractUser):
         return check_password(pin, self.recovery_pin)
 
     def initiate_deactivation(self):
-        self.deactivation_token = random_hex(7)
+        self.deactivation_token = str(random_hex(7)[:7]).upper()
         self.deactivation_token_valid_until = now() + timedelta(seconds=600)
         self.save()
         message = (
