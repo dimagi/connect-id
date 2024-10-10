@@ -50,7 +50,7 @@ class ConnectUser(AbstractUser):
         return check_password(pin, self.recovery_pin)
 
     def initiate_deactivation(self):
-        self.deactivation_token = random_hex(7)
+        self.deactivation_token = str(random_hex(7)[:7]).upper()
         self.deactivation_token_valid_until = now() + timedelta(seconds=600)
         self.save()
         message = (
