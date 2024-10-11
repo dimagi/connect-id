@@ -15,6 +15,9 @@ class ChannelFactory(DjangoModelFactory):
     channel_id = factory.LazyFunction(uuid4)
     user_consent = True
     connect_user = factory.SubFactory(UserFactory)
+    delivery_url = factory.Faker("url")
+    callback_url = factory.Faker("url")
+    key_url = factory.Faker("url")
 
 
 class MessageFactory(DjangoModelFactory):
@@ -23,6 +26,6 @@ class MessageFactory(DjangoModelFactory):
 
     message_id = factory.LazyFunction(uuid4)
     channel = factory.SubFactory(ChannelFactory)
-    content = factory.Faker('binary', length=200)
+    content = factory.Faker("binary", length=200)
     timestamp = factory.LazyFunction(timezone.now)
     received = None

@@ -1,9 +1,11 @@
-import requests
+from collections import defaultdict
+
 from django.db.models import Prefetch
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from rest_framework import status, views
 from rest_framework.authentication import BasicAuthentication
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from messaging.serializers import Message as Msg
@@ -11,15 +13,12 @@ from messaging.views import send_bulk_message
 from utils.rest_framework import ClientProtectedResourceAuth
 from .models import Channel, Message
 from .serializers import ChannelSerializer, MessageSerializer
-
-
-class CommCareHQAPIException(Exception):
-    pass
+from .task import make_request_to_service
 
 
 def is_request_from_hq(request):
     host = request.META.get("HTTP_HOST")
-    return host == "'commcarehq.org'"
+    return host == "commcarehq.org"
 
 
 class CreateChannelView(views.APIView):
@@ -44,31 +43,33 @@ class CreateChannelView(views.APIView):
 
 
 class SendMessageView(views.APIView):
-
     # Will be called from mobile and other services.
     authentication_classes = [
-        BasicAuthentication,
-        OAuth2Authentication,
         ClientProtectedResourceAuth,
+        BasicAuthentication,
     ]
 
     def post(self, request, *args, **kwargs):
         serializer = MessageSerializer(data=request.data)
         if serializer.is_valid():
-            channel = serializer.validated_data.get("channel")
-            if not Channel.objects.filter(
-                channel_id=channel.channel_id, user_consent=True
-            ).exists():
-                return Response(
-                    {"error": "Consent is required for this channel"},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
 
             message = serializer.save()
+            channel = message.channel
+            message_to_send = Msg(
+                usernames=[channel.connect_user.username],
+                data={"message_id": message.message_id, "content": message.content},
+            )
 
             if is_request_from_hq(request):
-                send_bulk_message(message)
+                send_bulk_message(message_to_send)
             else:
+                if not Channel.objects.filter(
+                    channel_id=channel.channel_id, user_consent=True
+                ).exists():
+                    return Response(
+                        {"error": "Consent is required for this channel."},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
                 make_request_to_service(channel.delivery_url, json_data=message)
 
             return Response(
@@ -78,7 +79,7 @@ class SendMessageView(views.APIView):
 
 
 class RetrieveMessageView(views.APIView):
-    def post(self, request, *args, **kwargs):
+    def get(self, request, *args, **kwargs):
         user = request.user
         channels = (
             Channel.objects.filter(connect_user=user)
@@ -108,60 +109,69 @@ class UpdateConsentView(views.APIView):
         channel_id = request.data.get("channel")
         consent = request.data.get("consent")
 
-        try:
-            channel = Channel.objects.get(channel_id=channel_id)
-            channel.user_consent = consent
-            channel.save()
+        if channel_id is None or consent is None:
+            raise ValidationError("Both 'channel' and 'consent' fields are required.")
 
-            #: TO-DO update the url
-            url = "CONSENT_URL"
-            json = {
-                "channel_id": str(channel.channel_id),
-                "consent": str(channel.user_consent),
-            }
-            make_request_to_service(url, json)
+        channel = get_object_or_404(Channel, channel_id=channel_id)
 
-            return Response(status=status.HTTP_200_OK)
-        except Channel.DoesNotExist:
-            return Response(
-                {"error": "Channel not found"}, status=status.HTTP_404_NOT_FOUND
-            )
+        channel.user_consent = consent
+        channel.save()
+
+        #: TO-DO update the url
+        url = "CONSENT_URL"
+        json_data = {
+            "channel_id": str(channel.channel_id),
+            "consent": str(channel.user_consent),
+        }
+        make_request_to_service(url=url, json_data=json_data)
+
+        return Response(status=status.HTTP_200_OK)
 
 
 class UpdateReceivedView(views.APIView):
     def post(self, request, *args, **kwargs):
         message_ids = request.data.get("messages", [])
 
-        messages = Message.objects.filter(message_id__in=message_ids)
+        messages = (
+            Message.objects.select_for_update()
+            .filter(message_id__in=message_ids)
+            .select_related("channel")
+        )
 
+        if not messages.exists():
+            return Response(status=status.HTTP_200_OK)
+
+        current_time = timezone.now()
+        messages.update(received=current_time)
+
+        # Group messages by their channel
+        channel_messages = defaultdict(lambda: {"messages": [], "delivery_url": None})
         for message in messages:
-            message.received = timezone.now()
+            channel_id = str(message.channel.channel_id)
 
-        Message.objects.bulk_update(messages, ["received"])
+            channel_messages[channel_id]["messages"].append(
+                {
+                    "message_id": str(message.message_id),
+                    "received": str(current_time),
+                }
+            )
 
-        if messages:
+            if channel_messages[channel_id]["delivery_url"] is None:
+                channel_messages[channel_id][
+                    "delivery_url"
+                ] = message.channel.delivery_url
+
+        # Make request for each channel's delivery_url
+        for channel_id, data in channel_messages.items():
+            delivery_url = data["delivery_url"]
+            messages = data["messages"]
+
             make_request_to_service(
-                messages.first().channel.delivery_url,
-                json_data=[
-                    {
-                        "message_id": message.message_id,
-                        "received": str(message.received),
-                    }
-                    for message in messages
-                ],
+                url=delivery_url,
+                json_data={
+                    "channel": channel_id,
+                    "messages": messages,
+                },
             )
 
         return Response(status=status.HTTP_200_OK)
-
-
-def make_request_to_service(url, json_data):
-    #: TO-DO add authorization.
-    headers = {"Content-Type": "application/json"}
-    try:
-        response = requests.post(url, json=json_data, headers=headers)
-        response.raise_for_status()
-        return response
-    except requests.exceptions.RequestException as e:
-        return CommCareHQAPIException(
-            {"status": "error", "message": str(e)},
-        )
