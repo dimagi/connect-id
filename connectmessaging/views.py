@@ -50,30 +50,37 @@ class SendMessageView(views.APIView):
     ]
 
     def post(self, request, *args, **kwargs):
-        serializer = MessageSerializer(data=request.data)
+        data = None
+        if isinstance(request.data, list):
+            data = request.data
+        else:
+            data = [request.data]
+
+        serializer = MessageSerializer(data=data, many=True)
         if serializer.is_valid():
+            messages = serializer.save()
+            for message in messages:
+                channel = message.channel
+                message_to_send = Msg(
+                    usernames=[channel.connect_user.username],
+                    data={"message_id": message.message_id, "content": message.content},
+                )
 
-            message = serializer.save()
-            channel = message.channel
-            message_to_send = Msg(
-                usernames=[channel.connect_user.username],
-                data={"message_id": message.message_id, "content": message.content},
-            )
-
-            if is_request_from_hq(request):
-                send_bulk_message(message_to_send)
-            else:
-                if not Channel.objects.filter(
-                    channel_id=channel.channel_id, user_consent=True
-                ).exists():
-                    return Response(
-                        {"error": "Consent is required for this channel."},
-                        status=status.HTTP_403_FORBIDDEN,
-                    )
-                make_request_to_service(channel.delivery_url, json_data=message)
+                if is_request_from_hq(request):
+                    send_bulk_message(message_to_send)
+                else:
+                    if not Channel.objects.filter(
+                            channel_id=channel.channel_id, user_consent=True
+                    ).exists():
+                        return Response(
+                            {"error": "Consent is required for this channel."},
+                            status=status.HTTP_403_FORBIDDEN,
+                        )
+                    make_request_to_service(channel.delivery_url, json_data=message)
 
             return Response(
-                {"message_id": str(message.message_id)}, status=status.HTTP_201_CREATED
+                {"message_id": [str(message.message_id) for message in messages]},
+                status=status.HTTP_201_CREATED
             )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

@@ -48,7 +48,7 @@ def channel(user, consent=True):
 def rest_channel_data(user=None, consent=False):
     return {
         "user_consent": consent,
-        "connect_user": user.id if user else None,
+        "connect_user": str(user.id) if user else None,
         "channel_source": "hq project space",
         "key_url": "https://example.com/key",
         "callback_url": "https://example.com/callback",
@@ -57,7 +57,8 @@ def rest_channel_data(user=None, consent=False):
 
 
 def rest_message(channel_id=None):
-    return {"channel": channel_id, "content": b"Hello, World!"}
+    content = base64.b64encode(b"Hello, World!").decode('utf-8')
+    return {"channel": str(channel_id) if channel_id else None, "content": content}
 
 
 @pytest.mark.django_db
@@ -71,12 +72,12 @@ class TestCreateChannelView:
         response = client.post(url, data=data, content_type=APPLICATION_JSON)
 
         assert (
-            response.status_code == expected_status
+                response.status_code == expected_status
         ), f"Expected status {expected_status}, but got {response.status_code} - {response.data}"
 
         if expected_status == status.HTTP_400_BAD_REQUEST and expected_error_field:
             assert (
-                expected_error_field in response.data
+                    expected_error_field in response.data
             ), f"'{expected_error_field}' field should be in response errors: {response.data}"
 
         return response
@@ -85,14 +86,14 @@ class TestCreateChannelView:
         data = rest_channel_data(fcm_device.user)
 
         with mock.patch(
-            "fcm_django.models.messaging.send_all", wraps=_fake_send
+                "fcm_django.models.messaging.send_all", wraps=_fake_send
         ) as mock_send_message:
             response = self.post_channel_request(
                 authed_client, data, status.HTTP_201_CREATED
             )
 
             assert (
-                "channel_id" in response.data
+                    "channel_id" in response.data
             ), f"'channel_id' not found in response data: {response.data}"
             channel_id = response.data["channel_id"]
 
@@ -104,8 +105,8 @@ class TestCreateChannelView:
             assert message.token == fcm_device.registration_id
             assert message.notification.title == "Channel created"
             assert (
-                message.notification.body
-                == "A new channel has been created for you. Please provide your consent to proceed."
+                    message.notification.body
+                    == "A new channel has been created for you. Please provide your consent to proceed."
             )
             assert message.data == {"keyUrl": data["key_url"]}
 
@@ -136,12 +137,12 @@ class TestSendMessageView:
         channel.refresh_from_db()
 
         with patch(
-            "connectmessaging.views.make_request_to_service"
+                "connectmessaging.views.make_request_to_service"
         ) as mock_make_request:
             response = auth_device.post(self.url, data)
 
             assert (
-                response.status_code == status.HTTP_403_FORBIDDEN
+                    response.status_code == status.HTTP_403_FORBIDDEN
             ), f"Expected status {status.HTTP_403_FORBIDDEN}, but got {response.status_code}."
 
             mock_make_request.assert_not_called()
@@ -150,18 +151,18 @@ class TestSendMessageView:
         data = rest_message(channel.channel_id)
 
         with patch(
-            "connectmessaging.views.make_request_to_service"
+                "connectmessaging.views.make_request_to_service"
         ) as mock_make_request:
             response = auth_device.post(self.url, data)
 
             assert (
-                response.status_code == status.HTTP_201_CREATED
+                    response.status_code == status.HTTP_201_CREATED
             ), f"Expected status {status.HTTP_201_CREATED}, but got {response.status_code}."
             assert (
-                "message_id" in response.data
+                    "message_id" in response.data
             ), "Expected 'message_id' in response data, but it was missing."
 
-            message_id = response.data["message_id"]
+            message_id = response.data["message_id"][0]
             assert Message.objects.filter(message_id=message_id).exists()
 
             mock_make_request.assert_called_once_with(
@@ -177,19 +178,18 @@ class TestSendMessageView:
         headers = {"HTTP_HOST": "commcarehq.org"}
 
         with mock.patch(
-            "connectmessaging.views.send_bulk_message"
+                "connectmessaging.views.send_bulk_message"
         ) as mock_send_bulk_message:
             response = authed_client.post(self.url, data, **headers)
 
-            # Assert the response
             assert (
-                response.status_code == status.HTTP_201_CREATED
+                    response.status_code == status.HTTP_201_CREATED
             ), f"Expected status {status.HTTP_201_CREATED}, but got {response.status_code}."
             assert (
-                "message_id" in response.data
+                    "message_id" in response.data
             ), "Expected 'message_id' in response data, but it was missing."
 
-            message_id = response.data["message_id"]
+            message_id = response.data["message_id"][0]
             db_msg = Message.objects.get(message_id=message_id)
             assert db_msg
 
@@ -203,6 +203,44 @@ class TestSendMessageView:
 
             mock_send_bulk_message.assert_called_once_with(message_to_send)
 
+    def test_send_message_from_hq_multiples(self, authed_client, channel):
+        channel.delivery_url = "www.commcarehq.org/a/domain/connect_incoming"
+        channel.save()
+        channel.refresh_from_db()
+
+        data = [rest_message(channel.channel_id), rest_message(channel.channel_id)]
+        headers = {"HTTP_HOST": "commcarehq.org", "CONTENT_TYPE": "application/json"}
+
+        with mock.patch("connectmessaging.views.send_bulk_message") as mock_send_bulk_message:
+            response = authed_client.post(self.url, data=json.dumps(data), content_type="application/json", **headers)
+
+            assert (
+                    response.status_code == status.HTTP_201_CREATED
+            ), f"Expected status {status.HTTP_201_CREATED}, but got {response.status_code}."
+            assert (
+                    "message_id" in response.data
+            ), "Expected 'message_id' in response data, but it was missing."
+
+            message_ids = response.data["message_id"]
+            assert len(message_ids) == 2, f"Expected 2 message IDs, but got {len(message_ids)}"
+
+            assert mock_send_bulk_message.call_count == 2, (f"Expected send_bulk_message to be called 2 "
+                                                            f"times, but it was called {mock_send_bulk_message.call_count} times.")
+
+            expected_calls = []
+            for message_id in message_ids:
+                db_msg = Message.objects.get(message_id=message_id)
+                assert db_msg
+                expected_calls.append(call(Msg(
+                    usernames=[channel.connect_user.username],
+                    data={
+                        "message_id": db_msg.message_id,
+                        "content": db_msg.content,
+                    },
+                )))
+
+            mock_send_bulk_message.assert_has_calls(expected_calls, any_order=True)
+
 
 @pytest.mark.django_db
 class TestRetrieveMessagesView:
@@ -215,7 +253,7 @@ class TestRetrieveMessagesView:
         response = auth_device.get(self.url)
 
         assert (
-            response.status_code == status.HTTP_200_OK
+                response.status_code == status.HTTP_200_OK
         ), f"Expected status code 200, but got {response.status_code}"
         assert "channels" in response.data, "Response is missing 'channels' key"
         assert "messages" in response.data, "Response is missing 'messages' key"
@@ -243,7 +281,7 @@ class TestRetrieveMessagesView:
         response = auth_device.get(self.url)
 
         assert (
-            response.status_code == status.HTTP_200_OK
+                response.status_code == status.HTTP_200_OK
         ), f"Expected status code 200, but got {response.status_code}"
         assert "channels" in response.data, "Response is missing 'channels' key"
         assert "messages" in response.data, "Response is missing 'messages' key"
@@ -258,7 +296,7 @@ class TestRetrieveMessagesView:
         response = auth_device.get(self.url)
 
         assert (
-            response.status_code == status.HTTP_200_OK
+                response.status_code == status.HTTP_200_OK
         ), f"Expected status code 200, but got {response.status_code}"
         assert len(response.data["channels"]) == 5, "Expected 5 channels"
         assert len(response.data["messages"]) == 25, "Expected 25 messages"
@@ -270,7 +308,7 @@ class TestUpdateConsentView:
 
     def test_consent(self, auth_device, channel, consent=False):
         with patch(
-            "connectmessaging.views.make_request_to_service"
+                "connectmessaging.views.make_request_to_service"
         ) as mock_make_request:
             data = {
                 "channel": str(channel.channel_id),
@@ -282,12 +320,12 @@ class TestUpdateConsentView:
             )
 
             assert (
-                response.status_code == status.HTTP_200_OK
+                    response.status_code == status.HTTP_200_OK
             ), f"Expected status code 200, but got {response.status_code}"
             channel.refresh_from_db()
 
             assert (
-                channel.user_consent == consent
+                    channel.user_consent == consent
             ), f"Expected user_consent to be {consent}, but got {channel.user_consent}"
 
             mock_make_request.assert_called_once_with(
@@ -320,7 +358,7 @@ class TestUpdateReceivedView:
         messages = MessageFactory.create_batch(5, channel=channel)
         message_ids = [
             str(message.message_id) for message in messages
-        ]  # Convert UUID to string
+        ]
 
         data = {"messages": message_ids}
         data = json.dumps(data)
@@ -331,7 +369,7 @@ class TestUpdateReceivedView:
         for message in messages:
             message.refresh_from_db()
             assert (
-                message.received is not None
+                    message.received is not None
             ), f"Message {message.message_id} should have a 'received' timestamp"
 
     def test_empty_message_list(self, auth_device):
@@ -343,7 +381,7 @@ class TestUpdateReceivedView:
         assert Message.objects.filter(received__isnull=False).count() == 0
 
     def test_invalid_message_ids(self, auth_device):
-        invalid_message_ids = [str(uuid4()), str(uuid4())]  # Convert UUID to string
+        invalid_message_ids = [str(uuid4()), str(uuid4())]
         data = {"messages": invalid_message_ids}
         data = json.dumps(data)
         response = auth_device.post(self.url, data, content_type="application/json")
