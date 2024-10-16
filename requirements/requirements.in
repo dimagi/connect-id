@@ -10,3 +10,5 @@ psycopg2
 twilio
 zxcvbn
 fcm-django
+redis
+celery
