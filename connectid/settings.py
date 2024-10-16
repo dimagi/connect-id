@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'phonenumber_field',
     'users.apps.UsersConfig',
+    'connectmessaging',
     'messaging',
     'oauth2_provider',
     'rest_framework',
