@@ -1,12 +1,12 @@
 from collections import defaultdict
 
 from django.db.models import Prefetch
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, views
 from rest_framework.authentication import BasicAuthentication
 from rest_framework.exceptions import ValidationError
-from rest_framework.response import Response
 
 from messaging.serializers import Message as Msg
 from messaging.views import send_bulk_message
@@ -31,14 +31,14 @@ class CreateChannelView(views.APIView):
             message = Msg(
                 usernames=[channel.connect_user.username],
                 title="Channel created",
-                body="A new channel has been created for you. Please provide your consent to proceed.",
+                body="Please provide your consent to send/receive message.",
                 data={"keyUrl": channel.key_url},
             )
             send_bulk_message(message)
-            return Response(
+            return JsonResponse(
                 {"channel_id": str(channel.channel_id)}, status=status.HTTP_201_CREATED
             )
-        response = Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        response = JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         return response
 
 
@@ -72,17 +72,20 @@ class SendMessageView(views.APIView):
                     if not Channel.objects.filter(
                             channel_id=channel.channel_id, user_consent=True
                     ).exists():
-                        return Response(
-                            {"error": "Consent is required for this channel."},
+                        return JsonResponse(
+                            {
+                                "error": "Consent is required for this channel.",
+                                "channel": str(channel.channel_id),
+                            },
                             status=status.HTTP_403_FORBIDDEN,
                         )
                     make_request_to_service(channel.delivery_url, json_data=message)
 
-            return Response(
+            return JsonResponse(
                 {"message_id": [str(message.message_id) for message in messages]},
-                status=status.HTTP_201_CREATED
+                status=status.HTTP_201_CREATED,
             )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class RetrieveMessageView(views.APIView):
@@ -108,7 +111,7 @@ class RetrieveMessageView(views.APIView):
 
         messages_data = MessageSerializer(messages, many=True).data
 
-        return Response({"channels": channels_data, "messages": messages_data})
+        return JsonResponse({"channels": channels_data, "messages": messages_data})
 
 
 class UpdateConsentView(views.APIView):
@@ -130,9 +133,15 @@ class UpdateConsentView(views.APIView):
             "channel_id": str(channel.channel_id),
             "consent": str(channel.user_consent),
         }
-        make_request_to_service(url=url, json_data=json_data)
+        response = make_request_to_service(url=url, json_data=json_data)
 
-        return Response(status=status.HTTP_200_OK)
+        if response.status_code != status.HTTP_200_OK:
+            return JsonResponse(
+                {"error": "Failed to update consent service"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return JsonResponse({}, status=status.HTTP_200_OK)
 
 
 class UpdateReceivedView(views.APIView):
@@ -146,7 +155,7 @@ class UpdateReceivedView(views.APIView):
         )
 
         if not messages.exists():
-            return Response(status=status.HTTP_200_OK)
+            return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
 
         current_time = timezone.now()
         messages.update(received=current_time)
@@ -181,4 +190,4 @@ class UpdateReceivedView(views.APIView):
                 },
             )
 
-        return Response(status=status.HTTP_200_OK)
+        return JsonResponse({}, status=status.HTTP_200_OK)
