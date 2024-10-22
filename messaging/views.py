@@ -19,7 +19,7 @@ from users.models import ConnectUser
 from utils.rest_framework import ClientProtectedResourceAuth
 
 
-def get_current_server(request):
+def get_current_message_server(request):
     auth_header = request.META.get('HTTP_AUTHORIZATION')
     encoded_credentials = auth_header.split(' ')[1]
     decoded_credentials = base64.b64decode(encoded_credentials).decode('utf-8')
@@ -167,7 +167,7 @@ class CreateChannelView(APIView):
         data = request.data
         connect_id = data["connectid"]
         channel_source = data["channel_source"]
-        server = get_current_server(request)
+        server = get_current_message_server(request)
         user = get_object_or_404(ConnectUser, id=connect_id)
         channel = Channel.objects.create(server=server, connect_user=user, channel_source=channel_source)
         message = MessageData(
