@@ -287,7 +287,6 @@ class UpdateConsentView(APIView):
         channel.save()
         oauth_application = channel.server.oauth_application
 
-        #: TO-DO update the url
         json_data = {
             "channel_id": str(channel.channel_id),
             "consent": str(channel.user_consent),
