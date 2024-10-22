@@ -3,9 +3,11 @@ from typing import List
 
 from rest_framework import serializers
 
+from messaging.models import Message
+
 
 @dataclasses.dataclass
-class Message:
+class MessageData:
     usernames: List[str] = None
     title: str = None
     body: str = None
@@ -23,12 +25,17 @@ class SingleMessageSerializer(serializers.Serializer):
         username = validated_data.pop('username', None)
         if username:
             validated_data["usernames"] = [username]
-        return Message(**validated_data)
+        return MessageData(**validated_data)
 
 
 class BulkMessageSerializer(serializers.Serializer):
     messages = serializers.ListField(child=SingleMessageSerializer())
 
     def create(self, validated_data):
-        return [Message(**message) for message in validated_data["messages"]]
+        return [MessageData(**message) for message in validated_data["messages"]]
 
+
+class MessageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Message
+        fields = ["message_id", "channel", "content", "timestamp", "received", "status"]

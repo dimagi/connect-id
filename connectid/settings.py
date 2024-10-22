@@ -33,7 +33,6 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'phonenumber_field',
     'users.apps.UsersConfig',
-    'connectmessaging',
     'messaging',
     'oauth2_provider',
     'rest_framework',
@@ -214,6 +213,8 @@ FCM_DJANGO_SETTINGS = {
     "DELETE_INACTIVE_DEVICES": False,
 }
 
+OAUTH2_PROVIDER_APPLICATION_MODEL = 'oauth2_provider.Application'
+
 SITE_ID = 1
 
 APP_HASH = "apphash"
@@ -230,3 +231,5 @@ CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
 
 CELERY_BROKER_URL = env.get("CELERY_BROKER_URL", default="redis://localhost:6379/0")
+
+
