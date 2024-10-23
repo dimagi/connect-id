@@ -157,15 +157,11 @@ class TestCreateChannelView:
         url = reverse("messaging:create_channel")
         response = client.post(url, data=data, content_type=APPLICATION_JSON)
 
-        assert (
-                response.status_code == expected_status
-        ), f"Expected status {expected_status}, but got {response.status_code} - {response.content}"
+        assert response.status_code == expected_status
 
         if expected_status == status.HTTP_400_BAD_REQUEST and expected_error_field:
             json_data = response.json()
-            assert (
-                    expected_error_field in json_data
-            ), f"'{expected_error_field}' field should be in response errors: {json_data}"
+            assert expected_error_field in json_data
 
         return response
 
@@ -181,10 +177,7 @@ class TestCreateChannelView:
             )
 
             json_data = response.json()
-            assert (
-                    "channel_id" in json_data
-            ), f"'channel_id' not found in response data: {json_data}"
-            channel_id = json_data["channel_id"]
+            assert "channel_id" in json_data
 
             mock_send_message.assert_called_once()
             messages = mock_send_message.call_args.args[0]
@@ -210,12 +203,8 @@ def test_send_fcm_notification_view(authed_client, channel):
     ) as mock_send_bulk_message:
         response = authed_client.post(url, data)
         json_data = response.json()
-        assert (
-                response.status_code == status.HTTP_200_OK
-        ), f"Expected status {status.HTTP_200_OK}, but got {response.status_code}."
-        assert (
-                "message_id" in json_data
-        ), "Expected 'message_id' in response data, but it was missing."
+        assert response.status_code == status.HTTP_200_OK
+        assert "message_id" in json_data
 
         message_id = json_data["message_id"]
         db_msg = Message.objects.get(message_id=message_id)
@@ -278,17 +267,11 @@ class TestSendMessageView:
             )
             json_data = response.json()
 
-            assert (
-                    response.status_code == status.HTTP_201_CREATED
-            ), f"Expected status {status.HTTP_201_CREATED}, but got {response.status_code}."
-            assert (
-                    "message_id" in json_data
-            ), "Expected 'message_id' in response data, but it was missing."
+            assert response.status_code == status.HTTP_201_CREATED
+            assert "message_id" in json_data
 
             message_ids = json_data["message_id"]
-            assert (
-                    len(message_ids) == 2
-            ), f"Expected 2 message IDs, but got {len(message_ids)}"
+            assert len(message_ids) == 2
 
             assert mock_send_bulk_message.call_count == 1
 
@@ -316,42 +299,27 @@ class TestRetrieveMessagesView:
         response = auth_device.get(self.url)
         json_data = response.json()
 
-        assert (
-                response.status_code == status.HTTP_200_OK
-        ), f"Expected status code 200, but got {response.status_code}"
-        assert "channels" in json_data, "Response is missing 'channels' key"
-        assert "messages" in json_data, "Response is missing 'messages' key"
+        assert response.status_code == status.HTTP_200_OK
+        assert all(key in json_data for key in ['channels', 'messages'])
+        assert len(json_data['messages']) == 10
 
-        channels = json_data["channels"]
-        messages = json_data["messages"]
+        channel = json_data['channels'][0]
+        message = json_data['messages'][0]
 
-        assert len(channels) > 0, "No channels were returned"
-        assert len(messages) > 0, "No messages were returned"
-
-        channel = channels[0]
-        assert "channel_id" in channel, "Channel is missing 'channel_id'"
-        assert "channel_source" in channel, "Channel is missing 'channel_source'"
-        assert "key_url" in channel, "Channel is missing 'key_url'"
-
-        message = messages[0]
-        assert "message_id" in message, "Message is missing 'message_id'"
-        assert "channel" in message, "Message is missing 'channel_id'"
-        assert "timestamp" in message, "Message is missing 'timestamp'"
+        assert all(key in channel for key in ['channel_id', 'channel_source', 'key_url'])
+        assert all(key in message for key in ['message_id', 'channel', 'timestamp'])
 
     def test_retrieve_messages_no_data(self, auth_device):
         Channel.objects.all().delete()
         Message.objects.all().delete()
 
         response = auth_device.get(self.url)
-        json_data = response.json()
 
-        assert (
-                response.status_code == status.HTTP_200_OK
-        ), f"Expected status code 200, but got {response.status_code}"
-        assert "channels" in json_data, "Response is missing 'channels' key"
-        assert "messages" in json_data, "Response is missing 'messages' key"
-        assert len(json_data["channels"]) == 0, "Expected empty channels list"
-        assert len(json_data["messages"]) == 0, "Expected empty messages list"
+        response_data = response.json()
+
+        assert response.status_code == status.HTTP_200_OK
+        assert all(key in response_data for key in ['channels', 'messages'])
+        assert all(not response_data[key] for key in ['channels', 'messages'])
 
     def test_retrieve_messages_multiple_channels(self, auth_device, fcm_device):
         channels = ChannelFactory.create_batch(5, connect_user=fcm_device.user, server=ServerFactory.create())
@@ -359,12 +327,9 @@ class TestRetrieveMessagesView:
             MessageFactory.create_batch(5, channel=channel, content=b"Test message 2")
 
         response = auth_device.get(self.url)
-        json_data = response.json()
-        assert (
-                response.status_code == status.HTTP_200_OK
-        ), f"Expected status code 200, but got {response.status_code}"
-        assert len(json_data["channels"]) == 5, "Expected 5 channels"
-        assert len(json_data["messages"]) == 25, "Expected 25 messages"
+        data = response.json()
+        assert response.status_code == status.HTTP_200_OK
+        assert all(len(data[key]) == expected for key, expected in [('channels', 5), ('messages', 25)])
 
 
 @pytest.mark.django_db
@@ -385,14 +350,10 @@ class TestUpdateConsentView:
                 self.url, json_data, content_type="application/json"
             )
 
-            assert (
-                    response.status_code == status.HTTP_200_OK
-            ), f"Expected status code 200, but got {response.status_code}"
+            assert response.status_code == status.HTTP_200_OK
             channel.refresh_from_db()
 
-            assert (
-                    channel.user_consent == consent
-            ), f"Expected user_consent to be {consent}, but got {channel.user_consent}"
+            assert channel.user_consent == consent
 
             mock_make_request.assert_called_once_with(
                 url=server.consent_url,
@@ -433,9 +394,7 @@ class TestUpdateReceivedView:
 
         for message in messages:
             message.refresh_from_db()
-            assert (
-                    message.received is not None
-            ), f"Message {message.message_id} should have a 'received' timestamp"
+            assert message.received is not None
 
     def test_empty_message_list(self, auth_device):
         data = {"messages": []}
@@ -482,19 +441,9 @@ class TestUpdateReceivedView:
         # Validate the mock call
         mock_send_messages.assert_called_once()
         args, kwargs = mock_send_messages.call_args
-        assert len(args) == 2
-        assert isinstance(args[0], defaultdict)
-        assert len(args[0]) == 2
-        assert str(channel1.channel_id) in args[0]
-        assert str(channel2.channel_id) in args[0]
-        assert all(
-            msg["received"] is not None
-            for msg in args[0][str(channel1.channel_id)]["messages"]
-        )
-        assert all(
-            msg["received"] is not None
-            for msg in args[0][str(channel2.channel_id)]["messages"]
-        )
-        assert isinstance(args[1], MessageStatus)
-        assert args[1] == MessageStatus.CONFIRMED_RECEIVED
+        data, msg_status = args
+        assert isinstance(data, defaultdict) and len(data) == 2
+        assert all(str(ch.channel_id) in data for ch in [channel1, channel2])
+        assert all(all(msg["received"] for msg in data[str(ch.channel_id)]["messages"]) for ch in [channel1, channel2])
+        assert msg_status == MessageStatus.CONFIRMED_RECEIVED
 
