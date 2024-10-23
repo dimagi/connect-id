@@ -225,6 +225,7 @@ def test_send_fcm_notification_view(authed_client, channel):
             usernames=[channel.connect_user.username],
             data={
                 "message_id": db_msg.message_id,
+                "channel_id": str(channel.channel_id),
                 "content": db_msg.content,
             },
         )

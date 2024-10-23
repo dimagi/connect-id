@@ -8,8 +8,8 @@ urlpatterns = [
     path("send/", views.SendMessage.as_view(), name="send_message"),
     path("send_bulk/", views.SendMessageBulk.as_view(), name="send_message_bulk"),
     path("create_channel/", views.CreateChannelView.as_view(), name="create_channel"),
-    path("send_message/", views.SendMessageView.as_view(), name="post_message"),
-    path("send_fcm/", views.SendFcmNotificationView.as_view(), name="send_fcm"),
+    path("send_message/", views.SendMobileConnectMessage.as_view(), name="post_message"),
+    path("send_fcm/", views.SendServerConnectMessage.as_view(), name="send_fcm"),
     path("update_consent/", views.UpdateConsentView.as_view(), name="update_consent"),
     path(
         "retrieve_messages/",

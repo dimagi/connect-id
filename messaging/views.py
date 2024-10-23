@@ -183,7 +183,7 @@ class CreateChannelView(APIView):
         )
 
 
-class SendFcmNotificationView(APIView):
+class SendServerConnectMessage(APIView):
     authentication_classes = [ClientProtectedResourceAuth]
 
     def post(self, request, *args, **kwargs):
@@ -194,7 +194,8 @@ class SendFcmNotificationView(APIView):
             channel = message.channel
             message_to_send = MessageData(
                 usernames=[channel.connect_user.username],
-                data={"message_id": message.message_id, "content": message.content},
+                data={"message_id": message.message_id, "channel_id": str(channel.channel_id),
+                      "content": message.content},
             )
             send_bulk_message(message_to_send)
             return JsonResponse(
@@ -204,7 +205,7 @@ class SendFcmNotificationView(APIView):
         return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class SendMessageView(APIView):
+class SendMobileConnectMessage(APIView):
 
     def post(self, request, *args, **kwargs):
         data = request.data
