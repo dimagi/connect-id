@@ -1,7 +1,10 @@
+import base64
+import os
 from uuid import uuid4
 
 import factory
 from django.utils import timezone
+from factory import LazyFunction
 from factory.django import DjangoModelFactory
 from oauth2_provider.models import Application
 
@@ -42,12 +45,24 @@ class ChannelFactory(DjangoModelFactory):
     server = factory.SubFactory(ServerFactory)
 
 
+def generate_random_content():
+    nonce = base64.b64encode(os.urandom(12)).decode('utf-8')
+    tag = base64.b64encode(os.urandom(16)).decode('utf-8')
+    ciphertext = base64.b64encode(os.urandom(32)).decode('utf-8')
+
+    return {
+        "nonce": nonce,
+        "tag": tag,
+        "ciphertext": ciphertext
+    }
+
+
 class MessageFactory(DjangoModelFactory):
     class Meta:
         model = Message
 
     message_id = factory.LazyFunction(uuid4)
     channel = factory.SubFactory(ChannelFactory)
-    content = factory.Faker("binary", length=200)
+    content = LazyFunction(generate_random_content)
     timestamp = factory.LazyFunction(timezone.now)
     received = None
