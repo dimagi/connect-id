@@ -177,3 +177,5 @@ setuptools==67.8.0
     #   django-axes
     #   gunicorn
     #   pip-tools
+celery==5.4.0
+redis==5.1.1
