@@ -34,7 +34,7 @@ class MessageStatus(models.TextChoices):
 class Message(models.Model):
     message_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     channel = models.ForeignKey(Channel, on_delete=models.CASCADE)
-    content = models.TextField()
+    content = models.JSONField()
     timestamp = models.DateTimeField(default=timezone.now)
     received = models.DateTimeField(null=True, blank=True)
     status = models.CharField(

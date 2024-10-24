@@ -146,8 +146,15 @@ def rest_channel_data(user=None, consent=False):
 
 
 def rest_message(channel_id=None):
-    content = base64.b64encode(b"Hello, World!").decode("utf-8")
-    return {"channel": str(channel_id) if channel_id else None, "content": content}
+    content = {
+        "nonce": "test_nonce_value",
+        "tag": "test_tag_value",
+        "ciphertext": "test_ciphertext_value"
+    }
+    return {
+        "channel": str(channel_id) if channel_id else None,
+        "content": content
+    }
 
 
 @pytest.mark.django_db
@@ -201,7 +208,7 @@ def test_send_fcm_notification_view(authed_client, channel):
     with mock.patch(
             "messaging.views.send_bulk_message"
     ) as mock_send_bulk_message:
-        response = authed_client.post(url, data)
+        response = authed_client.post(url, data=data, content_type=APPLICATION_JSON)
         json_data = response.json()
         assert response.status_code == status.HTTP_200_OK
         assert "message_id" in json_data
@@ -232,7 +239,7 @@ class TestSendMessageView:
         with patch(
                 "messaging.views.send_messages_to_service_and_mark_status"
         ) as mock_make_request:
-            response = auth_device.post(self.url, data)
+            response = auth_device.post(self.url, json.dumps(data), content_type=APPLICATION_JSON)
             json_data = response.json()
             assert response.status_code == status.HTTP_201_CREATED
             assert "message_id" in json_data
@@ -306,8 +313,10 @@ class TestRetrieveMessagesView:
         channel = json_data['channels'][0]
         message = json_data['messages'][0]
 
+        assert isinstance(message["content"], dict)
+
         assert all(key in channel for key in ['channel_id', 'channel_source', 'key_url'])
-        assert all(key in message for key in ['message_id', 'channel', 'timestamp'])
+        assert all(key in message for key in ['message_id', 'channel', 'timestamp', 'content'])
 
     def test_retrieve_messages_no_data(self, auth_device):
         Channel.objects.all().delete()
@@ -324,7 +333,7 @@ class TestRetrieveMessagesView:
     def test_retrieve_messages_multiple_channels(self, auth_device, fcm_device):
         channels = ChannelFactory.create_batch(5, connect_user=fcm_device.user, server=ServerFactory.create())
         for channel in channels:
-            MessageFactory.create_batch(5, channel=channel, content=b"Test message 2")
+            MessageFactory.create_batch(5, channel=channel)
 
         response = auth_device.get(self.url)
         data = response.json()
@@ -446,4 +455,3 @@ class TestUpdateReceivedView:
         assert all(str(ch.channel_id) in data for ch in [channel1, channel2])
         assert all(all(msg["received"] for msg in data[str(ch.channel_id)]["messages"]) for ch in [channel1, channel2])
         assert msg_status == MessageStatus.CONFIRMED_RECEIVED
-
