@@ -168,7 +168,7 @@ class CreateChannelView(APIView):
         connect_id = data["connectid"]
         channel_source = data["channel_source"]
         server = get_current_message_server(request)
-        user = get_object_or_404(ConnectUser, id=connect_id)
+        user = get_object_or_404(ConnectUser, username=connect_id)
         channel = Channel.objects.create(server=server, connect_user=user, channel_source=channel_source)
         message = MessageData(
             usernames=[channel.connect_user.username],
