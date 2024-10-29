@@ -7,8 +7,8 @@ from django.core.exceptions import ValidationError
 from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
 from django.views import View
-from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from oauth2_provider.models import AccessToken, RefreshToken
+from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.views import APIView
 
@@ -435,9 +435,14 @@ def accept_credential(request, invite_id):
 class FetchCredentials(ClientProtectedResourceMixin, View):
     required_scopes = ['user_fetch']
 
-    def get(self, request, *args, **kwargs):
-        credentials = Credential.objects.all().values('name', 'slug')
-        results = {"credentials":  list(credentials)}
+    def get(self, request):
+        org_slug = request.GET.get('org_slug', None)
+        queryset = Credential.objects.all()
+        if org_slug:
+            queryset = queryset.filter(organization_slug=org_slug)
+
+        credentials = queryset.values('name', 'slug')
+        results = {"credentials": list(credentials)}
         return JsonResponse(results)
 
 

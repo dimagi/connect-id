@@ -1,4 +1,3 @@
-import base64
 import json
 from collections import defaultdict
 from unittest import mock
@@ -8,7 +7,6 @@ from uuid import uuid4
 import pytest
 from django.urls import reverse
 from firebase_admin import messaging
-from oauth2_provider.models import Application
 from rest_framework import status
 
 from messaging.factories import ChannelFactory, MessageFactory, ServerFactory
@@ -20,30 +18,8 @@ APPLICATION_JSON = "application/json"
 
 
 @pytest.fixture
-def oauth_app(user):
-    application = Application(
-        name="Test Application",
-        redirect_uris="http://localhost",
-        user=user,
-        client_type=Application.CLIENT_CONFIDENTIAL,
-        authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
-    )
-    application.raw_client_secret = application.client_secret
-    application.save()
-    return application
-
-
-@pytest.fixture
 def server(oauth_app):
     return ServerFactory(oauth_application=oauth_app)
-
-
-@pytest.fixture
-def authed_client(client, oauth_app):
-    auth = f'{oauth_app.client_id}:{oauth_app.raw_client_secret}'.encode('utf-8')
-    credentials = base64.b64encode(auth).decode('utf-8')
-    client.defaults['HTTP_AUTHORIZATION'] = 'Basic ' + credentials
-    return client
 
 
 def test_send_message(authed_client, fcm_device):
@@ -370,7 +346,7 @@ class TestUpdateConsentView:
                     "channel_id": str(channel.channel_id),
                     "consent": str(consent),
                 },
-                secret= server.oauth_application.client_secret
+                secret=server.oauth_application.client_secret
             )
 
     def test_restrict_consent(self, auth_device, channel, server):
