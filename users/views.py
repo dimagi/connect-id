@@ -64,13 +64,8 @@ def test(request):
 
 @api_view(['POST'])
 def validate_phone(request):
-    # create otp device for user
-    # send otp code via twilio
     user = request.user
-    otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.phone_number, user=user)
-    otp_device.save()
-    otp_device.generate_challenge()
-    return HttpResponse()
+    return PhoneDevice.send_otp_httpresponse(phone_number=user.phone_number, user=user)
 
 
 @api_view(['POST'])
@@ -90,13 +85,8 @@ def confirm_otp(request):
 
 @api_view(['POST'])
 def validate_secondary_phone(request):
-    # create otp device for user
-    # send otp code via twilio
     user = request.user
-    otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.recovery_phone, user=user)
-    otp_device.save()
-    otp_device.generate_challenge()
-    return HttpResponse()
+    return PhoneDevice.send_otp_httpresponse(phone_number=user.recovery_phone, user=user)
 
 
 @api_view(['POST'])
