@@ -40,15 +40,14 @@ def send_messages_to_service_and_mark_status(channel_messages,
 
         try:
             channel = get_object_or_404(Channel, channel_id=channel_id)
-            oauth_application = channel.server.oauth_application
 
             response = make_request(
                 url=url,
                 json_data={
-                    "channel": channel_id,
+                    "channel": str(channel_id),
                     "messages": messages,
                 },
-                secret=oauth_application.client_secret
+                secret=channel.secret_key
             )
             if response == status.HTTP_200_OK:
                 sent_message_ids.extend(msg["message_id"] for msg in messages)

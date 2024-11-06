@@ -36,6 +36,19 @@ class BulkMessageSerializer(serializers.Serializer):
 
 
 class MessageSerializer(serializers.ModelSerializer):
+    ciphertext = serializers.SerializerMethodField()
+    tag = serializers.SerializerMethodField()
+    nonce = serializers.SerializerMethodField()
+
     class Meta:
         model = Message
-        fields = ["message_id", "channel", "content", "timestamp", "received", "status"]
+        fields = ["message_id", "channel", "ciphertext", "tag", "nonce", "timestamp", "received", "status"]
+
+    def get_ciphertext(self, obj):
+        return obj.content["ciphertext"]
+
+    def get_tag(self, obj):
+        return obj.content["tag"]
+
+    def get_nonce(self, obj):
+        return obj.content["nonce"]
