@@ -17,7 +17,7 @@ from messaging.serializers import SingleMessageSerializer, BulkMessageSerializer
     MessageData
 from messaging.task import make_request, send_messages_to_service_and_mark_status
 from users.models import ConnectUser
-from utils.rest_framework import ClientProtectedResourceAuth
+from utils.rest_framework import ClientProtectedResourceAuth, MessagingServerAuth
 
 
 def get_current_message_server(request):
@@ -162,7 +162,7 @@ def _build_notification(data):
 
 
 class CreateChannelView(APIView):
-    authentication_classes = [ClientProtectedResourceAuth]
+    authentication_classes = [MessageServerAuth]
 
     def post(self, request, *args, **kwargs):
         data = request.data
@@ -185,7 +185,7 @@ class CreateChannelView(APIView):
 
 
 class SendServerConnectMessage(APIView):
-    authentication_classes = [ClientProtectedResourceAuth]
+    authentication_classes = [MessageServerAuth]
 
     def post(self, request, *args, **kwargs):
         data = request.data
