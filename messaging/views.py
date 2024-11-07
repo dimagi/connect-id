@@ -1,5 +1,6 @@
 import base64
 from collections import defaultdict
+from typing import List
 
 from django.db.models import Prefetch
 from django.http import JsonResponse
@@ -14,7 +15,7 @@ from rest_framework.views import APIView
 from messaging.models import Channel, Message, MessageStatus, MessageServer
 from messaging.serializers import SingleMessageSerializer, BulkMessageSerializer, MessageSerializer, \
     MessageData
-from messaging.task import make_request, send_messages_to_service_and_mark_status
+from messaging.tasks import make_request, send_messages_to_service_and_mark_status
 from users.models import ConnectUser
 from utils.rest_framework import ClientProtectedResourceAuth
 
@@ -215,27 +216,12 @@ class SendMobileConnectMessage(APIView):
         if serializer.is_valid():
             messages = serializer.save()
 
-            messages_ready_to_be_sent = defaultdict(lambda: {"messages": [], "url": None})
-            messages_ready_to_be_sent_ids = []
+            channel_messages, message_ids = group_channel_messages(messages, True)
 
-            for msg in messages:
-                channel = msg.channel
-                server = channel.server
-
-                channel_id = str(channel.channel_id)
-                messages_ready_to_be_sent[channel_id]["messages"].append(msg)
-
-                if messages_ready_to_be_sent[channel_id]["url"] is None:
-                    messages_ready_to_be_sent[channel_id][
-                        "url"
-                    ] = server.delivery_url
-
-                messages_ready_to_be_sent_ids.append(str(msg.message_id))
-
-            send_messages_to_service_and_mark_status(messages_ready_to_be_sent, MessageStatus.SENT_TO_SERVICE)
+            send_messages_to_service_and_mark_status(channel_messages, MessageStatus.SENT_TO_SERVICE)
 
             return JsonResponse(
-                {"message_id": messages_ready_to_be_sent_ids},
+                {"message_id": message_ids},
                 status=status.HTTP_201_CREATED,
             )
 
@@ -296,7 +282,7 @@ class UpdateConsentView(APIView):
         response = make_request(url=channel.server.consent_url, json_data=json_data,
                                 secret=oauth_application.client_secret)
 
-        if response.status_code != status.HTTP_200_OK:
+        if not response:
             return JsonResponse(
                 {"error": "Failed to update consent service"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -324,24 +310,39 @@ class UpdateReceivedView(APIView):
         current_time = timezone.now()
         messages.update(received=current_time, status=MessageStatus.DELIVERED)
 
-        # Group messages by their channel
-        channel_messages = defaultdict(lambda: {"messages": [], "url": None})
-        for message in messages:
-            channel_id = str(message.channel.channel_id)
-
-            channel_messages[channel_id]["messages"].append(
-                {
-                    "message_id": str(message.message_id),
-                    "received": str(current_time),
-                }
-            )
-
-            if channel_messages[channel_id]["url"] is None:
-                channel_messages[channel_id][
-                    "url"
-                ] = message.channel.server.callback_url
+        channel_messages, message_ids = group_channel_messages(messages, False)
 
         # To-Do should be async.
         send_messages_to_service_and_mark_status(channel_messages, MessageStatus.CONFIRMED_RECEIVED)
 
         return JsonResponse({}, status=status.HTTP_200_OK)
+
+
+def group_channel_messages(messages: List, include_full_message: bool = False):
+    channel_messages = defaultdict(lambda: {"messages": [], "url": None, "client_secret": None})
+    message_ids = []
+    for message in messages:
+        channel = message.channel
+        server = channel.server
+        channel_id = str(channel.channel_id)
+
+        if include_full_message:
+            channel_messages[channel_id]["messages"].append(message)
+        else:
+            channel_messages[channel_id]["messages"].append({
+                "message_id": str(message.message_id),
+                "received": str(message.received),
+            })
+
+        if channel_messages[channel_id]["url"] is None:
+            channel_messages[channel_id][
+                "url"
+            ] = server.callback_url
+
+        if channel_messages[channel_id]["client_secret"] is None:
+            channel_messages[channel_id]["client_secret"] = (
+                server.oauth_application.client_secret)
+
+        message_ids.append(str(message.message_id))
+
+    return channel_messages, message_ids
