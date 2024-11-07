@@ -250,7 +250,7 @@ class TestSendMessageView:
 
             msg = Message.objects.filter(message_id=message_id).first()
 
-            expected_message_data, _ = group_channel_messages([msg], True)
+            expected_message_data, _ = group_channel_messages([msg], "delivery_url", True)
 
             mock_make_request.assert_called_once_with(
                 expected_message_data,
@@ -279,7 +279,7 @@ class TestSendMessageView:
             assert mock_send_bulk_message.call_count == 1
 
             expected_messages = [Message.objects.get(message_id=msg_id) for msg_id in message_ids]
-            expected_message_data, _ = group_channel_messages(expected_messages, True)
+            expected_message_data, _ = group_channel_messages(expected_messages, "delivery_url", True)
 
             mock_send_bulk_message.assert_called_once_with(
                 expected_message_data,

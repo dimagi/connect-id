@@ -216,7 +216,7 @@ class SendMobileConnectMessage(APIView):
         if serializer.is_valid():
             messages = serializer.save()
 
-            channel_messages, message_ids = group_channel_messages(messages, True)
+            channel_messages, message_ids = group_channel_messages(messages, "delivery_url", True)
 
             send_messages_to_service_and_mark_status(channel_messages, MessageStatus.SENT_TO_SERVICE)
 
@@ -310,7 +310,8 @@ class UpdateReceivedView(APIView):
         current_time = timezone.now()
         messages.update(received=current_time, status=MessageStatus.DELIVERED)
 
-        channel_messages, message_ids = group_channel_messages(messages, False)
+        channel_messages, message_ids = (
+            group_channel_messages(messages, "callback_url", False))
 
         # To-Do should be async.
         send_messages_to_service_and_mark_status(channel_messages, MessageStatus.CONFIRMED_RECEIVED)
@@ -318,7 +319,7 @@ class UpdateReceivedView(APIView):
         return JsonResponse({}, status=status.HTTP_200_OK)
 
 
-def group_channel_messages(messages: List, include_full_message: bool = False):
+def group_channel_messages(messages: List, url_key: str, include_full_message: bool = False):
     channel_messages = defaultdict(lambda: {"messages": [], "url": None, "client_secret": None})
     message_ids = []
     for message in messages:
@@ -337,7 +338,7 @@ def group_channel_messages(messages: List, include_full_message: bool = False):
         if channel_messages[channel_id]["url"] is None:
             channel_messages[channel_id][
                 "url"
-            ] = server.callback_url
+            ] = getattr(server, url_key)
 
         if channel_messages[channel_id]["client_secret"] is None:
             channel_messages[channel_id]["client_secret"] = (
