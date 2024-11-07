@@ -47,7 +47,7 @@ def send_messages_to_service_and_mark_status(channel_messages,
                     "channel": str(channel_id),
                     "messages": messages,
                 },
-                secret=channel.secret_key
+                secret=channel.server.secret_key
             )
             if response == status.HTTP_200_OK:
                 sent_message_ids.extend(msg["message_id"] for msg in messages)

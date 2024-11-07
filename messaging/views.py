@@ -294,7 +294,7 @@ class UpdateConsentView(APIView):
         }
 
         response = make_request(url=channel.server.consent_url, json_data=json_data,
-                                secret=channel.secret_key)
+                                secret=channel.server.secret_key)
 
         if response.status_code != status.HTTP_200_OK:
             return JsonResponse(
