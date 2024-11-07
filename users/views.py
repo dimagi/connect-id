@@ -320,7 +320,7 @@ def user_payment_profile(user):
             "phone_number": profile.phone_number,
             "telecom_provider": profile.telecom_provider,
             "is_verified": profile.is_verified,
-            "is_validated": profile.is_validated,
+            "status": profile.status,
         }}
     except ObjectDoesNotExist:
         return {}

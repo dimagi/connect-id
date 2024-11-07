@@ -35,5 +35,6 @@ urlpatterns = [
     path('recover/confirm_deactivation', views.confirm_deactivation, name='confirm_deactivation'),
     path('profile/payment_phone_number', payment_views.update_payment_profile_phone, name='update_payment_profile_phone'),
     path('profile/confirm_payment_otp', payment_views.confirm_payment_profile_otp, name='confirm_payment_profile_otp'),
-    path('profile/validate_payment_phone_number', payment_views.ValidatePhoneNumber.as_view(), name='validate_payment_phone_number'),
+    path('fetch_payment_phone_numbers', payment_views.FetchPhoneNumbers.as_view(), name='fetch_payment_phone_numbers'),
+    path('validate_payment_phone_numbers', payment_views.ValidatePhoneNumbers.as_view(), name='validate_payment_phone_numbers'),
 ]

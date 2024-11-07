@@ -5,6 +5,16 @@ from users.models import ConnectUser
 
 
 class PaymentProfile(models.Model):
+    PENDING = 'pending'
+    APPROVED = 'approved'
+    REJECTED = 'rejected'
+
+    STATUS_CHOICES = [
+        (PENDING, 'Pending'),
+        (APPROVED, 'Approved'),
+        (REJECTED, 'Rejected'),
+    ]
+
     user = models.OneToOneField(
         ConnectUser,
         on_delete=models.CASCADE,
@@ -14,8 +24,10 @@ class PaymentProfile(models.Model):
     telecom_provider = models.CharField(max_length=50, blank=True, null=True)
     # whether the number is verified using OTP
     is_verified = models.BooleanField(default=False)
-    # whether the number is a valid payment receiver
-    is_validated = models.BooleanField(default=False)
-
+    status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default=PENDING,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

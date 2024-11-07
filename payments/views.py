@@ -1,9 +1,16 @@
-from django.http import JsonResponse, HttpResponse, Http404
+from django.db import transaction
+from django.db.models import Q
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_POST
+from messaging.views import send_bulk_message
+from messaging.serializers import MessageData
 from oauth2_provider.decorators import protected_resource
 from utils.rest_framework import ClientProtectedResourceAuth
+from rest_framework import status as drf_status
 from rest_framework.decorators import api_view
+from rest_framework.response import Response
 from rest_framework.views import APIView
+
 from users.models import ConnectUser, PhoneDevice
 from utils.twilio import lookup_telecom_provider
 from .models import PaymentProfile
@@ -20,7 +27,7 @@ def update_payment_profile_phone(request):
             'phone_number': phone_number,
             'telecom_provider': telecom_provider,
             'is_verified': False,
-            'is_validated': False
+            'status': PaymentProfile.PENDING
         }
     )
     return PhoneDevice.send_otp_httpresponse(phone_number=payment_profile.phone_number, user=payment_profile.user)
@@ -39,33 +46,101 @@ def confirm_payment_profile_otp(request):
     return JsonResponse({"success": True})
 
 
-@require_POST
-@protected_resource(scopes=[])
-def validate_payment_phone_number(request):
-    username = request.data["username"]
-    phone_number = request.data["phone_number"]
-    user = ConnectUser.objects.get(username=username)
-    profile = getattr(user, "payment_profile")
+class FetchPhoneNumbers(APIView):
+    authentication_classes = [ClientProtectedResourceAuth]
 
-    if not profile or profile.phone_number != phone_number:
-        raise Http404("Payment number not found")
+    def get(self, request, *args, **kwargs):
+        usernames = request.GET.getlist('usernames')
+        status = request.GET.get("status")
+        results = {}
+        profiles = PaymentProfile.objects.filter(
+            user__username__in=usernames)
+        if status:
+            profiles = profiles.filter(status=status)
+        profiles = profiles.select_related("user")
+        results["found_payment_numbers"] = [
+            {
+                "username": p.user.username,
+                "phone_number": str(p.phone_number),
+                "status": p.status,
+            }
+            for p in profiles
+        ]
+        return JsonResponse(results)
 
-    profile.is_validated = True
-    return HttpResponse()
 
-
-class ValidatePhoneNumber(APIView):
+class ValidatePhoneNumbers(APIView):
     authentication_classes = [ClientProtectedResourceAuth]
 
     def post(self, request, *args, **kwargs):
-        username = request.data["username"]
-        phone_number = request.data["phone_number"]
-        user = ConnectUser.objects.get(username=username)
-        profile = getattr(user, "payment_profile")
+        # List of dictionaries: [{"username": ..., "phone_number": ..., "status": ...}, ...]
+        users_data = request.data["updates"]
 
-        if not profile or profile.phone_number != phone_number:
-            raise Http404("Payment number not found")
+        filter_conditions = Q()
+        status_map = {}
 
-        profile.is_validated = True
-        profile.save()
-        return HttpResponse()
+        for data in users_data:
+            username = data["username"]
+            phone_number = data["phone_number"]
+            status = data["status"]
+
+            filter_conditions |= Q(user__username=username, phone_number=phone_number)
+            status_map[(username, phone_number)] = status
+
+        profiles = PaymentProfile.objects.filter(filter_conditions).select_related("user")
+        if len(profiles) != len(users_data):
+            return Response(status=drf_status.HTTP_404_NOT_FOUND)
+
+        profiles_to_update = []
+
+        usernames_by_states = {
+            "pending": [],
+            "approved": [],
+            "rejected": [],
+        }
+        with transaction.atomic():
+            for profile in profiles:
+                key = (profile.user.username, profile.phone_number)
+                requested_status = status_map.get(key)
+
+                if profile.status != requested_status:
+                    profile.status = requested_status
+                    profiles_to_update.append(profile)
+
+                    usernames_by_states[requested_status].append(profile.user.username)
+
+            if profiles_to_update:
+                PaymentProfile.objects.bulk_update(profiles_to_update, ['status'])
+
+        if usernames_by_states["approved"]:
+            send_bulk_message(
+                MessageData(
+                    usernames=usernames_by_states["approved"],
+                    title="Your Payment Phone Number is approved",
+                    body="Your payment phone number is approved and future payments will be made to this number.",
+                    data={"action": "ccc_payment_info_confirmation", "confirmation_status": "approved"}
+                )
+            )
+        if usernames_by_states["rejected"]:
+            send_bulk_message(
+                MessageData(
+                    usernames=usernames_by_states["rejected"],
+                    title="Your Payment Phone Number did not work",
+                    body="Your payment number did not work. Please try to change to a different payment phone number",
+                    data={"action": "ccc_payment_info_confirmation", "confirmation_status": "approved"}
+                )
+            )
+        if usernames_by_states["pending"]:
+            send_bulk_message(
+                MessageData(
+                    usernames=usernames_by_states["pending"],
+                    title="Your Payment Phone Number is pending review",
+                    body="Your payment phone number is pending review. Please wait for further updates.",
+                    data={"action": "ccc_payment_info_confirmation", "confirmation_status": "pending"}
+                )
+            )
+        result = {
+            state: len(usernames_by_states[state])
+            for state in ["approved", "rejected", "pending"]
+        }
+        return JsonResponse({"success": True, "result": result}, status=200)
