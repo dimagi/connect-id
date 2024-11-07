@@ -104,7 +104,7 @@ def confirm_secondary_otp(request):
     # check otp code for user
     # mark phone as confirmed on user model
     user = request.user
-    device, _ = PhoneDevice.objects.get(phone_number=user.recovery_phone, user=user)
+    device, _ = PhoneDevice.objects.get_or_create(phone_number=user.recovery_phone, user=user)
     data = request.data
     verified = device.verify_token(data.get('token'))
     if not verified:
