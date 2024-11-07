@@ -162,7 +162,7 @@ def _build_notification(data):
 
 
 class CreateChannelView(APIView):
-    authentication_classes = [MessageServerAuth]
+    authentication_classes = [MessagingServerAuth]
 
     def post(self, request, *args, **kwargs):
         data = request.data
@@ -185,7 +185,7 @@ class CreateChannelView(APIView):
 
 
 class SendServerConnectMessage(APIView):
-    authentication_classes = [MessageServerAuth]
+    authentication_classes = [MessagingServerAuth]
 
     def post(self, request, *args, **kwargs):
         data = request.data
