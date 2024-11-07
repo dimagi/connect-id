@@ -1,6 +1,7 @@
 from django.urls import path
 
 from . import views
+from payments import views as payment_views
 
 urlpatterns = [
     path('', views.test, name='test'),
@@ -32,4 +33,7 @@ urlpatterns = [
     path('fetch_db_key', views.fetch_db_key, name='fetch_db_key'),
     path('recover/initiate_deactivation', views.initiate_deactivation, name='initiate_deactivation'),
     path('recover/confirm_deactivation', views.confirm_deactivation, name='confirm_deactivation'),
+    path('profile/payment_phone_number', payment_views.update_payment_profile_phone, name='update_payment_profile_phone'),
+    path('profile/confirm_payment_otp', payment_views.confirm_payment_profile_otp, name='confirm_payment_profile_otp'),
+    path('profile/validate_payment_phone_number', payment_views.ValidatePhoneNumber.as_view(), name='validate_payment_phone_number'),
 ]
