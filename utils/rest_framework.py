@@ -28,7 +28,10 @@ class MessagingServerAuth(OAuthLibMixin, BasicAuthentication):
     """
 
     def authenticate_credentials(self, userid, password, request=None):
-        server = MessageServer.objects.get(server_id=userid)
+        try:
+            server = MessageServer.objects.get(server_id=userid)
+        except MessageServer.DoesNotExist:
+            return None
         valid = (password == MessageServer.secret_key)
         if valid:
             return MessagingServerUser(), None
