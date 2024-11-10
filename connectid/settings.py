@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     'users.apps.UsersConfig',
     'messaging',
     'oauth2_provider',
+    'payments',
     'rest_framework',
     'axes',
     'fcm_django',

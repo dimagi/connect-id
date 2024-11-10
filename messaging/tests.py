@@ -8,42 +8,17 @@ from uuid import uuid4
 import pytest
 from django.urls import reverse
 from firebase_admin import messaging
-from oauth2_provider.models import Application
 from rest_framework import status
+from rest_framework.test import APITestCase
 
 from messaging.factories import ChannelFactory, MessageFactory, ServerFactory
 from messaging.models import Channel, Message, MessageStatus
 from messaging.serializers import MessageData
-from users.factories import FCMDeviceFactory
+from payments.models import PaymentProfile
+from users.factories import FCMDeviceFactory, UserFactory
+
 
 APPLICATION_JSON = "application/json"
-
-
-@pytest.fixture
-def oauth_app(user):
-    application = Application(
-        name="Test Application",
-        redirect_uris="http://localhost",
-        user=user,
-        client_type=Application.CLIENT_CONFIDENTIAL,
-        authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
-    )
-    application.raw_client_secret = application.client_secret
-    application.save()
-    return application
-
-
-@pytest.fixture
-def server(oauth_app):
-    return ServerFactory(oauth_application=oauth_app)
-
-
-@pytest.fixture
-def authed_client(client, oauth_app):
-    auth = f'{oauth_app.client_id}:{oauth_app.raw_client_secret}'.encode('utf-8')
-    credentials = base64.b64encode(auth).decode('utf-8')
-    client.defaults['HTTP_AUTHORIZATION'] = 'Basic ' + credentials
-    return client
 
 
 def test_send_message(authed_client, fcm_device):
@@ -54,7 +29,7 @@ def test_send_message(authed_client, fcm_device):
             "username": fcm_device.user.username,
             "body": "test message",
             "data": {"test": "data"},
-        }, content_type="application/json")
+        }, content_type=APPLICATION_JSON)
         assert response.status_code == 200, response.content
         assert response.json() == {
             'all_success': True,
@@ -90,7 +65,7 @@ def test_send_message_bulk(authed_client, fcm_device):
                     "data": {"test": "data2"},
                 }
             ]
-        }, content_type="application/json")
+        }, content_type=APPLICATION_JSON)
 
         assert response.status_code == 200, response.content
         assert mock_send_message.call_count == 2
@@ -270,7 +245,7 @@ class TestSendMessageView:
             response = auth_device.post(
                 self.url,
                 data=json.dumps(data),
-                content_type="application/json",
+                content_type=APPLICATION_JSON,
             )
             json_data = response.json()
 
@@ -356,7 +331,7 @@ class TestUpdateConsentView:
             }
             json_data = json.dumps(data)
             response = auth_device.post(
-                self.url, json_data, content_type="application/json"
+                self.url, json_data, content_type=APPLICATION_JSON
             )
 
             assert response.status_code == status.HTTP_200_OK
@@ -383,7 +358,7 @@ class TestUpdateConsentView:
         url = reverse("messaging:update_consent")
         data = {"channel": str(uuid4()), "consent": False}
         data = json.dumps(data)
-        response = auth_device.post(url, data, content_type="application/json")
+        response = auth_device.post(url, data, content_type=APPLICATION_JSON)
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
@@ -397,7 +372,7 @@ class TestUpdateReceivedView:
 
         data = {"messages": message_ids}
         data = json.dumps(data)
-        response = auth_device.post(self.url, data, content_type="application/json")
+        response = auth_device.post(self.url, data, content_type=APPLICATION_JSON)
 
         assert response.status_code == status.HTTP_200_OK
 
@@ -408,7 +383,7 @@ class TestUpdateReceivedView:
     def test_empty_message_list(self, auth_device):
         data = {"messages": []}
         data = json.dumps(data)
-        response = auth_device.post(self.url, data, content_type="application/json")
+        response = auth_device.post(self.url, data, content_type=APPLICATION_JSON)
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert Message.objects.filter(received__isnull=False).count() == 0
@@ -417,7 +392,7 @@ class TestUpdateReceivedView:
         invalid_message_ids = [str(uuid4()), str(uuid4())]
         data = {"messages": invalid_message_ids}
         data = json.dumps(data)
-        response = auth_device.post(self.url, data, content_type="application/json")
+        response = auth_device.post(self.url, data, content_type=APPLICATION_JSON)
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert Message.objects.filter(received__isnull=False).count() == 0
@@ -433,7 +408,7 @@ class TestUpdateReceivedView:
 
         data = {"messages": message_ids}
         data = json.dumps(data)
-        response = auth_device.post(self.url, data, content_type="application/json")
+        response = auth_device.post(self.url, data, content_type=APPLICATION_JSON)
 
         assert response.status_code == status.HTTP_200_OK
 

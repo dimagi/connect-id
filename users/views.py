@@ -3,7 +3,7 @@ from secrets import token_hex
 
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
 from django.views import View
@@ -64,13 +64,8 @@ def test(request):
 
 @api_view(['POST'])
 def validate_phone(request):
-    # create otp device for user
-    # send otp code via twilio
     user = request.user
-    otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.phone_number, user=user)
-    otp_device.save()
-    otp_device.generate_challenge()
-    return HttpResponse()
+    return PhoneDevice.send_otp_httpresponse(phone_number=user.phone_number, user=user)
 
 
 @api_view(['POST'])
@@ -90,13 +85,8 @@ def confirm_otp(request):
 
 @api_view(['POST'])
 def validate_secondary_phone(request):
-    # create otp device for user
-    # send otp code via twilio
     user = request.user
-    otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.recovery_phone, user=user)
-    otp_device.save()
-    otp_device.generate_challenge()
-    return HttpResponse()
+    return PhoneDevice.send_otp_httpresponse(phone_number=user.recovery_phone, user=user)
 
 
 @api_view(['POST'])
@@ -190,7 +180,9 @@ def confirm_secondary_recovery_otp(request):
     status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
     status.save()
     db_key = UserKey.get_or_create_key_for_user(user)
-    return JsonResponse({"name": user.name, "username": user.username, "db_key": db_key.key})
+    user_data = {"name": user.name, "username": user.username, "db_key": db_key.key}
+    user_data.update(user_payment_profile(user))
+    return JsonResponse(user_data)
 
 
 @api_view(['POST'])
@@ -209,8 +201,7 @@ def confirm_password(request):
     if not check_password(password, user.password):
         return HttpResponse(status=401)
     status.delete()
-    db_key = UserKey.get_or_create_key_for_user(user)
-    return JsonResponse({"name": user.name, "username": user.username, "secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key})
+    return JsonResponse(user_data(user))
 
 
 @api_view(['POST'])
@@ -315,6 +306,26 @@ def set_recovery_pin(request):
     return HttpResponse()
 
 
+def user_data(user):
+    db_key = UserKey.get_or_create_key_for_user(user)
+    user_data = {"name": user.name, "username": user.username, "secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key}
+    user_data.update(user_payment_profile(user))
+    return user_data
+
+
+def user_payment_profile(user):
+    try:
+        profile = user.payment_profile
+        return {"payment_profile": {
+            "phone_number": profile.phone_number,
+            "telecom_provider": profile.telecom_provider,
+            "is_verified": profile.is_verified,
+            "status": profile.status,
+        }}
+    except ObjectDoesNotExist:
+        return {}
+
+
 @api_view(['POST'])
 @permission_classes([])
 def confirm_recovery_pin(request):
@@ -332,8 +343,7 @@ def confirm_recovery_pin(request):
         return JsonResponse({"error": "Recovery PIN is incorrect"}, status=401)
     status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
     status.save()
-    db_key = UserKey.get_or_create_key_for_user(user)
-    return JsonResponse({"name": user.name, "username": user.username, "secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key})
+    return JsonResponse(user_data(user))
 
 
 @api_view(['GET'])
