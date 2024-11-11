@@ -1,5 +1,7 @@
+import requests
 from datetime import timedelta
 from secrets import token_hex
+from urllib.parse import quote_plus, unquote_plus
 
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
@@ -12,7 +14,7 @@ from oauth2_provider.models import AccessToken, RefreshToken
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.views import APIView
 
-from utils import get_ip
+from utils import get_ip, get_sms_sender, send_sms
 from utils.rest_framework import ClientProtectedResourceAuth
 from .const import TEST_NUMBER_PREFIX
 from .fcm_utils import create_update_device
@@ -415,6 +417,52 @@ class AddCredential(APIView):
         for user in users:
             UserCredential.add_credential(user, credential, request)
         return HttpResponse()
+
+
+class ForwardHQInvite(APIView):
+    authentication_classes = [ClientProtectedResourceAuth]
+
+    def post(self, request, *args, **kwargs):
+        phone_number = request.data["phone_number"]
+        callback_url = quote_plus(request.data["callback_url"])
+        user_domain = request.data["user_domain"]
+        username = request.data["username"]
+        invite_code = request.data["invite_code"]
+        try:
+            user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
+        except ConnectUser.DoesNotExist:
+            # We don't want to make this a user lookup service
+            # So fake a success message
+            return JsonResponse({"success": True})
+        deeplink = f"https://connectid.dimagi.com/hq_invite/{callback_url}/{username}/{invite_code}/{user_domain}"
+        message = f"""
+        You are invited to join a CommCare project ({user.domain})
+        Please click on {deeplink} to join using your ConnectID
+        account.
+        Once you confirm, you will be able to login using your
+        ConnectID account. Your username is {(user.raw_username)}
+        Thanks.
+        -The ConnectID Team.
+        """
+        sender = get_sms_sender(user.phone_number.country_code)
+        send_sms(user.phone_number.as_e164, message, sender)
+        return JsonResponse({"success": True})
+
+
+class ConfirmHQInviteCallback(APIView):
+    authentication_classes = [ClientProtectedResourceAuth]
+
+    def post(self, request, *args, **kwargs):
+        callback_url = quote_plus(request.data["callback_url"])
+        invite_code = request.data["invite_code"]
+        user_token = request.data["user_token"]
+        invite_code = unquote_plus(callback_url)
+        try:
+            response = requests.post(callback_url, data={"invite_code": invite_code, "token": user_token})
+            response.raise_for_status()
+        except requests.RequestException as e:
+            return JsonResponse({"error": "Failed to reach callback URL"}, status=500)
+        return JsonResponse({"success": True})
 
 
 @api_view(['GET'])

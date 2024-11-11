@@ -32,4 +32,6 @@ urlpatterns = [
     path('fetch_db_key', views.fetch_db_key, name='fetch_db_key'),
     path('recover/initiate_deactivation', views.initiate_deactivation, name='initiate_deactivation'),
     path('recover/confirm_deactivation', views.confirm_deactivation, name='confirm_deactivation'),
+    path('forward_hq_invite', views.ForwardHQInvite, name='forward_hq_invite'),
+    path('confirm_hq_invite', views.ConfirmHQInviteCallback, name='confirm_hq_invite'),
 ]
