@@ -35,7 +35,6 @@ def update_payment_profile_phone(request):
 
 @api_view(['POST'])
 def confirm_payment_profile_otp(request):
-    PaymentProfile.objects.get(user=request.user)
     payment_profile = request.user.payment_profile
     device = PhoneDevice.objects.get(phone_number=payment_profile.phone_number, user=payment_profile.user)
     if not device.verify_token(request.data.get('token')):
@@ -98,19 +97,18 @@ class ValidatePhoneNumbers(APIView):
             "approved": [],
             "rejected": [],
         }
-        with transaction.atomic():
-            for profile in profiles:
-                key = (profile.user.username, profile.phone_number)
-                requested_status = status_map.get(key)
+        for profile in profiles:
+            key = (profile.user.username, profile.phone_number)
+            requested_status = status_map.get(key)
 
-                if profile.status != requested_status:
-                    profile.status = requested_status
-                    profiles_to_update.append(profile)
+            if profile.status != requested_status:
+                profile.status = requested_status
+                profiles_to_update.append(profile)
 
-                    usernames_by_states[requested_status].append(profile.user.username)
+                usernames_by_states[requested_status].append(profile.user.username)
 
-            if profiles_to_update:
-                PaymentProfile.objects.bulk_update(profiles_to_update, ['status'])
+        if profiles_to_update:
+            PaymentProfile.objects.bulk_update(profiles_to_update, ['status'])
 
         if usernames_by_states["approved"]:
             send_bulk_message(
