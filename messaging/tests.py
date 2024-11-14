@@ -12,6 +12,7 @@ from rest_framework import status
 from messaging.factories import ChannelFactory, MessageFactory, ServerFactory
 from messaging.models import Channel, Message, MessageStatus
 from messaging.serializers import MessageData
+from messaging.views import group_channel_messages
 from users.factories import FCMDeviceFactory
 
 APPLICATION_JSON = "application/json"
@@ -116,7 +117,7 @@ def channel(user, server, consent=True):
 def rest_channel_data(user=None, consent=False):
     return {
         "user_consent": consent,
-        "connectid": str(user.id) if user else None,
+        "connectid": str(user.username) if user else None,
         "channel_source": "hq project space",
     }
 
@@ -225,12 +226,7 @@ class TestSendMessageView:
 
             msg = Message.objects.filter(message_id=message_id).first()
 
-            # Prepare the expected message data in a defaultdict format
-            expected_message_data = defaultdict(lambda: {"messages": [], "url": None})
-            expected_message_data[str(channel.channel_id)] = {
-                "url": server.delivery_url,
-                "messages": [msg]
-            }
+            expected_message_data, _ = group_channel_messages([msg], "delivery_url", True)
 
             mock_make_request.assert_called_once_with(
                 expected_message_data,
@@ -258,12 +254,8 @@ class TestSendMessageView:
 
             assert mock_send_bulk_message.call_count == 1
 
-            expected_message_data = defaultdict(lambda: {"messages": [], "url": None})
             expected_messages = [Message.objects.get(message_id=msg_id) for msg_id in message_ids]
-            expected_message_data[str(channel.channel_id)] = {
-                "url": server.delivery_url,
-                "messages": expected_messages
-            }
+            expected_message_data, _ = group_channel_messages(expected_messages, "delivery_url", True)
 
             mock_send_bulk_message.assert_called_once_with(
                 expected_message_data,
