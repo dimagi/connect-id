@@ -34,7 +34,7 @@ class MessagingServerAuth(BasicAuthentication):
             server = MessageServer.objects.get(server_id=userid)
         except MessageServer.DoesNotExist:
             return None
-        valid = (password == MessageServer.secret_key)
+        valid = (password == server.secret_key)
         if valid:
             return MessagingServerUser(), None
 
