@@ -195,8 +195,11 @@ class SendServerConnectMessage(APIView):
             channel = message.channel
             message_to_send = MessageData(
                 usernames=[channel.connect_user.username],
-                data={"message_id": message.message_id, "channel_id": str(channel.channel_id),
-                      "content": message.content},
+                data={
+                    "message_id": message.message_id,
+                    "channel_id": str(channel.channel_id),
+                    "content": message.content
+                },
             )
             send_bulk_message(message_to_send)
             return JsonResponse(
