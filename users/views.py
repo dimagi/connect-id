@@ -434,7 +434,8 @@ class ForwardHQInvite(APIView):
             # We don't want to make this a user lookup service
             # So fake a success message
             return JsonResponse({"success": True})
-        deeplink = f"https://connectid.dimagi.com/hq_invite/{callback_url}/{username}/{invite_code}/{user_domain}"
+        details = f"{callback_url}/{username}/{invite_code}/{user_domain}/{user.username}"
+        deeplink = f"https://connectid.dimagi.com/hq_invite/{details}"
         message = f"""
         You are invited to join a CommCare project ({user.domain})
         Please click on {deeplink} to join using your ConnectID

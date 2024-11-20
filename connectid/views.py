@@ -1,4 +1,4 @@
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 
 
 def assetlinks_json(request):
@@ -28,3 +28,10 @@ def assetlinks_json(request):
         },
     ]
     return JsonResponse(assetfile, safe=False)
+
+
+def deeplink(request, subpath):
+    # If mobile is not able to process the deeplink
+    #   and the URL is opened in the browser, ask the
+    #   user to install the app and try again
+    return HttpResponse("Please install CommCare and re-open this link to accept invite")

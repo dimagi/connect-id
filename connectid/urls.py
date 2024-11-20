@@ -22,5 +22,6 @@ urlpatterns = [
     path('messaging/', include('messaging.urls')),
     path('admin/', admin.site.urls),
     path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')),
+    path('hq_invite/<path:subpath>/', views.deeplink, name='deeplink'),
     path('.well-known/assetlinks.json', views.assetlinks_json, name='assetlinks_json'),
 ]
