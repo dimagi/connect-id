@@ -21,6 +21,7 @@ class PaymentProfile(models.Model):
         related_name='payment_profile'
     )
     phone_number = PhoneNumberField()
+    owner_name = models.TextField(max_length=150, blank=True)
     telecom_provider = models.CharField(max_length=50, blank=True, null=True)
     # whether the number is verified using OTP
     is_verified = models.BooleanField(default=False)

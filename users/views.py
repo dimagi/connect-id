@@ -318,12 +318,13 @@ def user_payment_profile(user):
         profile = user.payment_profile
         return {"payment_profile": {
             "phone_number": profile.phone_number,
+            "owner_name": profile.owner_name,
             "telecom_provider": profile.telecom_provider,
             "is_verified": profile.is_verified,
             "status": profile.status,
         }}
     except ObjectDoesNotExist:
-        return {}
+        return {"payment_profile": {}}
 
 
 @api_view(['POST'])

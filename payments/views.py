@@ -20,11 +20,13 @@ from .models import PaymentProfile
 def update_payment_profile_phone(request):
     user = request.user
     phone_number = request.data.get('phone_number')
+    owner_name = request.data.get('owner_name')
     telecom_provider = lookup_telecom_provider(phone_number)
     payment_profile, created = PaymentProfile.objects.update_or_create(
         user=user,
         defaults={
             'phone_number': phone_number,
+            'owner_name': owner_name,
             'telecom_provider': telecom_provider,
             'is_verified': False,
             'status': PaymentProfile.PENDING

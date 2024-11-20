@@ -20,6 +20,7 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('phone_number', phonenumber_field.modelfields.PhoneNumberField(max_length=128, region=None)),
+                ('owner_name', models.TextField(max_length=150, blank=True)),
                 ('telecom_provider', models.CharField(blank=True, max_length=50, null=True)),
                 ('is_verified', models.BooleanField(default=False)),
                 ('status', models.CharField(choices=[('pending', 'Pending'), ('approved', 'Approved'), ('rejected', 'Rejected')], default='pending', max_length=10)),
