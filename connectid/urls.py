@@ -15,10 +15,12 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import include, path
+from . import views
 
 urlpatterns = [
     path('users/', include('users.urls')),
     path('messaging/', include('messaging.urls')),
     path('admin/', admin.site.urls),
     path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')),
+    path('.well-known/assetlinks.json', views.assetlinks_json, name='assetlinks_json'),
 ]
