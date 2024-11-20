@@ -25,7 +25,7 @@ class OauthClientUser(AnonymousUser):
         return "OauthClientUser"
 
 
-class MessagingServerAuth(OAuthLibMixin, BasicAuthentication):
+class MessagingServerAuth(BasicAuthentication):
     """Authenticate request using Client credentials (as in the OAuth2 spec).
     """
 
