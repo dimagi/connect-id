@@ -191,7 +191,7 @@ class SendServerConnectMessage(APIView):
         data = request.data
         content = data["content"]
         for field in ("nonce", "tag", "ciphertext"):
-            if not content["field"]:
+            if not content[field]:
                 return JsonResponse({"errors": "invalid message content"}, status=status.HTTP_400_BAD_REQUEST)
         message_data = {
             "channel_id": data["channel"],
