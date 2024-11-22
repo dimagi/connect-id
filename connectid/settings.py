@@ -80,7 +80,10 @@ TEMPLATES = [
 WSGI_APPLICATION = 'connectid.wsgi.application'
 
 
-
+TRUSTED_COMMCAREHQ_HOSTS = [
+    "commcarehq.org",
+    "staging.commcarehq.org",
+]
 
 # Password validation
 # https://docs.djangoproject.com/en/4.1/ref/settings/#auth-password-validators

@@ -1,8 +1,9 @@
 import requests
 from datetime import timedelta
 from secrets import token_hex
-from urllib.parse import quote_plus, unquote_plus
+from urllib.parse import quote_plus, unquote_plus, urlparse
 
+from django.conf import settings
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
@@ -420,7 +421,6 @@ class AddCredential(APIView):
 
 
 class ForwardHQInvite(APIView):
-    authentication_classes = [ClientProtectedResourceAuth]
 
     def post(self, request, *args, **kwargs):
         phone_number = request.data["phone_number"]
@@ -451,13 +451,16 @@ class ForwardHQInvite(APIView):
 
 
 class ConfirmHQInviteCallback(APIView):
-    authentication_classes = [ClientProtectedResourceAuth]
 
     def post(self, request, *args, **kwargs):
-        callback_url = quote_plus(request.data["callback_url"])
         invite_code = request.data["invite_code"]
         user_token = request.data["user_token"]
-        invite_code = unquote_plus(callback_url)
+        callback_url = unquote_plus(request.data["callback_url"])
+        # Validate callback_url
+        parsed_url = urlparse(callback_url)
+        if parsed_url.netloc not in settings.TRUSTED_COMMCAREHQ_HOSTS:
+            return JsonResponse({"error": "Unauthorized callback URL"}, status=400)
+
         try:
             response = requests.post(callback_url, data={"invite_code": invite_code, "token": user_token})
             response.raise_for_status()
