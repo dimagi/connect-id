@@ -77,40 +77,32 @@ class ValidatePhoneNumbers(APIView):
         # List of dictionaries: [{"username": ..., "phone_number": ..., "status": ...}, ...]
         users_data = request.data["updates"]
 
-        filter_conditions = Q()
-        status_map = {}
+        usernames = [data["username"] for data in users_data]
+        status_map = {data["username"]: data["status"] for data in users_data}
 
-        for data in users_data:
-            username = data["username"]
-            phone_number = data["phone_number"]
-            status = data["status"]
-
-            filter_conditions |= Q(user__username=username, phone_number=phone_number)
-            status_map[(username, phone_number)] = status
-
-        profiles = PaymentProfile.objects.filter(filter_conditions).select_related("user")
+        profiles = PaymentProfile.objects.filter(user__username__in=usernames).select_related("user")
         if len(profiles) != len(users_data):
             return Response(status=drf_status.HTTP_404_NOT_FOUND)
 
         profiles_to_update = []
-
         usernames_by_states = {
             "pending": [],
             "approved": [],
             "rejected": [],
         }
+
         for profile in profiles:
-            key = (profile.user.username, profile.phone_number)
-            requested_status = status_map.get(key)
+            username = profile.user.username
+            requested_status = status_map.get(username)
 
             if profile.status != requested_status:
                 profile.status = requested_status
                 profiles_to_update.append(profile)
 
-                usernames_by_states[requested_status].append(profile.user.username)
+                usernames_by_states[requested_status].append(username)
 
         if profiles_to_update:
-            PaymentProfile.objects.bulk_update(profiles_to_update, ['status'])
+            PaymentProfile.objects.bulk_update(profiles_to_update, ["status"])
 
         if usernames_by_states["approved"]:
             send_bulk_message(

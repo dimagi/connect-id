@@ -15,8 +15,8 @@ from users.factories import UserFactory
         # Scenario 1: Update both statuses successfully
         (
             [
-                {"username": "user1", "phone_number": "12345", "status": "approved"},
-                {"username": "user2", "phone_number": "67890", "status": "rejected"},
+                {"username": "user1", "status": "approved"},
+                {"username": "user2", "status": "rejected"},
             ],
             status.HTTP_200_OK,
             "approved",
@@ -26,7 +26,7 @@ from users.factories import UserFactory
         # Scenario 2: No change in status
         (
             [
-                {"username": "user2", "phone_number": "67890", "status": "approved"},
+                {"username": "user2", "status": "approved"},
             ],
             status.HTTP_200_OK,
             "pending",  # Should remain unchanged
@@ -36,7 +36,7 @@ from users.factories import UserFactory
         # Scenario 3: Invalid user (user doesn't exist)
         (
             [
-                {"username": "nonexistent_user", "phone_number": "00000", "status": "rejected"},
+                {"username": "nonexistent_user", "status": "rejected"},
             ],
             status.HTTP_404_NOT_FOUND,
             "pending",  # No change
@@ -46,8 +46,8 @@ from users.factories import UserFactory
         # Scenario 4: Multiple users, one invalid
         (
             [
-                {"username": "user1", "phone_number": "12345", "status": "approved"},
-                {"username": "nonexistent_user", "phone_number": "00000", "status": "rejected"},
+                {"username": "user1", "status": "approved"},
+                {"username": "nonexistent_user", "status": "rejected"},
             ],
             status.HTTP_404_NOT_FOUND,
             "pending",  # No change
