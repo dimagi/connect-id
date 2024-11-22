@@ -235,8 +235,8 @@ class SendMobileConnectMessage(APIView):
                 break
 
             message_data = {
-                "message_id": message["message_id"]
-                "content": message["content"]
+                "message_id": message["message_id"],
+                "content": message["content"],
                 "channel_id": message["channel_id"]
             }
             messages.append(Message(**message_data))
