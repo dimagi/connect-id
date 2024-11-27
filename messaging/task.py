@@ -44,7 +44,7 @@ def send_messages_to_service_and_mark_status(channel_messages,
             response = make_request(
                 url=url,
                 json_data={
-                    "channel": str(channel_id),
+                    "channel_id": str(channel_id),
                     "messages": messages,
                 },
                 secret=channel.server.secret_key
