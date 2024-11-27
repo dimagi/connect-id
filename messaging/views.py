@@ -221,10 +221,10 @@ class SendMobileConnectMessage(APIView):
         messages = []
         errors = set()
         for message in data:
-            if not message.get("channel_id"):
+            if not message.get("message_id"):
                 errors.add("missing message_id")
 
-            if not message.get("channel_id"):
+            if not message.get("channel"):
                 errors.add("missing channel_id")
 
             for field in ("nonce", "tag", "ciphertext"):
@@ -237,7 +237,7 @@ class SendMobileConnectMessage(APIView):
             message_data = {
                 "message_id": message["message_id"],
                 "content": message["content"],
-                "channel_id": message["channel_id"]
+                "channel_id": message["channel"]
             }
             messages.append(Message(**message_data))
 
@@ -360,7 +360,7 @@ class UpdateReceivedView(APIView):
                 channel_messages[channel_id]["messages"].append(
                     {
                         "message_id": str(message.message_id),
-                        "received": str(current_time),
+                        "received_on": str(current_time),
                     }
                 )
 
