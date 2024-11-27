@@ -64,7 +64,7 @@ ROOT_URLCONF = 'connectid.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        "DIRS": [BASE_DIR / "templates"],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -81,6 +81,7 @@ WSGI_APPLICATION = 'connectid.wsgi.application'
 
 
 TRUSTED_COMMCAREHQ_HOSTS = [
+    "www.commcarehq.org",
     "commcarehq.org",
     "staging.commcarehq.org",
 ]

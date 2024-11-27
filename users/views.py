@@ -1,7 +1,7 @@
 import requests
 from datetime import timedelta
 from secrets import token_hex
-from urllib.parse import quote_plus, unquote_plus, urlparse
+from urllib.parse import urlparse, urlencode
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password
@@ -421,13 +421,17 @@ class AddCredential(APIView):
 
 
 class ForwardHQInvite(APIView):
+    """
+    This view gets called by CommCareHQ to invite
+        a ConnectID User. It takes invite metadata
+        and fowards it as a deeplink SMS to mobile
+    """
 
     def post(self, request, *args, **kwargs):
         phone_number = request.data["phone_number"]
-        callback_url = quote_plus(request.data["callback_url"])
-        user_domain = request.data["user_domain"]
-        username = request.data["username"]
-        invite_code = request.data["invite_code"]
+        callback_url = request.data["callback_url"]
+        if not is_trusted_hqinvite_url(callback_url):
+            return JsonResponse({"error": "Unauthorized callback URL"}, status=400)
         try:
             user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
         except ConnectUser.DoesNotExist:
@@ -435,7 +439,16 @@ class ForwardHQInvite(APIView):
             # So fake a success message
             return JsonResponse({"success": True})
         details = f"{callback_url}/{username}/{invite_code}/{user_domain}/{user.username}"
-        deeplink = f"https://connectid.dimagi.com/hq_invite/{details}"
+
+        query_string = urlencode({
+            "hq_username": request.data["username"],
+            "hq_domain": request.data["user_domain"],
+            "connect_username": user.username,
+            "invite_code": request.data["invite_code"],
+            "callback_url": callback_url,
+        })
+        deeplink = f"https://connectid.dimagi.com/hq_invite/?{query_string}"
+
         message = f"""
         You are invited to join a CommCare project ({user.domain})
         Please click on {deeplink} to join using your ConnectID
@@ -450,15 +463,20 @@ class ForwardHQInvite(APIView):
         return JsonResponse({"success": True})
 
 
+def is_trusted_hqinvite_url(url):
+    parsed_url = urlparse(url)
+    return parsed_url.netloc in settings.TRUSTED_COMMCAREHQ_HOSTS
+
+
 class ConfirmHQInviteCallback(APIView):
 
     def post(self, request, *args, **kwargs):
         invite_code = request.data["invite_code"]
         user_token = request.data["user_token"]
-        callback_url = unquote_plus(request.data["callback_url"])
+        callback_url = request.data["callback_url"]
+
         # Validate callback_url
-        parsed_url = urlparse(callback_url)
-        if parsed_url.netloc not in settings.TRUSTED_COMMCAREHQ_HOSTS:
+        if not is_trusted_hqinvite_url(callback_url):
             return JsonResponse({"error": "Unauthorized callback URL"}, status=400)
 
         try:
