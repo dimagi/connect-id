@@ -170,18 +170,23 @@ class CreateChannelView(APIView):
         channel_source = data["channel_source"]
         server = get_current_message_server(request)
         user = get_object_or_404(ConnectUser, username=connect_id)
-        channel = Channel.objects.create(server=server, connect_user=user, channel_source=channel_source)
-        message = MessageData(
-            usernames=[channel.connect_user.username],
-            title="Channel created",
-            body="Please provide your consent to send/receive message.",
-            data={"keyUrl": server.key_url},
-        )
-        # send fcm notification.
-        send_bulk_message(message)
-        return JsonResponse(
-            {"channel_id": str(channel.channel_id)}, status=status.HTTP_201_CREATED
-        )
+        channel, created = Channel.objects.get_or_create(server=server, connect_user=user, channel_source=channel_source)
+        if created:
+            message = MessageData(
+                usernames=[channel.connect_user.username],
+                title="Channel created",
+                body="Please provide your consent to send/receive message.",
+                data={"keyUrl": server.key_url},
+            )
+            # send fcm notification.
+            send_bulk_message(message)
+            return JsonResponse(
+                {"channel_id": str(channel.channel_id)}, status=status.HTTP_201_CREATED
+            )
+        else:
+            return JsonResponse(
+                {"channel_id": str(channel.channel_id)}, status=status.HTTP_200_OK
+            )
 
 
 class SendServerConnectMessage(APIView):
