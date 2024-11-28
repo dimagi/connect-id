@@ -25,7 +25,7 @@ def get_current_message_server(request):
     encoded_credentials = auth_header.split(' ')[1]
     decoded_credentials = base64.b64decode(encoded_credentials).decode('utf-8')
     client_id, client_secret = decoded_credentials.split(':')
-    server = get_object_or_404(MessageServer, oauth_application__client_id=client_id)
+    server = get_object_or_404(MessageServer, server_id=client_id)
     return server
 
 
