@@ -25,7 +25,7 @@ def get_current_message_server(request):
     encoded_credentials = auth_header.split(' ')[1]
     decoded_credentials = base64.b64decode(encoded_credentials).decode('utf-8')
     client_id, client_secret = decoded_credentials.split(':')
-    server = get_object_or_404(MessageServer, oauth_application__client_id=client_id)
+    server = get_object_or_404(MessageServer, server_id=client_id)
     return server
 
 
@@ -170,18 +170,23 @@ class CreateChannelView(APIView):
         channel_source = data["channel_source"]
         server = get_current_message_server(request)
         user = get_object_or_404(ConnectUser, username=connect_id)
-        channel = Channel.objects.create(server=server, connect_user=user, channel_source=channel_source)
-        message = MessageData(
-            usernames=[channel.connect_user.username],
-            title="Channel created",
-            body="Please provide your consent to send/receive message.",
-            data={"keyUrl": server.key_url},
-        )
-        # send fcm notification.
-        send_bulk_message(message)
-        return JsonResponse(
-            {"channel_id": str(channel.channel_id)}, status=status.HTTP_201_CREATED
-        )
+        channel, created = Channel.objects.get_or_create(server=server, connect_user=user, channel_source=channel_source)
+        if created:
+            message = MessageData(
+                usernames=[channel.connect_user.username],
+                title="Channel created",
+                body="Please provide your consent to send/receive message.",
+                data={"keyUrl": server.key_url},
+            )
+            # send fcm notification.
+            send_bulk_message(message)
+            return JsonResponse(
+                {"channel_id": str(channel.channel_id)}, status=status.HTTP_201_CREATED
+            )
+        else:
+            return JsonResponse(
+                {"channel_id": str(channel.channel_id)}, status=status.HTTP_200_OK
+            )
 
 
 class SendServerConnectMessage(APIView):
