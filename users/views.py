@@ -1,6 +1,9 @@
+import requests
 from datetime import timedelta
 from secrets import token_hex
+from urllib.parse import urlparse, urlencode
 
+from django.conf import settings
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
@@ -12,7 +15,7 @@ from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.views import APIView
 
-from utils import get_ip
+from utils import get_ip, get_sms_sender, send_sms
 from utils.rest_framework import ClientProtectedResourceAuth
 from .const import TEST_NUMBER_PREFIX
 from .fcm_utils import create_update_device
@@ -415,6 +418,73 @@ class AddCredential(APIView):
         for user in users:
             UserCredential.add_credential(user, credential, request)
         return HttpResponse()
+
+
+class ForwardHQInvite(APIView):
+    """
+    This view gets called by CommCareHQ to invite
+        a ConnectID User. It takes invite metadata
+        and fowards it as a deeplink SMS to mobile
+    """
+
+    def post(self, request, *args, **kwargs):
+        phone_number = request.data["phone_number"]
+        callback_url = request.data["callback_url"]
+        if not is_trusted_hqinvite_url(callback_url):
+            return JsonResponse({"error": "Unauthorized callback URL"}, status=400)
+        try:
+            user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
+        except ConnectUser.DoesNotExist:
+            # We don't want to make this a user lookup service
+            # So fake a success message
+            return JsonResponse({"success": True})
+        details = f"{callback_url}/{username}/{invite_code}/{user_domain}/{user.username}"
+
+        query_string = urlencode({
+            "hq_username": request.data["username"],
+            "hq_domain": request.data["user_domain"],
+            "connect_username": user.username,
+            "invite_code": request.data["invite_code"],
+            "callback_url": callback_url,
+        })
+        deeplink = f"https://connectid.dimagi.com/hq_invite/?{query_string}"
+
+        message = f"""
+        You are invited to join a CommCare project ({user.domain})
+        Please click on {deeplink} to join using your ConnectID
+        account.
+        Once you confirm, you will be able to login using your
+        ConnectID account. Your username is {(user.raw_username)}
+        Thanks.
+        -The ConnectID Team.
+        """
+        sender = get_sms_sender(user.phone_number.country_code)
+        send_sms(user.phone_number.as_e164, message, sender)
+        return JsonResponse({"success": True})
+
+
+def is_trusted_hqinvite_url(url):
+    parsed_url = urlparse(url)
+    return parsed_url.netloc in settings.TRUSTED_COMMCAREHQ_HOSTS
+
+
+class ConfirmHQInviteCallback(APIView):
+
+    def post(self, request, *args, **kwargs):
+        invite_code = request.data["invite_code"]
+        user_token = request.data["user_token"]
+        callback_url = request.data["callback_url"]
+
+        # Validate callback_url
+        if not is_trusted_hqinvite_url(callback_url):
+            return JsonResponse({"error": "Unauthorized callback URL"}, status=400)
+
+        try:
+            response = requests.post(callback_url, data={"invite_code": invite_code, "token": user_token})
+            response.raise_for_status()
+        except requests.RequestException as e:
+            return JsonResponse({"error": "Failed to reach callback URL"}, status=500)
+        return JsonResponse({"success": True})
 
 
 @api_view(['GET'])

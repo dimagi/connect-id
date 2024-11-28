@@ -15,6 +15,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import include, path
+from django.views.generic import TemplateView
 from . import views
 
 urlpatterns = [
@@ -22,5 +23,6 @@ urlpatterns = [
     path('messaging/', include('messaging.urls')),
     path('admin/', admin.site.urls),
     path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')),
+    path('hq_invite/', TemplateView.as_view(template_name="connectid/deeplink.html"), name='deeplink'),
     path('.well-known/assetlinks.json', views.assetlinks_json, name='assetlinks_json'),
 ]
