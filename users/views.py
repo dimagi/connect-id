@@ -317,7 +317,7 @@ def user_payment_profile(user):
     try:
         profile = user.payment_profile
         return {"payment_profile": {
-            "phone_number": profile.phone_number,
+            "phone_number": profile.phone_number.as_e164,
             "owner_name": profile.owner_name,
             "telecom_provider": profile.telecom_provider,
             "is_verified": profile.is_verified,
