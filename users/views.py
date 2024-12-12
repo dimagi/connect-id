@@ -426,6 +426,7 @@ class ForwardHQInvite(APIView):
         a ConnectID User. It takes invite metadata
         and fowards it as a deeplink SMS to mobile
     """
+    authentication_classes = [ClientProtectedResourceAuth]
 
     def post(self, request, *args, **kwargs):
         phone_number = request.data["phone_number"]
