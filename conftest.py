@@ -5,7 +5,7 @@ from oauth2_provider.models import Application
 from rest_framework.test import APIClient
 
 from users.factories import UserFactory, FCMDeviceFactory
-
+from messaging.factories import ServerFactory
 
 @pytest.fixture
 def user(db):
