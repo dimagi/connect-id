@@ -1,6 +1,7 @@
 import base64
 from collections import defaultdict
 
+from django.db import transaction
 from django.db.models import Prefetch
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -16,7 +17,7 @@ from messaging.serializers import SingleMessageSerializer, BulkMessageSerializer
     MessageData
 from messaging.task import make_request, send_messages_to_service_and_mark_status
 from users.models import ConnectUser
-from utils.rest_framework import ClientProtectedResourceAuth
+from utils.rest_framework import ClientProtectedResourceAuth, MessagingServerAuth
 
 
 def get_current_message_server(request):
@@ -161,7 +162,7 @@ def _build_notification(data):
 
 
 class CreateChannelView(APIView):
-    authentication_classes = [ClientProtectedResourceAuth]
+    authentication_classes = [MessagingServerAuth]
 
     def post(self, request, *args, **kwargs):
         data = request.data
@@ -184,7 +185,7 @@ class CreateChannelView(APIView):
 
 
 class SendServerConnectMessage(APIView):
-    authentication_classes = [ClientProtectedResourceAuth]
+    authentication_classes = [MessagingServerAuth]
 
     def post(self, request, *args, **kwargs):
         data = request.data
@@ -194,8 +195,11 @@ class SendServerConnectMessage(APIView):
             channel = message.channel
             message_to_send = MessageData(
                 usernames=[channel.connect_user.username],
-                data={"message_id": message.message_id, "channel_id": str(channel.channel_id),
-                      "content": message.content},
+                data={
+                    "message_id": message.message_id,
+                    "channel_id": str(channel.channel_id),
+                    "content": message.content
+                },
             )
             send_bulk_message(message_to_send)
             return JsonResponse(
@@ -264,7 +268,7 @@ class RetrieveMessageView(APIView):
         messages = []
         for channel in channels:
             channels_data.append({"channel_source": channel.channel_source, "channel_id": str(channel.channel_id),
-                                  "key_url": channel.server.key_url})
+                                  "key_url": channel.server.key_url, "consent": channel.user_consent})
             channel_messages = channel.message_set.all()
             messages.extend(channel_messages)
 
@@ -286,15 +290,14 @@ class UpdateConsentView(APIView):
 
         channel.user_consent = consent
         channel.save()
-        oauth_application = channel.server.oauth_application
 
         json_data = {
             "channel_id": str(channel.channel_id),
-            "consent": str(channel.user_consent),
+            "consent": channel.user_consent,
         }
 
         response = make_request(url=channel.server.consent_url, json_data=json_data,
-                                secret=oauth_application.client_secret)
+                                secret=channel.server.secret_key)
 
         if response.status_code != status.HTTP_200_OK:
             return JsonResponse(
@@ -312,36 +315,37 @@ class UpdateReceivedView(APIView):
         if not message_ids:
             return JsonResponse({}, status=status.HTTP_400_BAD_REQUEST)
 
-        messages = (
-            Message.objects.select_for_update()
-            .filter(message_id__in=message_ids)
-            .select_related("channel")
-        )
-
-        if not messages.exists():
-            return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
-
-        current_time = timezone.now()
-        messages.update(received=current_time, status=MessageStatus.DELIVERED)
-
-        # Group messages by their channel
-        channel_messages = defaultdict(lambda: {"messages": [], "url": None})
-        for message in messages:
-            channel_id = str(message.channel.channel_id)
-
-            channel_messages[channel_id]["messages"].append(
-                {
-                    "message_id": str(message.message_id),
-                    "received": str(current_time),
-                }
+        with transaction.atomic():
+            messages = (
+                Message.objects.select_for_update()
+                .filter(message_id__in=message_ids)
+                .select_related("channel")
             )
 
-            if channel_messages[channel_id]["url"] is None:
-                channel_messages[channel_id][
-                    "url"
-                ] = message.channel.server.callback_url
+            if not messages.exists():
+                return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
 
-        # To-Do should be async.
-        send_messages_to_service_and_mark_status(channel_messages, MessageStatus.CONFIRMED_RECEIVED)
+            current_time = timezone.now()
+            messages.update(received=current_time, status=MessageStatus.DELIVERED)
+
+            # Group messages by their channel
+            channel_messages = defaultdict(lambda: {"messages": [], "url": None})
+            for message in messages:
+                channel_id = str(message.channel.channel_id)
+
+                channel_messages[channel_id]["messages"].append(
+                    {
+                        "message_id": str(message.message_id),
+                        "received": str(current_time),
+                    }
+                )
+
+                if channel_messages[channel_id]["url"] is None:
+                    channel_messages[channel_id][
+                        "url"
+                    ] = message.channel.server.callback_url
+
+            # To-Do should be async.
+            send_messages_to_service_and_mark_status(channel_messages, MessageStatus.CONFIRMED_RECEIVED)
 
         return JsonResponse({}, status=status.HTTP_200_OK)

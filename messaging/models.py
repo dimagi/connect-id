@@ -3,17 +3,22 @@ import uuid
 from django.db import models
 from django.utils import timezone
 from oauth2_provider.models import Application
+from oauth2_provider.generators import generate_client_id, generate_client_secret
 
 from users.models import ConnectUser
 
 
 class MessageServer(models.Model):
     name = models.CharField(max_length=255)
-    oauth_application = models.ForeignKey(Application, on_delete=models.CASCADE)
     key_url = models.URLField(max_length=200)
     callback_url = models.URLField(max_length=200)
     delivery_url = models.URLField(max_length=200)
     consent_url = models.URLField(max_length=200)
+    server_id = models.CharField(max_length=100, unique=True, default=generate_client_id, db_index=True)
+    secret_key = models.CharField(
+        max_length=255,
+        default=generate_client_secret,
+    )
 
 
 class Channel(models.Model):

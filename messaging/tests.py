@@ -1,4 +1,3 @@
-import base64
 import json
 from collections import defaultdict
 from unittest import mock
@@ -20,6 +19,10 @@ from users.factories import FCMDeviceFactory, UserFactory
 
 APPLICATION_JSON = "application/json"
 
+
+@pytest.fixture
+def server(oauth_app):
+    return ServerFactory(oauth_application=oauth_app)
 
 def test_send_message(authed_client, fcm_device):
     url = reverse('messaging:send_message')
@@ -345,7 +348,7 @@ class TestUpdateConsentView:
                     "channel_id": str(channel.channel_id),
                     "consent": str(consent),
                 },
-                secret= server.oauth_application.client_secret
+                secret=server.oauth_application.client_secret
             )
 
     def test_restrict_consent(self, auth_device, channel, server):

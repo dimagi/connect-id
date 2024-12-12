@@ -23,16 +23,16 @@ def api_client():
 
 
 @pytest.fixture
-def auth_device(user):
+def auth_device(user, api_client):
     """
     Create the Basic Authentication credentials for the test user.
     """
     credentials = f"{user.username}:testpass".encode("utf-8")
     base64_credentials = base64.b64encode(credentials).decode("utf-8")
     cred = f"Basic {base64_credentials}"
-    client = APIClient()
-    client.credentials(HTTP_AUTHORIZATION=cred)
-    return client
+    api_client.credentials(HTTP_AUTHORIZATION=cred)
+    return api_client
+
 
 @pytest.fixture
 def oauth_app(user):
@@ -49,13 +49,8 @@ def oauth_app(user):
 
 
 @pytest.fixture
-def server(oauth_app):
-    return ServerFactory(oauth_application=oauth_app)
-
-
-@pytest.fixture
-def authed_client(client, oauth_app):
+def authed_client(api_client, oauth_app):
     auth = f'{oauth_app.client_id}:{oauth_app.raw_client_secret}'.encode('utf-8')
     credentials = base64.b64encode(auth).decode('utf-8')
-    client.defaults['HTTP_AUTHORIZATION'] = 'Basic ' + credentials
-    return client
+    api_client.defaults['HTTP_AUTHORIZATION'] = 'Basic ' + credentials
+    return api_client
