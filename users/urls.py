@@ -37,4 +37,6 @@ urlpatterns = [
     path('profile/confirm_payment_otp', payment_views.confirm_payment_profile_otp, name='confirm_payment_profile_otp'),
     path('fetch_payment_phone_numbers', payment_views.FetchPhoneNumbers.as_view(), name='fetch_payment_phone_numbers'),
     path('validate_payment_phone_numbers', payment_views.ValidatePhoneNumbers.as_view(), name='validate_payment_phone_numbers'),
+    path('forward_hq_invite', views.ForwardHQInvite.as_view(), name='forward_hq_invite'),
+    path('confirm_hq_invite', views.ConfirmHQInviteCallback.as_view(), name='confirm_hq_invite'),
 ]

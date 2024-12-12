@@ -25,7 +25,7 @@ def get_current_message_server(request):
     encoded_credentials = auth_header.split(' ')[1]
     decoded_credentials = base64.b64decode(encoded_credentials).decode('utf-8')
     client_id, client_secret = decoded_credentials.split(':')
-    server = get_object_or_404(MessageServer, oauth_application__client_id=client_id)
+    server = get_object_or_404(MessageServer, server_id=client_id)
     return server
 
 
@@ -170,18 +170,23 @@ class CreateChannelView(APIView):
         channel_source = data["channel_source"]
         server = get_current_message_server(request)
         user = get_object_or_404(ConnectUser, username=connect_id)
-        channel = Channel.objects.create(server=server, connect_user=user, channel_source=channel_source)
-        message = MessageData(
-            usernames=[channel.connect_user.username],
-            title="Channel created",
-            body="Please provide your consent to send/receive message.",
-            data={"keyUrl": server.key_url},
-        )
-        # send fcm notification.
-        send_bulk_message(message)
-        return JsonResponse(
-            {"channel_id": str(channel.channel_id)}, status=status.HTTP_201_CREATED
-        )
+        channel, created = Channel.objects.get_or_create(server=server, connect_user=user, channel_source=channel_source)
+        if created:
+            message = MessageData(
+                usernames=[channel.connect_user.username],
+                title="Channel created",
+                body="Please provide your consent to send/receive message.",
+                data={"keyUrl": server.key_url},
+            )
+            # send fcm notification.
+            send_bulk_message(message)
+            return JsonResponse(
+                {"channel_id": str(channel.channel_id)}, status=status.HTTP_201_CREATED
+            )
+        else:
+            return JsonResponse(
+                {"channel_id": str(channel.channel_id)}, status=status.HTTP_200_OK
+            )
 
 
 class SendServerConnectMessage(APIView):
@@ -189,24 +194,27 @@ class SendServerConnectMessage(APIView):
 
     def post(self, request, *args, **kwargs):
         data = request.data
-        serializer = MessageSerializer(data=data)
-        if serializer.is_valid():
-            message = serializer.save()
-            channel = message.channel
-            message_to_send = MessageData(
-                usernames=[channel.connect_user.username],
-                data={
-                    "message_id": message.message_id,
-                    "channel_id": str(channel.channel_id),
-                    "content": message.content
-                },
-            )
-            send_bulk_message(message_to_send)
-            return JsonResponse(
-                {"message_id": str(message.message_id)},
-                status=status.HTTP_200_OK,
-            )
-        return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        content = data["content"]
+        for field in ("nonce", "tag", "ciphertext"):
+            if not content[field]:
+                return JsonResponse({"errors": "invalid message content"}, status=status.HTTP_400_BAD_REQUEST)
+        message_data = {
+            "channel_id": data["channel"],
+            "content": data["content"],
+            "message_id": data["message_id"]
+        }
+        message = Message(**message_data)
+        message.save()
+        channel = message.channel
+        message_to_send = MessageData(
+            usernames=[channel.connect_user.username],
+            data=MessageSerializer(message).data
+        )
+        send_bulk_message(message_to_send)
+        return JsonResponse(
+            {"message_id": str(message.message_id)},
+            status=status.HTTP_200_OK,
+        )
 
 
 class SendMobileConnectMessage(APIView):
@@ -215,35 +223,56 @@ class SendMobileConnectMessage(APIView):
         data = request.data
         if not isinstance(data, list):
             data = [data]
-        serializer = MessageSerializer(data=data, many=True)
-        if serializer.is_valid():
-            messages = serializer.save()
+        messages = []
+        errors = set()
+        for message in data:
+            if not message.get("message_id"):
+                errors.add("missing message_id")
 
-            messages_ready_to_be_sent = defaultdict(lambda: {"messages": [], "url": None})
-            messages_ready_to_be_sent_ids = []
+            if not message.get("channel"):
+                errors.add("missing channel_id")
 
-            for msg in messages:
-                channel = msg.channel
-                server = channel.server
+            for field in ("nonce", "tag", "ciphertext"):
+                if not message.get("content", {}).get(field):
+                    errors.add("invalid message content")
 
-                channel_id = str(channel.channel_id)
-                messages_ready_to_be_sent[channel_id]["messages"].append(msg)
+            if errors:
+                break
 
-                if messages_ready_to_be_sent[channel_id]["url"] is None:
-                    messages_ready_to_be_sent[channel_id][
-                        "url"
-                    ] = server.delivery_url
+            message_data = {
+                "message_id": message["message_id"],
+                "content": message["content"],
+                "channel_id": message["channel"]
+            }
+            messages.append(Message(**message_data))
 
-                messages_ready_to_be_sent_ids.append(str(msg.message_id))
+        if errors:
+            return JsonResponse({"errors": list(errors)}, status=status.HTTP_400_BAD_REQUEST)
 
-            send_messages_to_service_and_mark_status(messages_ready_to_be_sent, MessageStatus.SENT_TO_SERVICE)
+        message_objs = Message.objects.bulk_create(messages)
+        messages_ready_to_be_sent = defaultdict(lambda: {"messages": [], "url": None})
+        messages_ready_to_be_sent_ids = []
 
-            return JsonResponse(
-                {"message_id": messages_ready_to_be_sent_ids},
-                status=status.HTTP_201_CREATED,
-            )
+        for msg in message_objs:
+            channel = msg.channel
+            server = channel.server
 
-        return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            channel_id = str(channel.channel_id)
+            messages_ready_to_be_sent[channel_id]["messages"].append(MessageSerializer(msg).data)
+
+            if messages_ready_to_be_sent[channel_id]["url"] is None:
+                messages_ready_to_be_sent[channel_id][
+                    "url"
+                ] = server.delivery_url
+
+            messages_ready_to_be_sent_ids.append(str(msg.message_id))
+
+        send_messages_to_service_and_mark_status(messages_ready_to_be_sent, MessageStatus.SENT_TO_SERVICE)
+
+        return JsonResponse(
+            {"message_id": messages_ready_to_be_sent_ids},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class RetrieveMessageView(APIView):
@@ -336,7 +365,7 @@ class UpdateReceivedView(APIView):
                 channel_messages[channel_id]["messages"].append(
                     {
                         "message_id": str(message.message_id),
-                        "received": str(current_time),
+                        "received_on": str(current_time),
                     }
                 )
 
