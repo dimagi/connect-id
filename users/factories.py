@@ -2,7 +2,7 @@ import factory
 from factory.django import DjangoModelFactory
 from fcm_django.models import FCMDevice
 
-from users.models import ConnectUser
+from users.models import ConnectUser, Credential
 
 
 class UserFactory(DjangoModelFactory):
@@ -22,3 +22,12 @@ class FCMDeviceFactory(DjangoModelFactory):
     registration_id = factory.Faker('uuid4')
     type = 'android'
     active = True
+
+
+class CredentialFactory(DjangoModelFactory):
+    class Meta:
+        model = Credential
+
+    name = factory.Faker('name')
+    slug = factory.Faker('slug')
+    organization_slug = factory.Faker('slug')

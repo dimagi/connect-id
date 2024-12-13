@@ -25,7 +25,8 @@ def get_ip(request):
 
 def get_sms_sender(country_code):
     SMS_SENDERS = {
-        "265": "ConnectID"
+        "265": "ConnectID",
+        "258": "ConnectID"
     }
     return SMS_SENDERS.get(str(country_code))
 

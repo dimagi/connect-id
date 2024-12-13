@@ -9,4 +9,6 @@ phonenumberslite
 psycopg2
 twilio
 zxcvbn
-fcm-django
+fcm-django>=2.2
+redis
+celery

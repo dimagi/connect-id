@@ -1,28 +1,31 @@
 from datetime import timedelta
 import base64
+from datetime import timedelta
 import os
 
 from uuid import uuid4
 
+from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import AbstractUser
 from django.contrib.sites.models import Site
 from django.db import models
+from django.http import HttpResponse
 from django.utils.timezone import now
 from django.urls import reverse
+from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
 
+from django_otp.util import random_hex
 from phonenumber_field.modelfields import PhoneNumberField
 
 from utils import get_sms_sender, send_sms
 
 from .const import TEST_NUMBER_PREFIX
 
-# Create your models here.
-
 
 class ConnectUser(AbstractUser):
-    phone_number = PhoneNumberField(unique=True)
+    phone_number = PhoneNumberField()
     phone_validated = models.BooleanField(default=False)
     recovery_phone = PhoneNumberField(blank=True)
     recovery_phone_validated = models.BooleanField(default=False)
@@ -33,6 +36,8 @@ class ConnectUser(AbstractUser):
     # store a hashed value rather than setting it directly
     recovery_pin = models.CharField(null=True, blank=True, max_length=128)
     recovery_phone_validation_deadline = models.DateField(blank=True, null=True)
+    deactivation_token = models.CharField(max_length=25, blank=True, null=True)
+    deactivation_token_valid_until = models.DateTimeField(blank=True, null=True)
 
     # removed from base class
     first_name = None
@@ -46,6 +51,28 @@ class ConnectUser(AbstractUser):
 
     def check_recovery_pin(self, pin):
         return check_password(pin, self.recovery_pin)
+
+    def initiate_deactivation(self):
+        self.deactivation_token = random_hex(7)
+        self.deactivation_token_valid_until = now() + timedelta(seconds=600)
+        self.save()
+        message = (
+            f"Your account deactivation request is pending. Please enter this token {self.deactivation_token} to confirm account deactivation."
+            f"Warning: This action is irreversible. If you didn't request deactivation, please ignore this message. \n\n {settings.APP_HASH}"
+        )
+        if not self.phone_number.raw_input.startswith(TEST_NUMBER_PREFIX):
+            sender = get_sms_sender(self.phone_number.country_code)
+            send_sms(self.phone_number.as_e164, message, sender)
+        return message
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["phone_number"],
+                condition=models.Q(is_active=True),
+                name="phone_number_active_user",
+            )
+        ]
 
 
 class UserKey(models.Model):
@@ -76,7 +103,7 @@ class PhoneDevice(SideChannelDevice):
         if self.valid_until - now() <= timedelta(minutes=5):
             self.otp_last_sent = None
             self.generate_token(valid_secs=600)
-        message = f"Your verification token from commcare connect is {self.token}"
+        message = f"Your verification token from commcare connect is {self.token} \n\n {settings.APP_HASH}"
         # send the OTP if last sent message is not within the last 2 minutes
         if self.otp_last_sent is None or (
             self.otp_last_sent and now() - self.otp_last_sent >= timedelta(minutes=2)
@@ -86,7 +113,17 @@ class PhoneDevice(SideChannelDevice):
                 send_sms(self.phone_number.as_e164, message, sender)
             self.otp_last_sent = now()
             self.save()
+
         return message
+
+    @classmethod
+    def send_otp_httpresponse(cls, phone_number, user):
+        # create otp device for user
+        # send otp code via twilio
+        otp_device, _ = cls.objects.get_or_create(phone_number=phone_number, user=user)
+        otp_device.save()
+        otp_device.generate_challenge()
+        return HttpResponse()
 
     class Meta:
         constraints = [

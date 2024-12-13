@@ -1,6 +1,7 @@
 from django.urls import path
 
 from . import views
+from payments import views as payment_views
 
 urlpatterns = [
     path('', views.test, name='test'),
@@ -30,4 +31,12 @@ urlpatterns = [
     path('accept_credential/<slug:invite_id>', views.accept_credential, name='accept_credential'),
     path('fetch_credentials', views.FetchCredentials.as_view(), name='fetch_credentials'),
     path('fetch_db_key', views.fetch_db_key, name='fetch_db_key'),
+    path('recover/initiate_deactivation', views.initiate_deactivation, name='initiate_deactivation'),
+    path('recover/confirm_deactivation', views.confirm_deactivation, name='confirm_deactivation'),
+    path('profile/payment_phone_number', payment_views.update_payment_profile_phone, name='update_payment_profile_phone'),
+    path('profile/confirm_payment_otp', payment_views.confirm_payment_profile_otp, name='confirm_payment_profile_otp'),
+    path('fetch_payment_phone_numbers', payment_views.FetchPhoneNumbers.as_view(), name='fetch_payment_phone_numbers'),
+    path('validate_payment_phone_numbers', payment_views.ValidatePhoneNumbers.as_view(), name='validate_payment_phone_numbers'),
+    path('forward_hq_invite', views.ForwardHQInvite.as_view(), name='forward_hq_invite'),
+    path('confirm_hq_invite', views.ConfirmHQInviteCallback.as_view(), name='confirm_hq_invite'),
 ]

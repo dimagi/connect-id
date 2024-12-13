@@ -2,9 +2,11 @@ from datetime import timedelta
 from re import A
 from django.utils.timezone import now
 import pytest
+from django.urls import reverse
 from fcm_django.models import FCMDevice
 from unittest import mock
 
+from users.factories import CredentialFactory
 from users.fcm_utils import create_update_device
 from users.models import ConnectUser, PhoneDevice
 
@@ -87,6 +89,7 @@ def test_otp_generation(user):
         assert phone_device.token is not None
         assert phone_device.otp_last_sent is not None
 
+
 def test_otp_generation_after_two_minutes(user):
     with mock.patch("users.models.send_sms") as send_sms:
         phone_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.phone_number, user=user)
@@ -129,3 +132,28 @@ def test_otp_generation_after_five_minutes(user):
         assert phone_device.token is not None
         assert phone_device.token != token
         assert send_sms.call_count == 3
+
+
+@pytest.mark.django_db
+class TestFetchCredentials:
+
+    def setup_method(self):
+        self.url = "/users/fetch_credentials"
+        CredentialFactory.create_batch(3, organization_slug="test_slug")
+        CredentialFactory.create_batch(10)
+
+    def assert_statements(self, response, expected_count):
+        assert response.status_code == 200
+        response_data = response.json()
+        assert "credentials" in response_data
+        assert len(response_data["credentials"]) == expected_count
+        for credential in response_data["credentials"]:
+            assert set(credential.keys()) == {"name", "slug"}
+
+    def test_fetch_credential_with_org_slug(self, authed_client):
+        response = authed_client.get(self.url + "?org_slug=test_slug")
+        self.assert_statements(response, expected_count=3)
+
+    def test_fetch_credential_without_org_slug(self, authed_client):
+        response = authed_client.get(self.url)
+        self.assert_statements(response, expected_count=13)
