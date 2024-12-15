@@ -12,7 +12,7 @@ from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.views import APIView
 
-from messaging.models import Channel, Message, MessageStatus, MessageServer
+from messaging.models import Channel, Message, MessageDirection, MessageStatus, MessageServer
 from messaging.serializers import SingleMessageSerializer, BulkMessageSerializer, MessageSerializer, \
     MessageData
 from messaging.task import make_request, send_messages_to_service_and_mark_status
@@ -201,7 +201,8 @@ class SendServerConnectMessage(APIView):
         message_data = {
             "channel_id": data["channel"],
             "content": data["content"],
-            "message_id": data["message_id"]
+            "message_id": data["message_id"],
+            "direction": MessageDirection.MOBILE
         }
         message = Message(**message_data)
         message.save()
@@ -242,7 +243,8 @@ class SendMobileConnectMessage(APIView):
             message_data = {
                 "message_id": message["message_id"],
                 "content": message["content"],
-                "channel_id": message["channel"]
+                "channel_id": message["channel"],
+                "direction": MessageDirection.SERVER
             }
             messages.append(Message(**message_data))
 
@@ -298,7 +300,11 @@ class RetrieveMessageView(APIView):
         for channel in channels:
             channels_data.append({"channel_source": channel.channel_source, "channel_id": str(channel.channel_id),
                                   "key_url": channel.server.key_url, "consent": channel.user_consent})
-            channel_messages = channel.message_set.all()
+            channel_messages = Message.objects.filter(
+                channel=channel,
+                direction=MessageDirection.MOBILE,
+                status=MessageStatus.PENDING
+            )
             messages.extend(channel_messages)
 
         messages_data = MessageSerializer(messages, many=True).data

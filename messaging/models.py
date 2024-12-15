@@ -36,6 +36,11 @@ class MessageStatus(models.TextChoices):
     CONFIRMED_RECEIVED = "CONFIRMED_RECEIVED"  # when message is mark received on service
 
 
+class MessageDirection(models.TextChoices):
+    MOBILE = "M" # sent to mobile
+    SERVER = "S" # sent to server
+
+
 class Message(models.Model):
     message_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     channel = models.ForeignKey(Channel, on_delete=models.CASCADE)
@@ -44,3 +49,5 @@ class Message(models.Model):
     received = models.DateTimeField(null=True, blank=True)
     status = models.CharField(
         max_length=50, choices=MessageStatus.choices, default=MessageStatus.PENDING)
+    # represents the direction the message is sent toward
+    direction = models.CharField(max_length=4, choices=MessageDirection.choices)
