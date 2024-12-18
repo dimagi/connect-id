@@ -39,6 +39,7 @@ class MessageSerializer(serializers.ModelSerializer):
     ciphertext = serializers.SerializerMethodField()
     tag = serializers.SerializerMethodField()
     nonce = serializers.SerializerMethodField()
+    message_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
@@ -52,3 +53,6 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def get_nonce(self, obj):
         return obj.content["nonce"]
+
+    def get_message_id(self, obj):
+        return str(obj.message_id)
