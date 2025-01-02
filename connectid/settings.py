@@ -9,9 +9,16 @@ https://docs.djangoproject.com/en/4.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.1/ref/settings/
 """
+import logging
 import os
+import sentry_sdk
 
 from pathlib import Path
+from sentry_sdk.integrations.celery import CeleryIntegration
+from sentry_sdk.integrations.django import DjangoIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration, ignore_logger
+from sentry_sdk.integrations.redis import RedisIntegration
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -224,6 +231,11 @@ SITE_ID = 1
 
 APP_HASH = "apphash"
 
+SENTRY_DSN = None
+SENTRY_ENVIRONMENT = "local"
+SENTRY_TRACES_SAMPLE_RATE = 0.0
+
+
 from .localsettings import *
 
 # Firebase
@@ -237,4 +249,21 @@ CELERY_TASK_EAGER_PROPAGATES = True
 
 CELERY_BROKER_URL = env.get("CELERY_BROKER_URL", default="redis://localhost:6379/0")
 
+if SENTRY_DSN:
+    sentry_logging = LoggingIntegration(
+        level=logging.INFO,  # Capture info and above as breadcrumbs
+        event_level=logging.ERROR,  # Send errors as events
+    )
+    integrations = [
+        sentry_logging,
+        DjangoIntegration(),
+        CeleryIntegration(),
+        RedisIntegration(),
+    ]
 
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=integrations,
+        environment=SENTRY_ENVIRONMENT,
+        traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+    )

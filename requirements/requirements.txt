@@ -19,7 +19,9 @@ cachetools==5.3.1
 celery==5.4.0
     # via -r requirements.in
 certifi==2022.12.7
-    # via requests
+    # via
+    #   requests
+    #   sentry-sdk
 cffi==1.15.1
     # via cryptography
 charset-normalizer==3.1.0
@@ -51,6 +53,7 @@ django==4.1.7
     #   django-phonenumber-field
     #   djangorestframework
     #   fcm-django
+    #   sentry-sdk
 django-axes[ipware]==6.0.3
     # via -r requirements.in
 django-ipware==5.0.0
@@ -169,6 +172,8 @@ requests==2.28.2
     #   twilio
 rsa==4.9
     # via google-auth
+sentry-sdk[django]==2.19.2
+    # via -r requirements.in
 six==1.16.0
     # via python-dateutil
 sqlparse==0.4.3
@@ -184,7 +189,9 @@ tzdata==2024.2
 uritemplate==4.1.1
     # via google-api-python-client
 urllib3==1.26.15
-    # via requests
+    # via
+    #   requests
+    #   sentry-sdk
 vine==5.1.0
     # via
     #   amqp
