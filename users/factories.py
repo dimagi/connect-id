@@ -9,9 +9,9 @@ class UserFactory(DjangoModelFactory):
     class Meta:
         model = ConnectUser
 
-    username = factory.Faker('user_name')
-    password = factory.PostGenerationMethodCall('set_password', 'testpass')
-    phone_number = factory.Faker('phone_number')
+    username = factory.Faker("user_name")
+    password = factory.PostGenerationMethodCall("set_password", "testpass")
+    phone_number = factory.Faker("phone_number")
 
 
 class FCMDeviceFactory(DjangoModelFactory):
@@ -19,8 +19,8 @@ class FCMDeviceFactory(DjangoModelFactory):
         model = FCMDevice
 
     user = factory.SubFactory(UserFactory)
-    registration_id = factory.Faker('uuid4')
-    type = 'android'
+    registration_id = factory.Faker("uuid4")
+    type = "android"
     active = True
 
 
@@ -28,6 +28,6 @@ class CredentialFactory(DjangoModelFactory):
     class Meta:
         model = Credential
 
-    name = factory.Faker('name')
-    slug = factory.Faker('slug')
-    organization_slug = factory.Faker('slug')
+    name = factory.Faker("name")
+    slug = factory.Faker("slug")
+    organization_slug = factory.Faker("slug")

@@ -1,8 +1,11 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import gettext_lazy as _
+
 from .models import ConnectUser
 
+
+@admin.register(ConnectUser)
 class ConnectUserAdmin(UserAdmin):
     fieldsets = (
         (None, {"fields": ("username", "password")}),
@@ -20,9 +23,16 @@ class ConnectUserAdmin(UserAdmin):
             },
         ),
         (_("Important dates"), {"fields": ("last_login", "date_joined")}),
-        (_("Extras"), {"fields": ("deactivation_token", "recovery_phone", "recovery_phone_validated")}),
+        (
+            _("Extras"),
+            {
+                "fields": (
+                    "deactivation_token",
+                    "recovery_phone",
+                    "recovery_phone_validated",
+                )
+            },
+        ),
     )
     list_display = ("username", "phone_number", "name", "is_staff")
     search_fields = ("username", "name", "phone_number")
-
-admin.site.register(ConnectUser, ConnectUserAdmin)
