@@ -13,8 +13,13 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.views import APIView
 
 from messaging.models import Channel, Message, MessageDirection, MessageStatus, MessageServer
-from messaging.serializers import SingleMessageSerializer, BulkMessageSerializer, MessageSerializer, \
-    MessageData
+from messaging.serializers import (
+    CCC_MESSAGE_ACTION,
+    BulkMessageSerializer,
+    MessageData,
+    MessageSerializer,
+    SingleMessageSerializer
+)
 from messaging.task import make_request, send_messages_to_service_and_mark_status
 from users.models import ConnectUser
 from utils.rest_framework import ClientProtectedResourceAuth, MessagingServerAuth
@@ -176,7 +181,10 @@ class CreateChannelView(APIView):
                 usernames=[channel.connect_user.username],
                 title="Channel created",
                 body="Please provide your consent to send/receive message.",
-                data={"keyUrl": server.key_url},
+                data={
+                    "keyUrl": server.key_url,
+                    "action": CCC_MESSAGE_ACTION,
+                },
             )
             # send fcm notification.
             send_bulk_message(message)

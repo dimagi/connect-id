@@ -6,6 +6,9 @@ from rest_framework import serializers
 from messaging.models import Message
 
 
+CCC_MESSAGE_ACTION = "ccc_message"
+
+
 @dataclasses.dataclass
 class MessageData:
     usernames: List[str] = None
@@ -40,6 +43,7 @@ class MessageSerializer(serializers.ModelSerializer):
     tag = serializers.SerializerMethodField()
     nonce = serializers.SerializerMethodField()
     message_id = serializers.SerializerMethodField()
+    action = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
@@ -56,3 +60,6 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def get_message_id(self, obj):
         return str(obj.message_id)
+
+    def get_action(self, obj):
+        return CCC_MESSAGE_ACTION
