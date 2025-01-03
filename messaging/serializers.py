@@ -43,7 +43,7 @@ class MessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Message
-        fields = ["message_id", "channel", "ciphertext", "tag", "nonce", "timestamp", "received", "status"]
+        fields = ["message_id", "channel", "ciphertext", "tag", "nonce", "timestamp", "status"]
 
     def get_ciphertext(self, obj):
         return obj.content["ciphertext"]
