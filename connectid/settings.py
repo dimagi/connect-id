@@ -230,7 +230,6 @@ SENTRY_ENVIRONMENT = "local"
 SENTRY_TRACES_SAMPLE_RATE = 0.0
 
 
-from .localsettings import *  # noqa: F403, F401, E402
 
 # Firebase
 if FCM_CREDENTIALS:
