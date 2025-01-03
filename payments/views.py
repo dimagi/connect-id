@@ -1,45 +1,42 @@
-from django.db import transaction
-from django.db.models import Q
-from django.http import JsonResponse, HttpResponse
-from django.views.decorators.http import require_POST
-from messaging.views import send_bulk_message
-from messaging.serializers import MessageData
-from oauth2_provider.decorators import protected_resource
-from utils.rest_framework import ClientProtectedResourceAuth
+from django.http import JsonResponse
 from rest_framework import status as drf_status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from users.models import ConnectUser, PhoneDevice
+from messaging.serializers import MessageData
+from messaging.views import send_bulk_message
+from users.models import PhoneDevice
+from utils.rest_framework import ClientProtectedResourceAuth
 from utils.twilio import lookup_telecom_provider
+
 from .models import PaymentProfile
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 def update_payment_profile_phone(request):
     user = request.user
-    phone_number = request.data.get('phone_number')
-    owner_name = request.data.get('owner_name')
+    phone_number = request.data.get("phone_number")
+    owner_name = request.data.get("owner_name")
     telecom_provider = lookup_telecom_provider(phone_number)
     payment_profile, created = PaymentProfile.objects.update_or_create(
         user=user,
         defaults={
-            'phone_number': phone_number,
-            'owner_name': owner_name,
-            'telecom_provider': telecom_provider,
-            'is_verified': False,
-            'status': PaymentProfile.PENDING
-        }
+            "phone_number": phone_number,
+            "owner_name": owner_name,
+            "telecom_provider": telecom_provider,
+            "is_verified": False,
+            "status": PaymentProfile.PENDING,
+        },
     )
     return PhoneDevice.send_otp_httpresponse(phone_number=payment_profile.phone_number, user=payment_profile.user)
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 def confirm_payment_profile_otp(request):
     payment_profile = request.user.payment_profile
     device = PhoneDevice.objects.get(phone_number=payment_profile.phone_number, user=payment_profile.user)
-    if not device.verify_token(request.data.get('token')):
+    if not device.verify_token(request.data.get("token")):
         return JsonResponse({"error": "OTP token is incorrect"}, status=401)
 
     payment_profile.is_verified = True
@@ -51,11 +48,10 @@ class FetchPhoneNumbers(APIView):
     authentication_classes = [ClientProtectedResourceAuth]
 
     def get(self, request, *args, **kwargs):
-        usernames = request.GET.getlist('usernames')
+        usernames = request.GET.getlist("usernames")
         status = request.GET.get("status")
         results = {}
-        profiles = PaymentProfile.objects.filter(
-            user__username__in=usernames)
+        profiles = PaymentProfile.objects.filter(user__username__in=usernames)
         if status:
             profiles = profiles.filter(status=status)
         profiles = profiles.select_related("user")
@@ -110,7 +106,10 @@ class ValidatePhoneNumbers(APIView):
                     usernames=usernames_by_states["approved"],
                     title="Your Payment Phone Number is approved",
                     body="Your payment phone number is approved and future payments will be made to this number.",
-                    data={"action": "ccc_payment_info_confirmation", "confirmation_status": "approved"}
+                    data={
+                        "action": "ccc_payment_info_confirmation",
+                        "confirmation_status": "approved",
+                    },
                 )
             )
         if usernames_by_states["rejected"]:
@@ -119,7 +118,10 @@ class ValidatePhoneNumbers(APIView):
                     usernames=usernames_by_states["rejected"],
                     title="Your Payment Phone Number did not work",
                     body="Your payment number did not work. Please try to change to a different payment phone number",
-                    data={"action": "ccc_payment_info_confirmation", "confirmation_status": "approved"}
+                    data={
+                        "action": "ccc_payment_info_confirmation",
+                        "confirmation_status": "approved",
+                    },
                 )
             )
         if usernames_by_states["pending"]:
@@ -128,11 +130,11 @@ class ValidatePhoneNumbers(APIView):
                     usernames=usernames_by_states["pending"],
                     title="Your Payment Phone Number is pending review",
                     body="Your payment phone number is pending review. Please wait for further updates.",
-                    data={"action": "ccc_payment_info_confirmation", "confirmation_status": "pending"}
+                    data={
+                        "action": "ccc_payment_info_confirmation",
+                        "confirmation_status": "pending",
+                    },
                 )
             )
-        result = {
-            state: len(usernames_by_states[state])
-            for state in ["approved", "rejected", "pending"]
-        }
+        result = {state: len(usernames_by_states[state]) for state in ["approved", "rejected", "pending"]}
         return JsonResponse({"success": True, "result": result}, status=200)

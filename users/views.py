@@ -1,12 +1,12 @@
-import requests
 from datetime import timedelta
 from secrets import token_hex
-from urllib.parse import urlparse, urlencode
+from urllib.parse import urlencode, urlparse
 
+import requests
 from django.conf import settings
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ValidationError, ObjectDoesNotExist
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
 from django.views import View
@@ -17,30 +17,24 @@ from rest_framework.views import APIView
 
 from utils import get_ip, get_sms_sender, send_sms
 from utils.rest_framework import ClientProtectedResourceAuth
+
 from .const import TEST_NUMBER_PREFIX
 from .fcm_utils import create_update_device
-from .models import (
-    ConnectUser,
-    Credential,
-    PhoneDevice,
-    RecoveryStatus,
-    UserCredential,
-    UserKey,
-)
+from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
 
 
 # Create your views here.
-@api_view(['POST'])
+@api_view(["POST"])
 @permission_classes([])
 def register(request):
     data = request.data
-    fields = ['username', 'password', 'phone_number', 'recovery_phone', 'name', 'dob']
+    fields = ["username", "password", "phone_number", "recovery_phone", "name", "dob"]
     user_data = {}
     for field in fields:
         if data.get(field):
             user_data[field] = data[field]
-    user_data['ip_address'] = get_ip(request)
-    user_data['recovery_phone_validation_deadline'] = now().date() + timedelta(days=7)
+    user_data["ip_address"] = get_ip(request)
+    user_data["recovery_phone_validation_deadline"] = now().date() + timedelta(days=7)
 
     # skip validation if number starts with special prefix
     if not user_data.get("phone_number", "").startswith(TEST_NUMBER_PREFIX):
@@ -51,10 +45,15 @@ def register(request):
             return JsonResponse(e.message_dict, status=400)
 
     user = ConnectUser.objects.create_user(**user_data)
-    if data.get('fcm_token'):
-        create_update_device(user, data['fcm_token'])
+    if data.get("fcm_token"):
+        create_update_device(user, data["fcm_token"])
     db_key = UserKey.get_or_create_key_for_user(user)
-    return JsonResponse({"secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key})
+    return JsonResponse(
+        {
+            "secondary_phone_validate_by": user.recovery_phone_validation_deadline,
+            "db_key": db_key.key,
+        }
+    )
 
 
 def login(request):
@@ -62,23 +61,23 @@ def login(request):
 
 
 def test(request):
-    return HttpResponse('pong')
+    return HttpResponse("pong")
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 def validate_phone(request):
     user = request.user
     return PhoneDevice.send_otp_httpresponse(phone_number=user.phone_number, user=user)
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 def confirm_otp(request):
     # check otp code for user
     # mark phone as confirmed on user model
     user = request.user
     device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
     data = request.data
-    verified = device.verify_token(data.get('token'))
+    verified = device.verify_token(data.get("token"))
     if not verified:
         return JsonResponse({"error": "OTP token is incorrect"}, status=401)
     user.phone_validated = True
@@ -86,20 +85,20 @@ def confirm_otp(request):
     return HttpResponse()
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 def validate_secondary_phone(request):
     user = request.user
     return PhoneDevice.send_otp_httpresponse(phone_number=user.recovery_phone, user=user)
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 def confirm_secondary_otp(request):
     # check otp code for user
     # mark phone as confirmed on user model
     user = request.user
     device, _ = PhoneDevice.objects.get_or_create(phone_number=user.recovery_phone, user=user)
     data = request.data
-    verified = device.verify_token(data.get('token'))
+    verified = device.verify_token(data.get("token"))
     if not verified:
         return JsonResponse({"error": "OTP token is incorrect"}, status=401)
     user.recovery_phone_validated = True
@@ -108,7 +107,7 @@ def confirm_secondary_otp(request):
     return HttpResponse()
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 @permission_classes([])
 def recover_account(request):
     data = request.data
@@ -120,10 +119,10 @@ def recover_account(request):
     status.secret_key = secret
     status.step = RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY
     status.save()
-    return JsonResponse({'secret': secret})
+    return JsonResponse({"secret": secret})
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 @permission_classes([])
 def confirm_recovery_otp(request):
     data = request.data
@@ -144,7 +143,7 @@ def confirm_recovery_otp(request):
     return HttpResponse()
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 @permission_classes([])
 def recover_secondary_phone(request):
     data = request.data
@@ -164,7 +163,7 @@ def recover_secondary_phone(request):
     return JsonResponse({"secondary_phone": user.recovery_phone.as_e164})
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 @permission_classes([])
 def confirm_secondary_recovery_otp(request):
     data = request.data
@@ -177,7 +176,7 @@ def confirm_secondary_recovery_otp(request):
     if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
         return HttpResponse(status=401)
     device = PhoneDevice.objects.get(phone_number=user.recovery_phone, user=user)
-    verified = device.verify_token(data.get('token'))
+    verified = device.verify_token(data.get("token"))
     if not verified:
         return JsonResponse({"error": "OTP token is incorrect"}, status=401)
     status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
@@ -188,7 +187,7 @@ def confirm_secondary_recovery_otp(request):
     return JsonResponse(user_data)
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 @permission_classes([])
 def confirm_password(request):
     data = request.data
@@ -207,7 +206,7 @@ def confirm_password(request):
     return JsonResponse(user_data(user))
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 @permission_classes([])
 def reset_password(request):
     data = request.data
@@ -230,10 +229,10 @@ def reset_password(request):
     return HttpResponse()
 
 
-@api_view(['GET'])
+@api_view(["GET"])
 @permission_classes([])
 def phone_available(request):
-    phone_number = request.query_params.get('phone_number')
+    phone_number = request.query_params.get("phone_number")
     if not phone_number:
         return HttpResponse(status=400)
     try:
@@ -244,19 +243,19 @@ def phone_available(request):
         return HttpResponse(status=403)
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 @permission_classes([])
 def change_phone(request):
     data = request.data
     user = request.user
     error = None
     if user.phone_validated:
-        error = 'You cannot change a validated number'
-    elif user.phone_number != data['old_phone_number']:
-        error = 'Old phone number does not match'
+        error = "You cannot change a validated number"
+    elif user.phone_number != data["old_phone_number"]:
+        error = "Old phone number does not match"
     if error:
-        return JsonResponse({'error': error}, status=400)
-    user.phone_number = data['new_phone_number']
+        return JsonResponse({"error": error}, status=400)
+    user.phone_number = data["new_phone_number"]
     try:
         user.full_clean()
     except ValidationError as e:
@@ -265,7 +264,7 @@ def change_phone(request):
     return HttpResponse()
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 def change_password(request):
     data = request.data
     user = request.user
@@ -279,7 +278,7 @@ def change_password(request):
     return HttpResponse()
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 def update_profile(request):
     data = request.data
     user = request.user
@@ -299,7 +298,7 @@ def update_profile(request):
     return HttpResponse()
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 def set_recovery_pin(request):
     data = request.data
     user = request.user
@@ -311,7 +310,12 @@ def set_recovery_pin(request):
 
 def user_data(user):
     db_key = UserKey.get_or_create_key_for_user(user)
-    user_data = {"name": user.name, "username": user.username, "secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key}
+    user_data = {
+        "name": user.name,
+        "username": user.username,
+        "secondary_phone_validate_by": user.recovery_phone_validation_deadline,
+        "db_key": db_key.key,
+    }
     user_data.update(user_payment_profile(user))
     return user_data
 
@@ -319,18 +323,20 @@ def user_data(user):
 def user_payment_profile(user):
     try:
         profile = user.payment_profile
-        return {"payment_profile": {
-            "phone_number": profile.phone_number.as_e164,
-            "owner_name": profile.owner_name,
-            "telecom_provider": profile.telecom_provider,
-            "is_verified": profile.is_verified,
-            "status": profile.status,
-        }}
+        return {
+            "payment_profile": {
+                "phone_number": profile.phone_number.as_e164,
+                "owner_name": profile.owner_name,
+                "telecom_provider": profile.telecom_provider,
+                "is_verified": profile.is_verified,
+                "status": profile.status,
+            }
+        }
     except ObjectDoesNotExist:
         return {"payment_profile": {}}
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 @permission_classes([])
 def confirm_recovery_pin(request):
     data = request.data
@@ -350,28 +356,28 @@ def confirm_recovery_pin(request):
     return JsonResponse(user_data(user))
 
 
-@api_view(['GET'])
+@api_view(["GET"])
 def fetch_db_key(request):
     db_key = UserKey.get_or_create_key_for_user(request.user)
     return JsonResponse({"db_key": db_key.key})
 
 
-@api_view(['POST'])
+@api_view(["POST"])
 def heartbeat(request):
     data = request.data
     user = request.user
-    if not data.get('fcm_token'):
+    if not data.get("fcm_token"):
         return JsonResponse({}, status=200)
 
-    fcm_token = data['fcm_token']
+    fcm_token = data["fcm_token"]
     return create_update_device(user, fcm_token)
 
 
 class FetchUsers(ClientProtectedResourceMixin, View):
-    required_scopes = ['user_fetch']
+    required_scopes = ["user_fetch"]
 
     def get(self, request, *args, **kwargs):
-        numbers = request.GET.getlist('phone_numbers')
+        numbers = request.GET.getlist("phone_numbers")
         results = {}
         found_users = list(
             ConnectUser.objects.filter(phone_number__in=numbers, is_active=True).values(
@@ -383,10 +389,12 @@ class FetchUsers(ClientProtectedResourceMixin, View):
 
 
 class GetDemoUsers(ClientProtectedResourceMixin, View):
-    required_scopes = ['user_fetch']
+    required_scopes = ["user_fetch"]
 
     def get(self, request, *args, **kwargs):
-        demo_users = PhoneDevice.objects.filter(phone_number__startswith=TEST_NUMBER_PREFIX).values('phone_number', 'token')
+        demo_users = PhoneDevice.objects.filter(phone_number__startswith=TEST_NUMBER_PREFIX).values(
+            "phone_number", "token"
+        )
         results = {"demo_users": list(demo_users)}
         return JsonResponse(results)
 
@@ -403,14 +411,18 @@ class FilterUsers(APIView):
         if credential is not None:
             query = query.filter(credential__slug=credential)
         if country is not None:
-            query = query.filter(
-                user__phone_number__startswith=country, user__is_active=True
-            )
+            query = query.filter(user__phone_number__startswith=country, user__is_active=True)
         users = query.select_related("user")
-        user_list = [{"username": u.user.username, "phone_number": u.user.phone_number.as_e164, "name": u.user.name} for u in users]
+        user_list = [
+            {
+                "username": u.user.username,
+                "phone_number": u.user.phone_number.as_e164,
+                "name": u.user.name,
+            }
+            for u in users
+        ]
         result = {"found_users": user_list}
         return JsonResponse(result)
-        
 
 
 class AddCredential(APIView):
@@ -418,14 +430,13 @@ class AddCredential(APIView):
 
     def post(self, request, *args, **kwargs):
         phone_numbers = request.data["users"]
-        org_name = request.data["organization_name"]
         org_slug = request.data["organization"]
         credential_name = request.data["credential"]
         slug = f"{credential_name.lower().replace(' ', '_')}_{org_slug}"
-        credential, _ = Credential.objects.get_or_create(name=credential_name, organization_slug=org_slug, defaults={"slug": slug})
-        users = ConnectUser.objects.filter(
-            phone_number__in=phone_numbers, is_active=True
+        credential, _ = Credential.objects.get_or_create(
+            name=credential_name, organization_slug=org_slug, defaults={"slug": slug}
         )
+        users = ConnectUser.objects.filter(phone_number__in=phone_numbers, is_active=True)
         for user in users:
             UserCredential.add_credential(user, credential, request)
         return HttpResponse()
@@ -437,6 +448,7 @@ class ForwardHQInvite(APIView):
         a ConnectID User. It takes invite metadata
         and fowards it as a deeplink SMS to mobile
     """
+
     authentication_classes = [ClientProtectedResourceAuth]
 
     def post(self, request, *args, **kwargs):
@@ -451,13 +463,15 @@ class ForwardHQInvite(APIView):
             # So fake a success message
             return JsonResponse({"success": True})
 
-        query_string = urlencode({
-            "hq_username": request.data["username"],
-            "hq_domain": request.data["user_domain"],
-            "connect_username": user.username,
-            "invite_code": request.data["invite_code"],
-            "callback_url": callback_url,
-        })
+        query_string = urlencode(
+            {
+                "hq_username": request.data["username"],
+                "hq_domain": request.data["user_domain"],
+                "connect_username": user.username,
+                "invite_code": request.data["invite_code"],
+                "callback_url": callback_url,
+            }
+        )
         deeplink = f"https://connectid.dimagi.com/hq_invite/?{query_string}"
 
         message = f"""
@@ -480,7 +494,6 @@ def is_trusted_hqinvite_url(url):
 
 
 class ConfirmHQInviteCallback(APIView):
-
     def post(self, request, *args, **kwargs):
         invite_code = request.data["invite_code"]
         user_token = request.data["user_token"]
@@ -493,12 +506,12 @@ class ConfirmHQInviteCallback(APIView):
         try:
             response = requests.post(callback_url, data={"invite_code": invite_code, "token": user_token})
             response.raise_for_status()
-        except requests.RequestException as e:
+        except requests.RequestException:
             return JsonResponse({"error": "Failed to reach callback URL"}, status=500)
         return JsonResponse({"success": True})
 
 
-@api_view(['GET'])
+@api_view(["GET"])
 @permission_classes([])
 def accept_credential(request, invite_id):
     try:
@@ -514,15 +527,15 @@ def accept_credential(request, invite_id):
 
 
 class FetchCredentials(ClientProtectedResourceMixin, View):
-    required_scopes = ['user_fetch']
+    required_scopes = ["user_fetch"]
 
     def get(self, request):
-        org_slug = request.GET.get('org_slug', None)
+        org_slug = request.GET.get("org_slug", None)
         queryset = Credential.objects.all()
         if org_slug:
             queryset = queryset.filter(organization_slug=org_slug)
 
-        credentials = queryset.values('name', 'slug')
+        credentials = queryset.values("name", "slug")
         results = {"credentials": list(credentials)}
         return JsonResponse(results)
 
@@ -561,9 +574,7 @@ def confirm_deactivation(request):
     if user.deactivation_token == deactivation_token:
         user.is_active = False
         user.save()
-        tokens = list(AccessToken.objects.filter(user=user)) + list(
-            RefreshToken.objects.filter(user=user)
-        )
+        tokens = list(AccessToken.objects.filter(user=user)) + list(RefreshToken.objects.filter(user=user))
         for token in tokens:
             token.revoke()
         return JsonResponse({"success": True})

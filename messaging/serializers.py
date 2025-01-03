@@ -1,5 +1,4 @@
 import dataclasses
-from typing import List
 
 from rest_framework import serializers
 
@@ -8,7 +7,7 @@ from messaging.models import Message
 
 @dataclasses.dataclass
 class MessageData:
-    usernames: List[str] = None
+    usernames: list[str] = None
     title: str = None
     body: str = None
     data: dict = None
@@ -22,7 +21,7 @@ class SingleMessageSerializer(serializers.Serializer):
     data = serializers.DictField(required=False)
 
     def create(self, validated_data):
-        username = validated_data.pop('username', None)
+        username = validated_data.pop("username", None)
         if username:
             validated_data["usernames"] = [username]
         return MessageData(**validated_data)
@@ -43,7 +42,16 @@ class MessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Message
-        fields = ["message_id", "channel", "ciphertext", "tag", "nonce", "timestamp", "received", "status"]
+        fields = [
+            "message_id",
+            "channel",
+            "ciphertext",
+            "tag",
+            "nonce",
+            "timestamp",
+            "received",
+            "status",
+        ]
 
     def get_ciphertext(self, obj):
         return obj.content["ciphertext"]
