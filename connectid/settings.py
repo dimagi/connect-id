@@ -10,20 +10,20 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.1/ref/settings/
 """
 import logging
-import os
-import sentry_sdk
-
 from pathlib import Path
+
+import environ
+import sentry_sdk
 from sentry_sdk.integrations.celery import CeleryIntegration
 from sentry_sdk.integrations.django import DjangoIntegration
-from sentry_sdk.integrations.logging import LoggingIntegration, ignore_logger
+from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.redis import RedisIntegration
-
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-env = os.environ
+env = environ.Env()
+env.read_env(str(BASE_DIR / ".env"))
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.1/howto/deployment/checklist/
@@ -87,7 +87,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'connectid.wsgi.application'
 
-
 TRUSTED_COMMCAREHQ_HOSTS = [
     "www.commcarehq.org",
     "commcarehq.org",
@@ -143,7 +142,7 @@ LOGGING = {
         }
     },
     'handlers': {
-        'file' : {
+        'file': {
             'level': 'INFO',
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': DJANGO_LOG_FILE,
@@ -173,7 +172,6 @@ LOGGING = {
     },
 }
 
-
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.BasicAuthentication',
@@ -195,7 +193,6 @@ REST_FRAMEWORK = {
     "ALLOWED_VERSIONS": ["1.0"]
 }
 
-
 AXES_COOLOFF_TIME = 6
 AXES_IPWARE_META_PRECEDENCE_ORDER = [
     'HTTP_X_FORWARDED_FOR',
@@ -203,19 +200,6 @@ AXES_IPWARE_META_PRECEDENCE_ORDER = [
 ]
 
 LOGIN_URL = '/admin/login/'
-
-OAUTH2_PROVIDER = {
-    "OIDC_ENABLED": True,
-    "OIDC_RSA_PRIVATE_KEY": """
-INSERT PRIVATE KEY HERE
-""",
-    "SCOPES": {
-        "openid": "OpenID Connect scope",
-    },
-    "PKCE_REQUIRED": False,
-    "OAUTH2_VALIDATOR_CLASS": "users.oauth.ConnectOAuth2Validator",
-    # ... any other settings you want
-}
 
 FCM_CREDENTIALS = None
 
@@ -235,19 +219,10 @@ SENTRY_DSN = None
 SENTRY_ENVIRONMENT = "local"
 SENTRY_TRACES_SAMPLE_RATE = 0.0
 
-
-from .localsettings import *
-
-# Firebase
-if FCM_CREDENTIALS:
-    from firebase_admin import credentials, initialize_app
-    creds = credentials.Certificate(FCM_CREDENTIALS)
-    default_app = initialize_app(credential=creds)
-
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
 
-CELERY_BROKER_URL = env.get("CELERY_BROKER_URL", default="redis://localhost:6379/0")
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
 
 if SENTRY_DSN:
     sentry_logging = LoggingIntegration(
@@ -267,3 +242,62 @@ if SENTRY_DSN:
         environment=SENTRY_ENVIRONMENT,
         traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
     )
+
+SECRET_KEY = env(
+    "SECRET_KEY",
+    default="django-insecure-yofpqrszrdtv0ftihjd09cuim2al9^n9j^b85%-y0v*^_lj18d",
+)
+
+# SECURITY WARNING: don't run with debug turned on in production!!
+DEBUG = env("DEBUG", default=False)
+
+DATABASES = {
+    "default": env.db(
+        "DATABASE_URL",
+        default="postgres:///connect",
+    ),
+}
+
+ALLOWED_HOSTS = ["127.0.0.1", "localhost", "commcarehq.org"] + env.list(
+    "DJANGO_ALLOWED_HOSTS", default=[]
+)
+
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+
+TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default=None)
+TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default=None)
+TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default=None)
+
+OAUTH2_PROVIDER = {
+    "OIDC_ENABLED": True,
+    "OIDC_RSA_PRIVATE_KEY": env("OIDC_RSA_PRIVATE_KEY", default=""),
+    "SCOPES": {
+        "openid": "OpenID Connect scope",
+        "sync": "sync with commcarehq"
+    },
+    "PKCE_REQUIRED": False,
+    "OAUTH2_VALIDATOR_CLASS": "users.oauth.ConnectOAuth2Validator",
+}
+
+fcm_private_key = env("FCM_PRIVATE_KEY", default="")
+
+if fcm_private_key:
+    FCM_CREDENTIALS = {
+        "type": "service_account",
+        "project_id": env("FCM_PROJECT_ID", default=""),
+        "private_key_id": env("FCM_PRIVATE_KEY_ID", default=""),
+        "private_key": env("FCM_PRIVATE_KEY", default=""),
+        "client_email": env("FCM_CLIENT_EMAIL", default=""),
+        "client_id": env("FCM_CLIENT_ID", default=""),
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "client_x509_cert_url": env("FCM_CLIENT_X509_CERT_URL", default=""),
+        "universe_domain": "googleapis.com"
+    }
+
+    # Firebase
+    from firebase_admin import credentials, initialize_app
+
+    creds = credentials.Certificate(FCM_CREDENTIALS)
+    default_app = initialize_app(credential=creds)

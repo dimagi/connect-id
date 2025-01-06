@@ -13,3 +13,4 @@ redis
 sentry-sdk[django]
 twilio
 zxcvbn
+django-environ
