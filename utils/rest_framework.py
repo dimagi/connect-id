@@ -6,8 +6,7 @@ from messaging.models import MessageServer
 
 
 class ClientProtectedResourceAuth(OAuthLibMixin, BaseAuthentication):
-    """Authenticate request using Client credentials (as in the OAuth2 spec).
-    """
+    """Authenticate request using Client credentials (as in the OAuth2 spec)."""
 
     def authenticate(self, request):
         # Validate either with HTTP basic or client creds in request body.
@@ -18,6 +17,7 @@ class ClientProtectedResourceAuth(OAuthLibMixin, BaseAuthentication):
 
 class OauthClientUser(AnonymousUser):
     """Fake user used for requests authenticated via Client credentials"""
+
     def is_authenticated(self):
         return True
 
@@ -26,21 +26,21 @@ class OauthClientUser(AnonymousUser):
 
 
 class MessagingServerAuth(BasicAuthentication):
-    """Authenticate request using Client credentials (as in the OAuth2 spec).
-    """
+    """Authenticate request using Client credentials (as in the OAuth2 spec)."""
 
     def authenticate_credentials(self, userid, password, request=None):
         try:
             server = MessageServer.objects.get(server_id=userid)
         except MessageServer.DoesNotExist:
             return None
-        valid = (password == server.secret_key)
+        valid = password == server.secret_key
         if valid:
             return MessagingServerUser(), None
 
 
 class MessagingServerUser(AnonymousUser):
     """Fake user used for requests authenticated via Client credentials"""
+
     def is_authenticated(self):
         return True
 

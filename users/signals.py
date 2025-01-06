@@ -1,6 +1,5 @@
-from django.dispatch import receiver
-
 from axes.signals import user_locked_out
+from django.dispatch import receiver
 from rest_framework.exceptions import PermissionDenied
 
 
