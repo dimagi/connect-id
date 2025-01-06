@@ -33,7 +33,6 @@ class ServerFactory(DjangoModelFactory):
     consent_url = factory.Faker("url")
     callback_url = factory.Faker("url")
     key_url = factory.Faker("url")
-    oauth_application = factory.SubFactory(ApplicationFactory)
 
 
 class ChannelFactory(DjangoModelFactory):
