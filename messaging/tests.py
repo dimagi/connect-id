@@ -1,4 +1,6 @@
+import base64
 import json
+import uuid
 from collections import defaultdict
 from unittest import mock
 from unittest.mock import Mock, patch
@@ -10,29 +12,31 @@ from firebase_admin import messaging
 from rest_framework import status
 
 from messaging.factories import ChannelFactory, MessageFactory, ServerFactory
-from messaging.models import Channel, Message, MessageStatus
-from messaging.serializers import MessageData
+from messaging.models import Channel, Message, MessageDirection, MessageStatus
+from messaging.serializers import MessageData, MessageSerializer
 from users.factories import FCMDeviceFactory
 
 APPLICATION_JSON = "application/json"
 
 
 @pytest.fixture
-def server(oauth_app):
-    return ServerFactory(oauth_application=oauth_app)
+def server():
+    return ServerFactory()
 
 
 def test_send_message(authed_client, fcm_device):
     url = reverse("messaging:send_message")
 
-    with mock.patch("fcm_django.models.messaging.send_all", wraps=_fake_send) as mock_send_message:
+    with mock.patch("fcm_django.models.messaging.send_each", wraps=_fake_send) as mock_send_message:
         response = authed_client.post(
             url,
-            data={
-                "username": fcm_device.user.username,
-                "body": "test message",
-                "data": {"test": "data"},
-            },
+            data=json.dumps(
+                {
+                    "username": fcm_device.user.username,
+                    "body": "test message",
+                    "data": {"test": "data"},
+                }
+            ),
             content_type=APPLICATION_JSON,
         )
         assert response.status_code == 200, response.content
@@ -56,25 +60,31 @@ def test_send_message_bulk(authed_client, fcm_device):
     fcm_device2 = FCMDeviceFactory()
     fcm_device3 = FCMDeviceFactory(active=False)
 
-    with mock.patch("fcm_django.models.messaging.send_all", wraps=_fake_send) as mock_send_message:
+    with mock.patch("fcm_django.models.messaging.send_each", wraps=_fake_send) as mock_send_message:
         response = authed_client.post(
             url,
-            data={
-                "messages": [
-                    {
-                        "usernames": [fcm_device.user.username, fcm_device.user.username, fcm_device2.user.username],
-                        "title": "test title1",
-                        "body": "test message1",
-                        "data": {"test": "data1"},
-                    },
-                    {
-                        "usernames": [fcm_device.user.username, "nonexistent-user", fcm_device3.user.username],
-                        "title": "test title2",
-                        "body": "test message2",
-                        "data": {"test": "data2"},
-                    },
-                ]
-            },
+            data=json.dumps(
+                {
+                    "messages": [
+                        {
+                            "usernames": [
+                                fcm_device.user.username,
+                                fcm_device.user.username,
+                                fcm_device2.user.username,
+                            ],
+                            "title": "test title1",
+                            "body": "test message1",
+                            "data": {"test": "data1"},
+                        },
+                        {
+                            "usernames": [fcm_device.user.username, "nonexistent-user", fcm_device3.user.username],
+                            "title": "test title2",
+                            "body": "test message2",
+                            "data": {"test": "data2"},
+                        },
+                    ]
+                }
+            ),
             content_type=APPLICATION_JSON,
         )
 
@@ -123,22 +133,32 @@ def channel(user, server, consent=True):
 def rest_channel_data(user=None, consent=False):
     return {
         "user_consent": consent,
-        "connectid": str(user.id) if user else None,
+        "connectid": str(user.username) if user else None,
         "channel_source": "hq project space",
     }
 
 
 def rest_message(channel_id=None):
     content = {"nonce": "test_nonce_value", "tag": "test_tag_value", "ciphertext": "test_ciphertext_value"}
-    return {"channel": str(channel_id) if channel_id else None, "content": content}
+    return {"channel": str(channel_id) if channel_id else None, "content": content, "message_id": str(uuid.uuid4())}
+
+
+def make_basic_auth_header(server_id: str, secret_key: str) -> str:
+    credentials = f"{server_id}:{secret_key}"
+    encoded_credentials = base64.b64encode(credentials.encode()).decode()
+    headers = f"Basic {encoded_credentials}"
+    return {"HTTP_AUTHORIZATION": headers}
 
 
 @pytest.mark.django_db
 class TestCreateChannelView:
     @staticmethod
-    def post_channel_request(client, data, expected_status, expected_error_field=None):
+    def post_channel_request(client, data, expected_status, server, expected_error_field=None):
         url = reverse("messaging:create_channel")
-        response = client.post(url, data=data, content_type=APPLICATION_JSON)
+        auth_header = make_basic_auth_header(server.server_id, server.secret_key)
+        response = client.post(url, data=json.dumps(data), content_type=APPLICATION_JSON, **auth_header)
+
+        print(response)
 
         assert response.status_code == expected_status
 
@@ -148,12 +168,12 @@ class TestCreateChannelView:
 
         return response
 
-    def test_create_channel_success(self, authed_client, fcm_device, oauth_app):
-        server = ServerFactory.create(oauth_application=oauth_app)
+    def test_create_channel_success(self, client, fcm_device, oauth_app):
+        server = ServerFactory.create()
         data = rest_channel_data(fcm_device.user)
 
-        with mock.patch("fcm_django.models.messaging.send_all", wraps=_fake_send) as mock_send_message:
-            response = self.post_channel_request(authed_client, data, status.HTTP_201_CREATED)
+        with mock.patch("fcm_django.models.messaging.send_each", wraps=_fake_send) as mock_send_message:
+            response = self.post_channel_request(client, data, status.HTTP_201_CREATED, server)
 
             json_data = response.json()
             assert "channel_id" in json_data
@@ -166,16 +186,18 @@ class TestCreateChannelView:
             assert message.token == fcm_device.registration_id
             assert message.notification.title == "Channel created"
             assert message.notification.body == "Please provide your consent to send/receive message."
-            assert message.data == {"keyUrl": server.key_url}
+            assert message.data == {"keyUrl": server.key_url, "action": "ccc_message"}
 
 
 @pytest.mark.django_db
-def test_send_fcm_notification_view(authed_client, channel):
+def test_send_fcm_notification_view(client, channel):
     url = reverse("messaging:send_fcm")
     data = rest_message(channel.channel_id)
+    server = ServerFactory()
+    headers = make_basic_auth_header(server.server_id, server.secret_key)
 
     with mock.patch("messaging.views.send_bulk_message") as mock_send_bulk_message:
-        response = authed_client.post(url, data=data, content_type=APPLICATION_JSON)
+        response = client.post(url, data=data, content_type=APPLICATION_JSON, **headers)
         json_data = response.json()
         assert response.status_code == status.HTTP_200_OK
         assert "message_id" in json_data
@@ -184,16 +206,11 @@ def test_send_fcm_notification_view(authed_client, channel):
         db_msg = Message.objects.get(message_id=message_id)
         assert db_msg
 
-        message_to_send = MessageData(
-            usernames=[channel.connect_user.username],
-            data={
-                "message_id": db_msg.message_id,
-                "channel_id": str(channel.channel_id),
-                "content": db_msg.content,
-            },
-        )
+        serialized_msg = MessageSerializer(db_msg).data
+        serialized_msg["channel"] = str(db_msg.channel.channel_id)
+        expected = MessageData(usernames=[channel.connect_user.username], data=serialized_msg)
 
-        mock_send_bulk_message.assert_called_once_with(message_to_send)
+        mock_send_bulk_message.assert_called_once_with(expected)
 
 
 @pytest.mark.django_db
@@ -215,9 +232,10 @@ class TestSendMessageView:
             msg = Message.objects.filter(message_id=message_id).first()
 
             # Prepare the expected message data in a defaultdict format
+            serialized_msg = MessageSerializer(msg).data
+            serialized_msg["channel"] = str(serialized_msg["channel"])
             expected_message_data = defaultdict(lambda: {"messages": [], "url": None})
-            expected_message_data[str(channel.channel_id)] = {"url": server.delivery_url, "messages": [msg]}
-
+            expected_message_data[str(channel.channel_id)] = {"url": server.delivery_url, "messages": [serialized_msg]}
             mock_make_request.assert_called_once_with(expected_message_data, MessageStatus.SENT_TO_SERVICE)
 
     def test_multiple_messages(self, auth_device, channel, server):
@@ -237,15 +255,18 @@ class TestSendMessageView:
             message_ids = json_data["message_id"]
             assert len(message_ids) == 2
 
-            assert mock_send_bulk_message.call_count == 1
+            msgs = Message.objects.filter(message_id__in=message_ids)
+            serialized_msgs = []
 
+            for m in msgs:
+                serialized = MessageSerializer(m).data
+                serialized["channel"] = str(serialized["channel"])
+                serialized_msgs.append(serialized)
             expected_message_data = defaultdict(lambda: {"messages": [], "url": None})
-            expected_messages = [Message.objects.get(message_id=msg_id) for msg_id in message_ids]
             expected_message_data[str(channel.channel_id)] = {
                 "url": server.delivery_url,
-                "messages": expected_messages,
+                "messages": serialized_msgs,
             }
-
             mock_send_bulk_message.assert_called_once_with(expected_message_data, MessageStatus.SENT_TO_SERVICE)
 
 
@@ -254,8 +275,9 @@ class TestRetrieveMessagesView:
     url = reverse("messaging:retrieve_messages")
 
     def test_retrieve_messages_success(self, auth_device, fcm_device):
+        print(fcm_device.user.username)
         ch = ChannelFactory.create(connect_user=fcm_device.user, server=ServerFactory.create())
-        MessageFactory.create_batch(10, channel=ch)
+        MessageFactory.create_batch(10, channel=ch, direction=MessageDirection.MOBILE)
 
         response = auth_device.get(self.url)
         json_data = response.json()
@@ -267,10 +289,10 @@ class TestRetrieveMessagesView:
         channel = json_data["channels"][0]
         message = json_data["messages"][0]
 
-        assert isinstance(message["content"], dict)
-
         assert all(key in channel for key in ["channel_id", "channel_source", "key_url"])
-        assert all(key in message for key in ["message_id", "channel", "timestamp", "content"])
+        assert all(
+            key in message for key in ["message_id", "channel", "timestamp", "ciphertext", "tag", "status", "action"]
+        )
 
     def test_retrieve_messages_no_data(self, auth_device):
         Channel.objects.all().delete()
@@ -287,7 +309,7 @@ class TestRetrieveMessagesView:
     def test_retrieve_messages_multiple_channels(self, auth_device, fcm_device):
         channels = ChannelFactory.create_batch(5, connect_user=fcm_device.user, server=ServerFactory.create())
         for channel in channels:
-            MessageFactory.create_batch(5, channel=channel)
+            MessageFactory.create_batch(5, channel=channel, direction=MessageDirection.MOBILE)
 
         response = auth_device.get(self.url)
         data = response.json()
@@ -324,9 +346,9 @@ class TestUpdateConsentView:
                 url=server.consent_url,
                 json_data={
                     "channel_id": str(channel.channel_id),
-                    "consent": str(consent),
+                    "consent": consent,
                 },
-                secret=server.oauth_application.client_secret,
+                secret=server.secret_key,
             )
 
     def test_restrict_consent(self, auth_device, channel, server):
@@ -409,5 +431,4 @@ class TestUpdateReceivedView:
         data, msg_status = args
         assert isinstance(data, defaultdict) and len(data) == 2
         assert all(str(ch.channel_id) in data for ch in [channel1, channel2])
-        assert all(all(msg["received"] for msg in data[str(ch.channel_id)]["messages"]) for ch in [channel1, channel2])
         assert msg_status == MessageStatus.CONFIRMED_RECEIVED

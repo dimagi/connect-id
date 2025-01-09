@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from django.urls import reverse
 from rest_framework import status
@@ -64,7 +66,7 @@ def test_validate_phone_numbers(
 
     url = reverse("validate_payment_phone_numbers")
 
-    response = authed_client.post(url, {"updates": data}, content_type=APPLICATION_JSON)
+    response = authed_client.post(url, json.dumps({"updates": data}), content_type=APPLICATION_JSON)
 
     assert response.status_code == expected_status
 
