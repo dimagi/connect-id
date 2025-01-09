@@ -5,7 +5,6 @@ import phonenumber_field.modelfields
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("users", "0010_alter_connectuser_options_and_more"),
     ]
@@ -14,8 +13,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name="connectuser",
             name="phone_number",
-            field=phonenumber_field.modelfields.PhoneNumberField(
-                max_length=128, region=None
-            ),
+            field=phonenumber_field.modelfields.PhoneNumberField(max_length=128, region=None),
         ),
     ]

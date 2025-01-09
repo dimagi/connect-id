@@ -12,8 +12,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="message",
             name="direction",
-            field=models.CharField(
-                choices=[("M", "Mobile"), ("S", "Server")], default="M", max_length=4
-            ),
+            field=models.CharField(choices=[("M", "Mobile"), ("S", "Server")], default="M", max_length=4),
         ),
     ]

@@ -1,5 +1,5 @@
 from django.http import JsonResponse
-from fcm_django.models import FCMDevice, DeviceType
+from fcm_django.models import DeviceType, FCMDevice
 
 
 def create_update_device(user, token):
