@@ -104,7 +104,7 @@ class PhoneDevice(SideChannelDevice):
         if self.valid_until - now() <= timedelta(minutes=5):
             self.otp_last_sent = None
             self.generate_token(valid_secs=1800)
-            self.attempts = 1
+            self.attempts = 0
         message = f"Your verification token from commcare connect is {self.token} \n\n {settings.APP_HASH}"
         # backoff attempts exponentially
         wait_time = 2 ** self.attempts
