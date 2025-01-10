@@ -113,7 +113,7 @@ def confirm_secondary_otp(request):
 def recover_account(request):
     data = request.data
     if not data.get["phone"]:
-        return HttpResponse({"error": f"OTP missing required key phone"}, status=400)
+        return JsonResponse({"error": f"OTP missing required key phone"}, status=400)
     user = ConnectUser.objects.get(phone_number=data["phone"], is_active=True)
     device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
     device.generate_challenge()
@@ -136,7 +136,7 @@ def confirm_recovery_otp(request):
             missing.append(key)
     if missing:
         missing_keys = ",".join(missing)
-        return HttpResponse({"error": f"OTP missing required key {missing_keys}"}, status=400)
+        return JsonResponse({"error": f"OTP missing required key {missing_keys}"}, status=400)
     phone_number = data["phone"]
     secret_key = data["secret_key"]
     user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
