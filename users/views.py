@@ -112,7 +112,7 @@ def confirm_secondary_otp(request):
 @permission_classes([])
 def recover_account(request):
     data = request.data
-    if not data.get["phone"]:
+    if not data.get("phone"):
         return JsonResponse({"error": f"OTP missing required key phone"}, status=400)
     user = ConnectUser.objects.get(phone_number=data["phone"], is_active=True)
     device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
