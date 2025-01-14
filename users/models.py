@@ -96,22 +96,26 @@ class PhoneDevice(SideChannelDevice):
     phone_number = PhoneNumberField()
     user = models.ForeignKey(ConnectUser, on_delete=models.CASCADE)
     otp_last_sent = models.DateTimeField(null=True, blank=True)
+    attempts = models.IntegerField(default=1)
 
     def generate_challenge(self):
         # generate and send new token if the old token is valid for less than 5 minutes
         # set he otp_last_sent to None to send the new OTP immediately
         if self.valid_until - now() <= timedelta(minutes=5):
             self.otp_last_sent = None
-            self.generate_token(valid_secs=600)
+            self.generate_token(valid_secs=1800)
+            self.attempts = 0
         message = f"Your verification token from commcare connect is {self.token} \n\n {settings.APP_HASH}"
-        # send the OTP if last sent message is not within the last 2 minutes
+        # backoff attempts exponentially
+        wait_time = 2 ** self.attempts
         if self.otp_last_sent is None or (
-            self.otp_last_sent and now() - self.otp_last_sent >= timedelta(minutes=2)
+            self.otp_last_sent and now() - self.otp_last_sent >= timedelta(minutes=wait_time)
         ):
             if not self.phone_number.raw_input.startswith(TEST_NUMBER_PREFIX):
                 sender = get_sms_sender(self.phone_number.country_code)
                 send_sms(self.phone_number.as_e164, message, sender)
             self.otp_last_sent = now()
+            self.attempts += 1
             self.save()
 
         return message
