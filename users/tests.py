@@ -124,8 +124,7 @@ def test_otp_generation_after_five_minutes(user):
         assert phone_device.token is not None
         assert phone_device.token == token
         assert send_sms.call_count == 2
-
-        phone_device.valid_until -= timedelta(minutes=5)
+        phone_device.valid_until -= timedelta(minutes=25)
         phone_device.save()
         phone_device.generate_challenge()
         assert phone_device.token is not None

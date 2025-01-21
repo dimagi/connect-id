@@ -205,11 +205,11 @@ OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
 
 SITE_ID = 1
 
-APP_HASH = "apphash"
+APP_HASH = env("APP_HASH", default="apphash")
 
-SENTRY_DSN = None
-SENTRY_ENVIRONMENT = "local"
-SENTRY_TRACES_SAMPLE_RATE = 0.0
+SENTRY_DSN = env("SENTRY_DSN", default=None)
+SENTRY_ENVIRONMENT = env("SENTRY_ENVIRONMENT", default="local")
+SENTRY_TRACES_SAMPLE_RATE = env("SENTRY_TRACES_SAMPLE_RATE", default="0.0")
 
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
@@ -266,14 +266,14 @@ OAUTH2_PROVIDER = {
     "OAUTH2_VALIDATOR_CLASS": "users.oauth.ConnectOAuth2Validator",
 }
 
-fcm_private_key = env("FCM_PRIVATE_KEY", default="")
+FCM_PRIVATE_KEY = env("FCM_PRIVATE_KEY", default="")
 
-if fcm_private_key:
+if FCM_PRIVATE_KEY:
     FCM_CREDENTIALS = {
         "type": "service_account",
         "project_id": env("FCM_PROJECT_ID", default=""),
         "private_key_id": env("FCM_PRIVATE_KEY_ID", default=""),
-        "private_key": env("FCM_PRIVATE_KEY", default=""),
+        "private_key": FCM_PRIVATE_KEY,
         "client_email": env("FCM_CLIENT_EMAIL", default=""),
         "client_id": env("FCM_CLIENT_ID", default=""),
         "auth_uri": "https://accounts.google.com/o/oauth2/auth",
