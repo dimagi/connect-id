@@ -1,3 +1,4 @@
+exclude: '^docs/|/migrations/'
 default_stages: [pre-commit]
 
 repos:
