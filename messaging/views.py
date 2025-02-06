@@ -182,11 +182,11 @@ class CreateChannelView(APIView):
                 title="Channel created",
                 body="Please provide your consent to send/receive message.",
                 data={
-                    "key_url": server.key_url,
+                    "key_url": str(server.key_url),
                     "action": CCC_MESSAGE_ACTION,
                     "channel_source": channel_source,
                     "channel_id": str(channel.channel_id),
-                    "consent": channel.user_consent
+                    "consent": str(channel.user_consent)
                 },
             )
             # send fcm notification.
