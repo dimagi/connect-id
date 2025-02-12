@@ -28,13 +28,6 @@ class Log401ErrorsMiddleware:
 
         # Check if the response status code is 401
         if response.status_code == 401:
-            from sentry_sdk import Scope
-            scope = Scope.get_current_scope()
-
-            scope.set_tag("path", request.path)
-            scope.set_tag("method", request.method)
-            scope.set_tag("status_code", response.status_code)
-
             sentry_sdk.capture_message(
                 f"401 Unauthorized captured Error",
                 level="error",
