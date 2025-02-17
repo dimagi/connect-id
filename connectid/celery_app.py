@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 
 from celery import Celery
 
@@ -15,3 +16,14 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 
 # Load task modules from all registered Django app configs.
 app.autodiscover_tasks()
+
+app.conf.beat_schedule = {
+    "delete_old_messages": {
+        "task": "messaging.task.delete_old_messages",
+        "schedule": timedelta(hours=24),
+    },
+    "resend_notification_of_undelivered_messages": {
+        "task": "messaging.task.resend_notification_of_undelivered_messages",
+        "schedule": timedelta(hours=1),
+    }
+}

@@ -2,12 +2,17 @@ import base64
 import hashlib
 import hmac
 import json
+from datetime import timedelta
 
 import requests
+from celery import shared_task
+from django.utils.timezone import now
 from rest_framework import status
 from rest_framework.generics import get_object_or_404
 
-from messaging.models import Message, MessageStatus, Channel
+from messaging.models import Message, MessageStatus, Channel, MessageDirection
+from messaging.serializers import MessageData, MessageSerializer
+from messaging.views import send_bulk_message
 
 
 class CommCareHQAPIException(Exception):
@@ -58,3 +63,28 @@ def send_messages_to_service_and_mark_status(channel_messages,
 
     if sent_message_ids:
         Message.objects.filter(message_id__in=sent_message_ids).update(status=status_to_be_updated)
+
+
+@shared_task(name="delete_old_messages")
+def delete_old_messages():
+    """
+      Deletes messages that are older than 7 days.
+    """
+    print("Running delete_old_messages")
+    cutoff_date = now() - timedelta(days=7)
+    deleted_count, _ = Message.objects.filter(received__lte=cutoff_date).delete()
+
+
+@shared_task(name="resend_notifications_for_undelivered_messages")
+def resend_notification_of_undelivered_messages():
+    undelivered_msgs = (Message.objects.filter(status=MessageStatus.SENT_TO_SERVICE,
+                                               direction=MessageDirection.SERVER).select_related('channel',
+                                                                                                 'channel__connect_user'))
+    for msg in undelivered_msgs:
+        channel = msg.channel
+        serialized_msg = MessageSerializer(msg)
+        message_to_send = MessageData(
+            usernames=[channel.connect_user.username],
+            data=serialized_msg.data
+        )
+        send_bulk_message(message_to_send)
