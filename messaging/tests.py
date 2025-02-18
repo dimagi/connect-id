@@ -431,4 +431,7 @@ class TestUpdateReceivedView:
         data, msg_status = args
         assert isinstance(data, defaultdict) and len(data) == 2
         assert all(str(ch.channel_id) in data for ch in [channel1, channel2])
+        assert all(
+            all(msg["received_on"] for msg in data[str(ch.channel_id)]["messages"]) for ch in [channel1, channel2]
+        )
         assert msg_status == MessageStatus.CONFIRMED_RECEIVED
