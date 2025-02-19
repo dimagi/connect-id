@@ -2,8 +2,8 @@ from django.db import transaction
 from django.db.models import Q
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_POST
-from messaging.views import send_bulk_message
-from messaging.serializers import MessageData
+from utils.notification import send_bulk_notification
+from messaging.serializers import NotificationData
 from oauth2_provider.decorators import protected_resource
 from utils.rest_framework import ClientProtectedResourceAuth
 from rest_framework import status as drf_status
@@ -105,8 +105,8 @@ class ValidatePhoneNumbers(APIView):
             PaymentProfile.objects.bulk_update(profiles_to_update, ["status"])
 
         if usernames_by_states["approved"]:
-            send_bulk_message(
-                MessageData(
+            send_bulk_notification(
+                NotificationData(
                     usernames=usernames_by_states["approved"],
                     title="Your Payment Phone Number is approved",
                     body="Your payment phone number is approved and future payments will be made to this number.",
@@ -114,8 +114,8 @@ class ValidatePhoneNumbers(APIView):
                 )
             )
         if usernames_by_states["rejected"]:
-            send_bulk_message(
-                MessageData(
+            send_bulk_notification(
+                NotificationData(
                     usernames=usernames_by_states["rejected"],
                     title="Your Payment Phone Number did not work",
                     body="Your payment number did not work. Please try to change to a different payment phone number",
@@ -123,8 +123,8 @@ class ValidatePhoneNumbers(APIView):
                 )
             )
         if usernames_by_states["pending"]:
-            send_bulk_message(
-                MessageData(
+            send_bulk_notification(
+                NotificationData(
                     usernames=usernames_by_states["pending"],
                     title="Your Payment Phone Number is pending review",
                     body="Your payment phone number is pending review. Please wait for further updates.",
