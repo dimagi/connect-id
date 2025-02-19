@@ -75,7 +75,7 @@ def delete_old_messages():
 
 
 @shared_task(name="resend_notifications_for_undelivered_messages")
-def resend_notification_of_undelivered_messages():
+def resend_notifications_for_undelivered_messages():
     undelivered_msgs = (Message.objects.filter(recevied__isnull=True,
                                                direction=MessageDirection.MOBILE).select_related('channel',
                                                                                                  'channel__connect_user'))
