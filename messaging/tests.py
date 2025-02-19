@@ -12,7 +12,7 @@ from rest_framework.test import APITestCase
 
 from messaging.factories import ChannelFactory, MessageFactory, ServerFactory
 from messaging.models import Channel, Message, MessageStatus
-from messaging.serializers import MessageData
+from messaging.serializers import NotificationData
 from payments.models import PaymentProfile
 from users.factories import FCMDeviceFactory, UserFactory
 
@@ -195,7 +195,7 @@ def test_send_fcm_notification_view(authed_client, channel):
         db_msg = Message.objects.get(message_id=message_id)
         assert db_msg
 
-        message_to_send = MessageData(
+        message_to_send = NotificationData(
             usernames=[channel.connect_user.username],
             data={
                 "message_id": db_msg.message_id,
