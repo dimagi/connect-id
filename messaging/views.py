@@ -189,7 +189,7 @@ class CreateChannelView(APIView):
                     "action": CCC_MESSAGE_ACTION,
                     "channel_source": channel_source,
                     "channel_id": str(channel.channel_id),
-                    "consent": str(channel.user_consent)
+                    "consent": str(channel.user_consent),
                 },
             )
             # send fcm notification.
