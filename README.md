@@ -1,6 +1,5 @@
 # Connect-ID
 
-
 ## Steps to Set Up the Project Locally:
 
 1. **Create and activate a Python virtual environment using Python 3.11:**
@@ -43,4 +42,4 @@
    ```bash
    ./manage.py migrate
    ./manage.py runserver
-   
+   ```
