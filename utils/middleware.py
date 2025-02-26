@@ -14,5 +14,5 @@ class CurrentVersionMiddleware:
         return response
 
     def process_view(self, request, view_func, view_args, view_kwargs):
-        if hasattr(view_func, 'cls') and view_func.cls.versioning_class is not None:
+        if hasattr(view_func, "cls") and view_func.cls.versioning_class is not None:
             request.include_version_headers = True

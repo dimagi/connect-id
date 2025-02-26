@@ -19,8 +19,9 @@ class ApplicationFactory(DjangoModelFactory):
     client_id = factory.Faker("uuid4")
     client_secret = factory.Faker("uuid4")
     client_type = "confidential"
-    authorization_grant_type = factory.Faker("random_element", elements=["authorization-code", "implicit", "password",
-                                                                         "client-credentials"])
+    authorization_grant_type = factory.Faker(
+        "random_element", elements=["authorization-code", "implicit", "password", "client-credentials"]
+    )
     name = factory.Faker("company")
 
 
@@ -32,7 +33,6 @@ class ServerFactory(DjangoModelFactory):
     consent_url = factory.Faker("url")
     callback_url = factory.Faker("url")
     key_url = factory.Faker("url")
-    oauth_application = factory.SubFactory(ApplicationFactory)
 
 
 class ChannelFactory(DjangoModelFactory):
@@ -46,15 +46,11 @@ class ChannelFactory(DjangoModelFactory):
 
 
 def generate_random_content():
-    nonce = base64.b64encode(os.urandom(12)).decode('utf-8')
-    tag = base64.b64encode(os.urandom(16)).decode('utf-8')
-    ciphertext = base64.b64encode(os.urandom(32)).decode('utf-8')
+    nonce = base64.b64encode(os.urandom(12)).decode("utf-8")
+    tag = base64.b64encode(os.urandom(16)).decode("utf-8")
+    ciphertext = base64.b64encode(os.urandom(32)).decode("utf-8")
 
-    return {
-        "nonce": nonce,
-        "tag": tag,
-        "ciphertext": ciphertext
-    }
+    return {"nonce": nonce, "tag": tag, "ciphertext": ciphertext}
 
 
 class MessageFactory(DjangoModelFactory):

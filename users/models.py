@@ -1,8 +1,6 @@
-from datetime import timedelta
 import base64
-from datetime import timedelta
 import os
-
+from datetime import timedelta
 from uuid import uuid4
 
 from django.conf import settings
@@ -11,11 +9,9 @@ from django.contrib.auth.models import AbstractUser
 from django.contrib.sites.models import Site
 from django.db import models
 from django.http import HttpResponse
-from django.utils.timezone import now
 from django.urls import reverse
 from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
-
 from django_otp.util import random_hex
 from phonenumber_field.modelfields import PhoneNumberField
 
@@ -57,8 +53,10 @@ class ConnectUser(AbstractUser):
         self.deactivation_token_valid_until = now() + timedelta(seconds=600)
         self.save()
         message = (
-            f"Your account deactivation request is pending. Please enter this token {self.deactivation_token} to confirm account deactivation."
-            f"Warning: This action is irreversible. If you didn't request deactivation, please ignore this message. \n\n {settings.APP_HASH}"
+            f"Your account deactivation request is pending. Please enter this token {self.deactivation_token} "
+            f"to confirm account deactivation."
+            f"Warning: This action is irreversible. If you didn't request deactivation, "
+            f"please ignore this message. \n\n {settings.APP_HASH}"
         )
         if not self.phone_number.raw_input.startswith(TEST_NUMBER_PREFIX):
             sender = get_sms_sender(self.phone_number.country_code)
@@ -87,7 +85,7 @@ class UserKey(models.Model):
         if not user_key:
             user_key = UserKey(user=user)
             bin_key = os.urandom(32)
-            user_key.key = base64.b64encode(bin_key).decode('utf-8')
+            user_key.key = base64.b64encode(bin_key).decode("utf-8")
         user_key.save()
         return user_key
 
@@ -107,7 +105,7 @@ class PhoneDevice(SideChannelDevice):
             self.attempts = 0
         message = f"Your verification token from commcare connect is {self.token} \n\n {settings.APP_HASH}"
         # backoff attempts exponentially
-        wait_time = 2 ** self.attempts
+        wait_time = 2**self.attempts
         if self.otp_last_sent is None or (
             self.otp_last_sent and now() - self.otp_last_sent >= timedelta(minutes=wait_time)
         ):
@@ -130,11 +128,7 @@ class PhoneDevice(SideChannelDevice):
         return HttpResponse()
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["phone_number", "user"], name="phone_number_user"
-            )
-        ]
+        constraints = [models.UniqueConstraint(fields=["phone_number", "user"], name="phone_number_user")]
 
 
 class RecoveryStatus(models.Model):
