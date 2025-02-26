@@ -9,7 +9,7 @@ def send_sms(to, body, sender=None):
 
 
 def get_ip(request):
-    ip_address = request.headers.get("x-forwarded-for", request.META.get("REMOTE_ADDR", "127.0.0.1"))
+    ip_address = request.headers.get("x-forwarded-for", request.headers.get("REMOTE_ADDR", "127.0.0.1"))
     return ip_address.split(",")[0]
 
 
