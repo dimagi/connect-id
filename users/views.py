@@ -589,10 +589,15 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
         counts = (
             ConnectUser.objects.annotate(date_joined_month=TruncMonth("date_joined"))
             .values("date_joined_month")
-            .annotate(count=Count("*"))
+            .annotate(
+                monthly_count=Count("*"),
+                cumulative_count=Window(
+                    expression=Sum("monthly_count"),
+                    order_by="date_joined_month",
+                ),
+            )
         )
         count_by_year_month = {
-            item["date_joined_month"].strftime("%Y-%m"): item["count"]
-            for item in counts
+            item["date_joined_month"].strftime("%Y-%m"): item for item in counts
         }
         return JsonResponse(count_by_year_month)
