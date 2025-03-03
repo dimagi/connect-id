@@ -10,7 +10,7 @@ from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
 from django.views import View
-from django.db.models import Count
+from django.db.models import Count, Sum, Window
 from django.db.models.functions import TruncMonth
 from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
