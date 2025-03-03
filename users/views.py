@@ -598,6 +598,7 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
             )
         )
         count_by_year_month = {
-            item["date_joined_month"].strftime("%Y-%m"): item for item in counts
+            item["date_joined_month"].strftime("%Y-%m"): item["cumulative_count"]
+            for item in counts
         }
         return JsonResponse(count_by_year_month)
