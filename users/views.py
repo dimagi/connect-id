@@ -587,12 +587,12 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
 
     def get(self, request, *args, **kwargs):
         counts = (
-            ConnectUser.objects.filter(is_active=True)
-            .annotate(date_joined_month=TruncMonth("date_joined"))
+            ConnectUser.objects.annotate(date_joined_month=TruncMonth("date_joined"))
             .values("date_joined_month")
             .annotate(count=Count("*"))
         )
         count_by_year_month = {
-            str(item["date_joined_month"].date()): item["count"] for item in counts
+            item["date_joined_month"].strftime("%Y-%m"): item["count"]
+            for item in counts
         }
         return JsonResponse(count_by_year_month)
