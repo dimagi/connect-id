@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 from datetime import timedelta
 
 import requests
@@ -14,6 +15,9 @@ from messaging.models import Message, MessageStatus, Channel, MessageDirection
 from messaging.serializers import NotificationData, MessageSerializer
 from utils.notification import send_bulk_notification
 
+logger = logging.getLogger(__name__)
+
+MESSAGE_RETENTION_DAYS = 7
 
 class CommCareHQAPIException(Exception):
     pass
@@ -70,20 +74,26 @@ def delete_old_messages():
     """
       Deletes messages that are older than 7 days.
     """
-    cutoff_date = now() - timedelta(days=7)
+    cutoff_date = now() - timedelta(days=MESSAGE_RETENTION_DAYS)
     deleted_count, _ = Message.objects.filter(received__lte=cutoff_date).delete()
 
 
 @shared_task(name="resend_notifications_for_undelivered_messages")
 def resend_notifications_for_undelivered_messages():
-    undelivered_msgs = (Message.objects.filter(recevied__isnull=True,
+    undelivered_msgs = (Message.objects.filter(received__isnull=True,
                                                direction=MessageDirection.MOBILE).select_related('channel',
                                                                                                  'channel__connect_user'))
     for msg in undelivered_msgs:
         channel = msg.channel
         serialized_msg = MessageSerializer(msg)
+        username = channel.connect_user.username
         message_to_send = NotificationData(
-            usernames=[channel.connect_user.username],
+            usernames=[username],
             data=serialized_msg.data
         )
-        send_bulk_notification(message_to_send)
+        try:
+            send_bulk_notification(message_to_send)
+        except Exception as e:
+            logger.exception(
+                f"Error occurred while sending undelivered notification "
+                f"to  user :{username} for channel: {channel.channel_id} : {str(e)}")
