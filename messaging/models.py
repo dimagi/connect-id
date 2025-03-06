@@ -23,7 +23,7 @@ class MessageServer(models.Model):
 
 class Channel(models.Model):
     channel_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user_consent = models.BooleanField(default=False)
+    user_consent = models.BooleanField(default=True)
     channel_source = models.TextField()
     connect_user = models.ForeignKey(ConnectUser, on_delete=models.CASCADE)
     server = models.ForeignKey(MessageServer, on_delete=models.CASCADE)
