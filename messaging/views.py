@@ -6,8 +6,6 @@ from django.db.models import Prefetch
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from fcm_django.models import FCMDevice
-from firebase_admin import messaging
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.views import APIView
@@ -16,12 +14,13 @@ from messaging.models import Channel, Message, MessageDirection, MessageStatus, 
 from messaging.serializers import (
     CCC_MESSAGE_ACTION,
     BulkMessageSerializer,
-    MessageData,
+    NotificationData,
     MessageSerializer,
     SingleMessageSerializer
 )
 from messaging.task import make_request, send_messages_to_service_and_mark_status
 from users.models import ConnectUser
+from utils.notification import send_bulk_notification
 from utils.rest_framework import ClientProtectedResourceAuth, MessagingServerAuth
 
 
@@ -59,7 +58,7 @@ class SendMessage(APIView):
         serializer = SingleMessageSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         message = serializer.save()
-        result = send_bulk_message(message)
+        result = send_bulk_notification(message)
         return JsonResponse(result, status=200)
 
 
@@ -103,67 +102,12 @@ class SendMessageBulk(APIView):
         global_all_success = True
         results = []
         for message in messages:
-            message_result = send_bulk_message(message)
+            message_result = send_bulk_notification(message)
             results.append(message_result)
             if not message_result["all_success"]:
                 global_all_success = False
 
         return JsonResponse({"messages": results, "all_success": global_all_success}, status=200)
-
-
-def send_bulk_message(message):
-    message_result = {"responses": []}
-    message_all_success = True
-    if not message.usernames:
-        message_result["all_success"] = message_all_success
-        return message_result
-
-    active_devices = FCMDevice.objects.filter(
-        user__username__in=message.usernames, active=True
-    ).values_list('registration_id', 'user__username')
-    registration_id_to_username = {reg_id: username for reg_id, username in active_devices}
-
-    batch_response = FCMDevice.objects.send_message(
-        _build_message(message),
-        additional_registration_ids=list(registration_id_to_username),
-        skip_registration_id_lookup=True
-    )
-
-    for response, registration_id in zip(batch_response.response.responses, batch_response.registration_ids_sent):
-        result = {"username": registration_id_to_username[registration_id]}
-        message_result["responses"].append(result)
-        if response.exception:
-            message_all_success = False
-            result["status"] = "error"
-            if registration_id in batch_response.deactivated_registration_ids:
-                result["status"] = "deactivated"
-            else:
-                result["error"] = response.exception.code
-        else:
-            result["status"] = "success"
-
-    missing_usernames = set(message.usernames) - set(registration_id_to_username.values())
-    for username in missing_usernames:
-        message_all_success = False
-        result = {"status": "deactivated", "username": username}
-        message_result["responses"].append(result)
-
-    message_result["all_success"] = message_all_success
-    message_result["responses"].sort(key=lambda r: message.usernames.index(r["username"]))
-    return message_result
-
-
-def _build_message(message):
-    notification = _build_notification(message)
-    return messaging.Message(data=message.data, notification=notification)
-
-
-def _build_notification(data):
-    if data.title or data.body:
-        return messaging.Notification(
-            title=data.title,
-            body=data.body,
-        )
 
 
 class CreateChannelView(APIView):
@@ -177,7 +121,7 @@ class CreateChannelView(APIView):
         user = get_object_or_404(ConnectUser, username=connect_id)
         channel, created = Channel.objects.get_or_create(server=server, connect_user=user, channel_source=channel_source)
         if created:
-            message = MessageData(
+            message = NotificationData(
                 usernames=[channel.connect_user.username],
                 title="Channel created",
                 body="Please provide your consent to send/receive message.",
@@ -190,7 +134,7 @@ class CreateChannelView(APIView):
                 },
             )
             # send fcm notification.
-            send_bulk_message(message)
+            send_bulk_notification(message)
             return JsonResponse(
                 {"channel_id": str(channel.channel_id)}, status=status.HTTP_201_CREATED
             )
@@ -218,11 +162,11 @@ class SendServerConnectMessage(APIView):
         message = Message(**message_data)
         message.save()
         channel = message.channel
-        message_to_send = MessageData(
+        message_to_send = NotificationData(
             usernames=[channel.connect_user.username],
             data=MessageSerializer(message).data
         )
-        send_bulk_message(message_to_send)
+        send_bulk_notification(message_to_send)
         return JsonResponse(
             {"message_id": str(message.message_id)},
             status=status.HTTP_200_OK,
