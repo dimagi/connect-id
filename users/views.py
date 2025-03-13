@@ -1,5 +1,5 @@
 import requests
-from datetime import timedelta
+from datetime import datetime, timedelta
 from secrets import token_hex
 from urllib.parse import urlparse, urlencode
 
@@ -10,6 +10,8 @@ from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
 from django.views import View
+from django.db.models import Count, Sum, Window
+from django.db.models.functions import TruncMonth
 from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, permission_classes
@@ -578,3 +580,19 @@ def confirm_deactivation(request):
             token.revoke()
         return JsonResponse({"success": True})
     return JsonResponse({"success": False})
+
+
+class FetchUserCounts(ClientProtectedResourceMixin, View):
+    required_scopes = ["user_fetch"]
+
+    def get(self, request, *args, **kwargs):
+        counts = (
+            ConnectUser.objects.annotate(date_joined_month=TruncMonth("date_joined"))
+            .values("date_joined_month")
+            .annotate(monthly_count=Count("*"))
+        )
+        count_by_year_month = {
+            item["date_joined_month"].strftime("%Y-%m"): item["monthly_count"]
+            for item in counts
+        }
+        return JsonResponse(count_by_year_month)

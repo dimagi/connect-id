@@ -39,4 +39,7 @@ urlpatterns = [
     path('validate_payment_phone_numbers', payment_views.ValidatePhoneNumbers.as_view(), name='validate_payment_phone_numbers'),
     path('forward_hq_invite', views.ForwardHQInvite.as_view(), name='forward_hq_invite'),
     path('confirm_hq_invite', views.ConfirmHQInviteCallback.as_view(), name='confirm_hq_invite'),
+    path(
+        "fetch_user_counts", views.FetchUserCounts.as_view(), name="fetch_user_counts"
+    ),
 ]
