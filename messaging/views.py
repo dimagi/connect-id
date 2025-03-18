@@ -173,9 +173,15 @@ class CreateChannelView(APIView):
         data = request.data
         connect_id = data["connectid"]
         channel_source = data["channel_source"]
+        channel_name = data.get("channel_name")
         server = get_current_message_server(request)
         user = get_object_or_404(ConnectUser, username=connect_id)
-        channel, created = Channel.objects.get_or_create(server=server, connect_user=user, channel_source=channel_source)
+        channel, created = Channel.objects.get_or_create(
+            server=server,
+            connect_user=user,
+            channel_source=channel_source,
+            defaults={"channel_name": channel_name}
+        )
         response_dict = {
             "channel_id": str(channel.channel_id),
             "consent": channel.user_consent
@@ -188,7 +194,7 @@ class CreateChannelView(APIView):
                 data={
                     "key_url": str(server.key_url),
                     "action": CCC_MESSAGE_ACTION,
-                    "channel_source": channel_source,
+                    "channel_source": channel.visible_name,
                     "channel_id": str(channel.channel_id),
                     "consent": str(channel.user_consent)
                 },
@@ -309,8 +315,12 @@ class RetrieveMessageView(APIView):
         channels_data = []
         messages = []
         for channel in channels:
-            channels_data.append({"channel_source": channel.channel_source, "channel_id": str(channel.channel_id),
-                                  "key_url": channel.server.key_url, "consent": channel.user_consent})
+            channels_data.append({
+                "channel_source": channel.visible_name,
+                "channel_id": str(channel.channel_id),
+                "key_url": channel.server.key_url,
+                "consent": channel.user_consent
+            })
             channel_messages = Message.objects.filter(
                 channel=channel,
                 direction=MessageDirection.MOBILE,
