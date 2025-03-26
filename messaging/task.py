@@ -6,6 +6,7 @@ import logging
 from datetime import timedelta
 
 import requests
+import sentry_sdk
 from celery import shared_task
 from django.utils.timezone import now
 from rest_framework import status
@@ -18,6 +19,7 @@ from utils.notification import send_bulk_notification
 logger = logging.getLogger(__name__)
 
 MESSAGE_RETENTION_DAYS = 7
+
 
 class CommCareHQAPIException(Exception):
     pass
@@ -94,6 +96,6 @@ def resend_notifications_for_undelivered_messages():
         try:
             send_bulk_notification(message_to_send)
         except Exception as e:
-            logger.exception(
-                f"Error occurred while sending undelivered notification "
-                f"to  user :{username} for channel: {channel.channel_id} : {str(e)}")
+            error_msg = (f"Error occurred while sending undelivered notification "
+                         f"to user :{username} for channel: {channel.channel_id} : {str(e)}")
+            sentry_sdk.capture_message(msg=error_msg, level="error")
