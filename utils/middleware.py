@@ -1,4 +1,7 @@
 import base64
+import logging
+
+logger = logging.getLogger(__name__)
 
 import sentry_sdk
 from rest_framework.settings import api_settings
@@ -31,20 +34,26 @@ class Log401ErrorsMiddleware:
         if response.status_code == 401:
             auth_header = request.headers.get('AUTHORIZATION', '')
             username = None
+            auth_error = None
 
             if auth_header.startswith('Basic '):
                 try:
                     encoded_credentials = auth_header.split(' ')[1]
                     decoded_credentials = base64.b64decode(encoded_credentials).decode('utf-8')
                     username, _ = decoded_credentials.split(':')
-                except Exception:
+                except ValueError as e:
+                    auth_error = str(e)
                     username = None
 
             scope = sentry_sdk.get_current_scope()
             scope.set_user({'username': username, })
 
+            error_msg = "401 Unauthorized captured Error."
+            if auth_error:
+                error_msg += f" Auth header error: {auth_error}"
+
             sentry_sdk.capture_message(
-                f"401 Unauthorized captured Error",
+                message=error_msg,
                 level="error",
             )
 
