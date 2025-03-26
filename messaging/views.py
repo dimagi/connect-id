@@ -174,11 +174,13 @@ class CreateChannelView(APIView):
         data = request.data
         connect_id = data["connectid"]
         channel_source = data["channel_source"]
+        channel_name = data.get("channel_name")
         server = get_current_message_server(request)
         user = get_object_or_404(ConnectUser, username=connect_id)
         channel, created = Channel.objects.get_or_create(
-            server=server, connect_user=user, channel_source=channel_source
+            server=server, connect_user=user, channel_source=channel_source, defaults={"channel_name": channel_name}
         )
+        response_dict = {"channel_id": str(channel.channel_id), "consent": channel.user_consent}
         if created:
             message = MessageData(
                 usernames=[channel.connect_user.username],
@@ -187,16 +189,16 @@ class CreateChannelView(APIView):
                 data={
                     "key_url": str(server.key_url),
                     "action": CCC_MESSAGE_ACTION,
-                    "channel_source": channel_source,
+                    "channel_source": channel.visible_name,
                     "channel_id": str(channel.channel_id),
                     "consent": str(channel.user_consent),
                 },
             )
             # send fcm notification.
             send_bulk_message(message)
-            return JsonResponse({"channel_id": str(channel.channel_id)}, status=status.HTTP_201_CREATED)
+            return JsonResponse(response_dict, status=status.HTTP_201_CREATED)
         else:
-            return JsonResponse({"channel_id": str(channel.channel_id)}, status=status.HTTP_200_OK)
+            return JsonResponse(response_dict, status=status.HTTP_200_OK)
 
 
 class SendServerConnectMessage(APIView):
@@ -301,7 +303,7 @@ class RetrieveMessageView(APIView):
         for channel in channels:
             channels_data.append(
                 {
-                    "channel_source": channel.channel_source,
+                    "channel_source": channel.visible_name,
                     "channel_id": str(channel.channel_id),
                     "key_url": channel.server.key_url,
                     "consent": channel.user_consent,

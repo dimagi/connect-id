@@ -22,10 +22,15 @@ class MessageServer(models.Model):
 
 class Channel(models.Model):
     channel_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user_consent = models.BooleanField(default=False)
+    user_consent = models.BooleanField(default=True)
     channel_source = models.TextField()
+    channel_name = models.TextField(null=True)
     connect_user = models.ForeignKey(ConnectUser, on_delete=models.CASCADE)
     server = models.ForeignKey(MessageServer, on_delete=models.CASCADE)
+
+    @property
+    def visible_name(self):
+        return self.channel_name or self.channel_source
 
 
 class MessageStatus(models.TextChoices):

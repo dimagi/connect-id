@@ -7,6 +7,8 @@ from django.conf import settings
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
+from django.db.models import Count
+from django.db.models.functions import TruncMonth
 from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
 from django.views import View
@@ -580,3 +582,16 @@ def confirm_deactivation(request):
             token.revoke()
         return JsonResponse({"success": True})
     return JsonResponse({"success": False})
+
+
+class FetchUserCounts(ClientProtectedResourceMixin, View):
+    required_scopes = ["user_fetch"]
+
+    def get(self, request, *args, **kwargs):
+        counts = (
+            ConnectUser.objects.annotate(date_joined_month=TruncMonth("date_joined"))
+            .values("date_joined_month")
+            .annotate(monthly_count=Count("*"))
+        )
+        count_by_year_month = {item["date_joined_month"].strftime("%Y-%m"): item["monthly_count"] for item in counts}
+        return JsonResponse(count_by_year_month)
