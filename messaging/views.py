@@ -158,7 +158,10 @@ def send_bulk_message(message):
 def _build_message(message):
     notification = _build_notification(message)
     return messaging.Message(
-        data=message.data, notification=notification, fcm_options=message.fcm_options
+        data=message.data,
+        notification=notification,
+        fcm_options=message.fcm_options,
+        android={"priority": "high"},
     )
 
 
