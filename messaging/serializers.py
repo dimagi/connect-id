@@ -23,6 +23,7 @@ class SingleMessageSerializer(serializers.Serializer):
     title = serializers.CharField(required=False)
     body = serializers.CharField(required=False)
     data = serializers.DictField(required=False)
+    fcm_options = serializers.DictField(required=False, default={})
 
     def create(self, validated_data):
         username = validated_data.pop('username', None)

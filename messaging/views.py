@@ -42,6 +42,7 @@ class SendMessage(APIView):
         "title": "test title",
         "body": "test message",
         "data": {"test": "data"},
+        "fcm_options": {"analytics_label": "label"}
     }
 
     Response:
@@ -75,6 +76,7 @@ class SendMessageBulk(APIView):
                 "title": "test title",
                 "body": "test message",
                 "data": {"test": "data"},
+                "fcm_options": {"analytics_label": "label"}
             },
         ]
     }
@@ -155,7 +157,9 @@ def send_bulk_message(message):
 
 def _build_message(message):
     notification = _build_notification(message)
-    return messaging.Message(data=message.data, notification=notification)
+    return messaging.Message(
+        data=message.data, notification=notification, fcm_options=message.fcm_options
+    )
 
 
 def _build_notification(data):
