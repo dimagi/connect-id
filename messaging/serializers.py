@@ -15,6 +15,7 @@ class MessageData:
     title: str = None
     body: str = None
     data: dict = None
+    fcm_options: dict = None 
 
 
 class SingleMessageSerializer(serializers.Serializer):
