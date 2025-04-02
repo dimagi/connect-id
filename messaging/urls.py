@@ -16,7 +16,5 @@ urlpatterns = [
         views.RetrieveMessageView.as_view(),
         name="retrieve_messages",
     ),
-    path(
-        "update_received/", views.UpdateReceivedView.as_view(), name="update_received"
-    ),
+    path("update_received/", views.UpdateReceivedView.as_view(), name="update_received"),
 ]

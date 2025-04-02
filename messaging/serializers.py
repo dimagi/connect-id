@@ -1,17 +1,15 @@
 import dataclasses
-from typing import List
 
 from rest_framework import serializers
 
 from messaging.models import Message
-
 
 CCC_MESSAGE_ACTION = "ccc_message"
 
 
 @dataclasses.dataclass
 class MessageData:
-    usernames: List[str] = None
+    usernames: list[str] = None
     title: str = None
     body: str = None
     data: dict = None
@@ -27,7 +25,7 @@ class SingleMessageSerializer(serializers.Serializer):
     fcm_options = serializers.DictField(required=False, default={})
 
     def create(self, validated_data):
-        username = validated_data.pop('username', None)
+        username = validated_data.pop("username", None)
         if username:
             validated_data["usernames"] = [username]
         return MessageData(**validated_data)

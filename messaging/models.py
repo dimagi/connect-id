@@ -2,7 +2,6 @@ import uuid
 
 from django.db import models
 from django.utils import timezone
-from oauth2_provider.models import Application
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 
 from users.models import ConnectUser
@@ -23,22 +22,27 @@ class MessageServer(models.Model):
 
 class Channel(models.Model):
     channel_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user_consent = models.BooleanField(default=False)
+    user_consent = models.BooleanField(default=True)
     channel_source = models.TextField()
+    channel_name = models.TextField(null=True)
     connect_user = models.ForeignKey(ConnectUser, on_delete=models.CASCADE)
     server = models.ForeignKey(MessageServer, on_delete=models.CASCADE)
 
+    @property
+    def visible_name(self):
+        return self.channel_name or self.channel_source
+
 
 class MessageStatus(models.TextChoices):
-    PENDING = "PENDING",  # initially when message is received by connectid from mobile.
+    PENDING = ("PENDING",)  # initially when message is received by connectid from mobile.
     SENT_TO_SERVICE = "SENT_TO_SERVICE"  # when message is sent to service
-    DELIVERED = "DELIVERED",  # when mobile get the message and mark received on connectid
+    DELIVERED = ("DELIVERED",)  # when mobile get the message and mark received on connectid
     CONFIRMED_RECEIVED = "CONFIRMED_RECEIVED"  # when message is mark received on service
 
 
 class MessageDirection(models.TextChoices):
-    MOBILE = "M" # sent to mobile
-    SERVER = "S" # sent to server
+    MOBILE = "M"  # sent to mobile
+    SERVER = "S"  # sent to server
 
 
 class Message(models.Model):
@@ -47,7 +51,6 @@ class Message(models.Model):
     content = models.JSONField()
     timestamp = models.DateTimeField(default=timezone.now)
     received = models.DateTimeField(null=True, blank=True)
-    status = models.CharField(
-        max_length=50, choices=MessageStatus.choices, default=MessageStatus.PENDING)
+    status = models.CharField(max_length=50, choices=MessageStatus.choices, default=MessageStatus.PENDING)
     # represents the direction the message is sent toward
     direction = models.CharField(max_length=4, choices=MessageDirection.choices)
