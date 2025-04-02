@@ -13,7 +13,7 @@ class MessageData:
     title: str = None
     body: str = None
     data: dict = None
-    fcm_options: dict = None 
+    fcm_options: dict = dataclasses.field(default_factory=lambda: {})
 
 
 class SingleMessageSerializer(serializers.Serializer):

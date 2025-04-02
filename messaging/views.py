@@ -163,8 +163,8 @@ def _build_message(message):
     return messaging.Message(
         data=message.data,
         notification=notification,
-        fcm_options=message.fcm_options,
-        android={"priority": "high"},
+        fcm_options=messaging.FCMOptions(**message.fcm_options),
+        android=messaging.AndroidConfig(priority="high"),
     )
 
 
