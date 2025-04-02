@@ -24,8 +24,6 @@ from messaging.task import make_request, send_messages_to_service_and_mark_statu
 from users.models import ConnectUser
 from utils.rest_framework import ClientProtectedResourceAuth, MessagingServerAuth
 
-FCM_ANALYTICS_LABEL = "connect-id-message-notification"
-
 
 def get_current_message_server(request):
     auth_header = request.headers.get("authorization")
@@ -216,7 +214,6 @@ class SendServerConnectMessage(APIView):
     def post(self, request, *args, **kwargs):
         data = request.data
         content = data["content"]
-        fcm_analytics_label = data["fcm_analytics_label"] or FCM_ANALYTICS_LABEL
         for field in ("nonce", "tag", "ciphertext"):
             if not content[field]:
                 return JsonResponse({"errors": "invalid message content"}, status=status.HTTP_400_BAD_REQUEST)
@@ -229,10 +226,11 @@ class SendServerConnectMessage(APIView):
         message = Message(**message_data)
         message.save()
         channel = message.channel
+        fcm_options = data.get("fcm_options", {})
         message_to_send = MessageData(
             usernames=[channel.connect_user.username],
             data=MessageSerializer(message).data,
-            fcm_options={"analytics_label": fcm_analytics_label},
+            fcm_options=fcm_options,
         )
         send_bulk_message(message_to_send)
         return JsonResponse(
