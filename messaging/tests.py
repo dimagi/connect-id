@@ -35,6 +35,7 @@ def test_send_message(authed_client, fcm_device):
                     "username": fcm_device.user.username,
                     "body": "test message",
                     "data": {"test": "data"},
+                    "fcm_options": {"analytics_label": "test"},
                 }
             ),
             content_type=APPLICATION_JSON,
@@ -48,6 +49,8 @@ def test_send_message(authed_client, fcm_device):
         messages = mock_send_message.call_args_list[0].args[0]
         assert len(messages) == 1
         assert json.loads(str(messages[0])) == {
+            "android": {"priority": "high"},
+            "fcm_options": {"analytics_label": "test"},
             "data": {"test": "data"},
             "notification": {"body": "test message"},
             "token": fcm_device.registration_id,
@@ -93,6 +96,7 @@ def test_send_message_bulk(authed_client, fcm_device):
         messages = mock_send_message.call_args_list[0].args[0]
         assert len(messages) == 2
         assert json.loads(str(messages[0])) == {
+            "android": {"priority": "high"},
             "data": {"test": "data1"},
             "notification": {"body": "test message1", "title": "test title1"},
             "token": fcm_device.registration_id,
