@@ -7,7 +7,7 @@ import requests
 from rest_framework import status
 from rest_framework.generics import get_object_or_404
 
-from messaging.models import Message, MessageStatus, Channel
+from messaging.models import Channel, Message, MessageStatus
 
 
 class CommCareHQAPIException(Exception):
@@ -16,9 +16,9 @@ class CommCareHQAPIException(Exception):
 
 def make_request(url, json_data, secret):
     try:
-        data = json.dumps(json_data).encode('utf-8')
-        digest = hmac.new(secret.encode('utf-8'), data, hashlib.sha256).digest()
-        mac_digest = base64.b64encode(digest).decode('utf-8')
+        data = json.dumps(json_data).encode("utf-8")
+        digest = hmac.new(secret.encode("utf-8"), data, hashlib.sha256).digest()
+        mac_digest = base64.b64encode(digest).decode("utf-8")
         headers = {
             "Content-Type": "application/json",
             "X-MAC-DIGEST": mac_digest,
@@ -30,8 +30,7 @@ def make_request(url, json_data, secret):
         return CommCareHQAPIException({"status": "error", "message": str(e)})
 
 
-def send_messages_to_service_and_mark_status(channel_messages,
-                                             status_to_be_updated: MessageStatus):
+def send_messages_to_service_and_mark_status(channel_messages, status_to_be_updated: MessageStatus):
     sent_message_ids = []
 
     for channel_id, data in channel_messages.items():
@@ -47,12 +46,12 @@ def send_messages_to_service_and_mark_status(channel_messages,
                     "channel_id": str(channel_id),
                     "messages": messages,
                 },
-                secret=channel.server.secret_key
+                secret=channel.server.secret_key,
             )
             if response == status.HTTP_200_OK:
                 sent_message_ids.extend(msg["message_id"] for msg in messages)
 
-        except CommCareHQAPIException as e:
+        except CommCareHQAPIException:
             # To-Do: All the messages which gets failed should be sent again with some task.
             pass
 
