@@ -320,6 +320,7 @@ def user_data(user):
     user_data = {
         "name": user.name,
         "username": user.username,
+        "recovery_phone": user.recovery_phone,
         "secondary_phone_validate_by": user.recovery_phone_validation_deadline,
         "db_key": db_key.key,
     }
