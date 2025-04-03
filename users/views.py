@@ -189,7 +189,12 @@ def confirm_secondary_recovery_otp(request):
     status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
     status.save()
     db_key = UserKey.get_or_create_key_for_user(user)
-    user_data = {"name": user.name, "username": user.username, "db_key": db_key.key}
+    user_data = {
+        "name": user.name,
+        "username": user.username,
+        "recovery_phone": user.recovery_phone,
+        "db_key": db_key.key,
+    }
     user_data.update(user_payment_profile(user))
     return JsonResponse(user_data)
 
