@@ -20,7 +20,7 @@ from rest_framework.views import APIView
 from utils import get_ip, get_sms_sender, send_sms
 from utils.rest_framework import ClientProtectedResourceAuth
 
-from .const import TEST_NUMBER_PREFIX
+from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX
 from .fcm_utils import create_update_device
 from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
 
@@ -85,6 +85,8 @@ def confirm_otp(request):
 @api_view(["POST"])
 def validate_secondary_phone(request):
     user = request.user
+    if not user.recovery_phone:
+        return JsonResponse({"error": NO_RECOVERY_PHONE_ERROR}, status=400)
     return PhoneDevice.send_otp_httpresponse(phone_number=user.recovery_phone, user=user)
 
 
@@ -93,6 +95,8 @@ def confirm_secondary_otp(request):
     # check otp code for user
     # mark phone as confirmed on user model
     user = request.user
+    if not user.recovery_phone:
+        return JsonResponse({"error": NO_RECOVERY_PHONE_ERROR}, status=400)
     device, _ = PhoneDevice.objects.get_or_create(phone_number=user.recovery_phone, user=user)
     data = request.data
     verified = device.verify_token(data.get("token"))
@@ -162,6 +166,8 @@ def recover_secondary_phone(request):
         return HttpResponse(status=401)
     if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
         return HttpResponse(status=401)
+    if not user.recovery_phone:
+        return JsonResponse({"error": NO_RECOVERY_PHONE_ERROR}, status=400)
     otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.recovery_phone, user=user)
     otp_device.save()
     otp_device.generate_challenge()
@@ -182,6 +188,8 @@ def confirm_secondary_recovery_otp(request):
         return HttpResponse(status=401)
     if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
         return HttpResponse(status=401)
+    if not user.recovery_phone:
+        return JsonResponse({"error": NO_RECOVERY_PHONE_ERROR}, status=400)
     device = PhoneDevice.objects.get(phone_number=user.recovery_phone, user=user)
     verified = device.verify_token(data.get("token"))
     if not verified:
