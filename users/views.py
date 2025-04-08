@@ -192,7 +192,7 @@ def confirm_secondary_recovery_otp(request):
     user_data = {
         "name": user.name,
         "username": user.username,
-        "recovery_phone": user.recovery_phone,
+        "secondary_phone": user.recovery_phone.as_e164,
         "db_key": db_key.key,
     }
     user_data.update(user_payment_profile(user))
@@ -325,7 +325,7 @@ def user_data(user):
     user_data = {
         "name": user.name,
         "username": user.username,
-        "recovery_phone": user.recovery_phone,
+        "secondary_phone": user.recovery_phone.as_e164 if user.recovery_phone else None,
         "secondary_phone_validate_by": user.recovery_phone_validation_deadline,
         "db_key": db_key.key,
     }
