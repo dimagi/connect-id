@@ -188,8 +188,6 @@ def confirm_secondary_recovery_otp(request):
         return HttpResponse(status=401)
     if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
         return HttpResponse(status=401)
-    if not user.recovery_phone:
-        return JsonResponse({"error": NO_RECOVERY_PHONE_ERROR}, status=400)
     device = PhoneDevice.objects.get(phone_number=user.recovery_phone, user=user)
     verified = device.verify_token(data.get("token"))
     if not verified:
