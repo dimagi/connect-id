@@ -1,12 +1,18 @@
+import json
 from datetime import timedelta
 from unittest import mock
 
 import pytest
+from django.http import JsonResponse
+from django.urls import reverse
 from fcm_django.models import FCMDevice
+from rest_framework.test import APIRequestFactory, force_authenticate
 
+from users.const import NO_RECOVERY_PHONE_ERROR
 from users.factories import CredentialFactory
 from users.fcm_utils import create_update_device
-from users.models import ConnectUser, PhoneDevice
+from users.models import ConnectUser, PhoneDevice, RecoveryStatus
+from users.views import confirm_secondary_otp, validate_secondary_phone
 
 
 @pytest.mark.django_db
@@ -130,6 +136,50 @@ def test_otp_generation_after_five_minutes(user):
         assert phone_device.token is not None
         assert phone_device.token != token
         assert send_sms.call_count == 3
+
+
+def _create_request_with_auth(user, endpoint):
+    factory = APIRequestFactory()
+    request = factory.post(endpoint)
+    request.user = user
+    force_authenticate(request, user)
+    return request
+
+
+class TestValidateSecondaryPhone:
+    def test_no_recovery_phone(self, user):
+        request = _create_request_with_auth(user, endpoint=reverse("validate_secondary_phone"))
+        response = validate_secondary_phone(request)
+        assert isinstance(response, JsonResponse)
+        assert response.status_code == 400
+        assert json.loads(response.content) == {"error": NO_RECOVERY_PHONE_ERROR}
+
+
+class TestConfirmSecondaryOTP:
+    def test_no_recovery_phone(self, user):
+        request = _create_request_with_auth(user, endpoint=reverse("confirm_secondary_otp"))
+        response = confirm_secondary_otp(request)
+        assert isinstance(response, JsonResponse)
+        assert response.status_code == 400
+        assert json.loads(response.content) == {"error": NO_RECOVERY_PHONE_ERROR}
+
+
+@pytest.mark.django_db
+class TestRecoverSecondaryPhone:
+    def test_no_recovery_phone(self, client, user):
+        RecoveryStatus.objects.create(
+            user=user,
+            secret_key="test_key",
+            step=RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY,
+        )
+        data = {
+            "phone": user.phone_number,
+            "secret_key": "test_key",
+        }
+        response = client.post(reverse("recover_secondary_phone"), data)
+        assert isinstance(response, JsonResponse)
+        assert response.status_code == 400
+        assert json.loads(response.content) == {"error": NO_RECOVERY_PHONE_ERROR}
 
 
 @pytest.mark.django_db
