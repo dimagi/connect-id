@@ -574,14 +574,14 @@ def confirm_deactivation(request):
     status = RecoveryStatus.objects.get(user=user)
     if status.secret_key != secret_key:
         return HttpResponse(status=401)
-    if user.deactivation_token == deactivation_token:
-        user.is_active = False
-        user.save()
-        tokens = list(AccessToken.objects.filter(user=user)) + list(RefreshToken.objects.filter(user=user))
-        for token in tokens:
-            token.revoke()
-        return JsonResponse({"success": True})
-    return JsonResponse({"success": False})
+    if user.deactivation_token != deactivation_token:
+        return JsonResponse({"success": False})
+    user.is_active = False
+    user.save()
+    tokens = list(AccessToken.objects.filter(user=user)) + list(RefreshToken.objects.filter(user=user))
+    for token in tokens:
+        token.revoke()
+    return JsonResponse({"success": True})
 
 
 class FetchUserCounts(ClientProtectedResourceMixin, View):
