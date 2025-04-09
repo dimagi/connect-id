@@ -6,13 +6,11 @@ import pytest
 from django.http import JsonResponse
 from django.urls import reverse
 from fcm_django.models import FCMDevice
-from rest_framework.test import APIRequestFactory, force_authenticate
 
 from users.const import NO_RECOVERY_PHONE_ERROR
 from users.factories import CredentialFactory
 from users.fcm_utils import create_update_device
 from users.models import ConnectUser, PhoneDevice, RecoveryStatus
-from users.views import confirm_secondary_otp, validate_secondary_phone
 
 
 @pytest.mark.django_db
@@ -138,30 +136,22 @@ def test_otp_generation_after_five_minutes(user):
         assert send_sms.call_count == 3
 
 
-def _create_request_with_auth(user, endpoint):
-    factory = APIRequestFactory()
-    request = factory.post(endpoint)
-    request.user = user
-    force_authenticate(request, user)
-    return request
-
-
 class TestValidateSecondaryPhone:
-    def test_no_recovery_phone(self, user):
-        request = _create_request_with_auth(user, endpoint=reverse("validate_secondary_phone"))
-        response = validate_secondary_phone(request)
+    def test_no_recovery_phone(self, auth_device):
+        endpoint = reverse("validate_secondary_phone")
+        response = auth_device.post(endpoint)
         assert isinstance(response, JsonResponse)
         assert response.status_code == 400
-        assert json.loads(response.content) == {"error": NO_RECOVERY_PHONE_ERROR}
+        assert response.json() == {"error": NO_RECOVERY_PHONE_ERROR}
 
 
 class TestConfirmSecondaryOTP:
-    def test_no_recovery_phone(self, user):
-        request = _create_request_with_auth(user, endpoint=reverse("confirm_secondary_otp"))
-        response = confirm_secondary_otp(request)
+    def test_no_recovery_phone(self, auth_device, user):
+        endpoint = reverse("confirm_secondary_otp")
+        response = auth_device.post(endpoint)
         assert isinstance(response, JsonResponse)
         assert response.status_code == 400
-        assert json.loads(response.content) == {"error": NO_RECOVERY_PHONE_ERROR}
+        assert response.json() == {"error": NO_RECOVERY_PHONE_ERROR}
 
 
 @pytest.mark.django_db
