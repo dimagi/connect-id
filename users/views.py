@@ -576,6 +576,8 @@ def confirm_deactivation(request):
         return JsonResponse({"success": False, "errorCode": ErrorCodes.INVALID_SECRET_KEY}, status=401)
     if user.deactivation_token != deactivation_token:
         return JsonResponse({"success": False, "errorCode": ErrorCodes.INVALID_TOKEN}, status=401)
+    if user.deactivation_token_valid_until < now():
+        return JsonResponse({"success": False, "errorCode": ErrorCodes.TOKEN_EXPIRED}, status=401)
     user.is_active = False
     user.save()
     tokens = list(AccessToken.objects.filter(user=user)) + list(RefreshToken.objects.filter(user=user))
