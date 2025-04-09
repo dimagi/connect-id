@@ -20,7 +20,7 @@ from rest_framework.views import APIView
 from utils import get_ip, get_sms_sender, send_sms
 from utils.rest_framework import ClientProtectedResourceAuth
 
-from .const import TEST_NUMBER_PREFIX
+from .const import TEST_NUMBER_PREFIX, ErrorCodes
 from .fcm_utils import create_update_device
 from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
 
@@ -552,12 +552,12 @@ def initiate_deactivation(request):
     try:
         user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
     except ConnectUser.DoesNotExist:
-        return JsonResponse({"success": False})
+        return JsonResponse({"success": False, "errorCode": ErrorCodes.USER_DOES_NOT_EXIST}, status=401)
     status = RecoveryStatus.objects.get(user=user)
     if status.secret_key != secret_key:
-        return HttpResponse(status=401)
+        return JsonResponse({"success": False, "errorCode": ErrorCodes.INVALID_SECRET_KEY}, status=401)
     user.initiate_deactivation()
-    return JsonResponse({"success": True})
+    return JsonResponse({"success": True, "errorCode": ErrorCodes.SUCCESS})
 
 
 @api_view(["POST"])
@@ -570,18 +570,18 @@ def confirm_deactivation(request):
     try:
         user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
     except ConnectUser.DoesNotExist:
-        return JsonResponse({"success": False})
+        return JsonResponse({"success": False, "errorCode": ErrorCodes.USER_DOES_NOT_EXIST}, status=401)
     status = RecoveryStatus.objects.get(user=user)
     if status.secret_key != secret_key:
-        return HttpResponse(status=401)
+        return JsonResponse({"success": False, "errorCode": ErrorCodes.INVALID_SECRET_KEY}, status=401)
     if user.deactivation_token != deactivation_token:
-        return JsonResponse({"success": False})
+        return JsonResponse({"success": False, "errorCode": ErrorCodes.INVALID_TOKEN}, status=401)
     user.is_active = False
     user.save()
     tokens = list(AccessToken.objects.filter(user=user)) + list(RefreshToken.objects.filter(user=user))
     for token in tokens:
         token.revoke()
-    return JsonResponse({"success": True})
+    return JsonResponse({"success": True, "errorCode": ErrorCodes.SUCCESS})
 
 
 class FetchUserCounts(ClientProtectedResourceMixin, View):
