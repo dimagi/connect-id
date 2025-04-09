@@ -189,7 +189,12 @@ def confirm_secondary_recovery_otp(request):
     status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
     status.save()
     db_key = UserKey.get_or_create_key_for_user(user)
-    user_data = {"name": user.name, "username": user.username, "db_key": db_key.key}
+    user_data = {
+        "name": user.name,
+        "username": user.username,
+        "secondary_phone": user.recovery_phone.as_e164,
+        "db_key": db_key.key,
+    }
     user_data.update(user_payment_profile(user))
     return JsonResponse(user_data)
 
@@ -320,6 +325,7 @@ def user_data(user):
     user_data = {
         "name": user.name,
         "username": user.username,
+        "secondary_phone": user.recovery_phone.as_e164 if user.recovery_phone else None,
         "secondary_phone_validate_by": user.recovery_phone_validation_deadline,
         "db_key": db_key.key,
     }
