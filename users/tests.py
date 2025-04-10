@@ -3,11 +3,11 @@ from datetime import timedelta
 from unittest import mock
 
 import pytest
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
 from fcm_django.models import FCMDevice
 
-from users.const import NO_RECOVERY_PHONE_ERROR
+from users.const import NO_RECOVERY_PHONE_ERROR, ErrorCodes
 from users.factories import CredentialFactory
 from users.fcm_utils import create_update_device
 from users.models import ConnectUser, PhoneDevice, RecoveryStatus
@@ -194,3 +194,96 @@ class TestFetchCredentials:
     def test_fetch_credential_without_org_slug(self, authed_client):
         response = authed_client.get(self.url)
         self.assert_statements(response, expected_count=13)
+
+
+class BaseTestDeactivation:
+    @property
+    def endpoint(self):
+        return reverse(self.urlname)
+
+    def get_post_data(self, user=None, recovery_status=None):
+        token = "123ABC"
+        if user and user.deactivation_token:
+            token = user.deactivation_token
+        return {
+            "phone_number": user.phone_number if user else "1234567890",
+            "secret_key": recovery_status.secret_key if recovery_status else "123ABC",
+            "token": token,
+        }
+
+    def assert_fail_response(self, response, expected_code, expected_status=401):
+        assert response.status_code == expected_status
+        assert isinstance(response, JsonResponse)
+        assert json.loads(response.content) == {
+            "error_code": expected_code,
+        }
+
+
+@pytest.mark.django_db
+class TestInitiateDeactivation(BaseTestDeactivation):
+    urlname = "initiate_deactivation"
+
+    @mock.patch("users.models.ConnectUser.initiate_deactivation")
+    def test_success(self, mock_initiate_deactivation, client, user, recovery_status):
+        response = client.post(self.endpoint, self.get_post_data(user, recovery_status))
+        assert response.status_code == 200
+        assert isinstance(response, HttpResponse)
+        mock_initiate_deactivation.assert_called()
+
+    def test_invalid_user(self, client):
+        response = client.post(self.endpoint, self.get_post_data())
+        self.assert_fail_response(
+            response,
+            expected_code=ErrorCodes.USER_DOES_NOT_EXIST,
+            expected_status=400,
+        )
+
+    def test_invalid_secret_key(self, client, user, recovery_status):
+        response = client.post(self.endpoint, self.get_post_data(user))
+        self.assert_fail_response(
+            response,
+            expected_code=ErrorCodes.INVALID_SECRET_KEY,
+        )
+
+
+@pytest.mark.django_db
+class TestConfirmDeactivation(BaseTestDeactivation):
+    urlname = "confirm_deactivation"
+
+    def test_success(self, client, user_with_deactivation_token, recovery_status):
+        response = client.post(self.endpoint, self.get_post_data(user_with_deactivation_token, recovery_status))
+        assert response.status_code == 200
+        assert isinstance(response, HttpResponse)
+
+    def test_invalid_user(self, client):
+        response = client.post(self.endpoint, self.get_post_data())
+        self.assert_fail_response(
+            response,
+            expected_code=ErrorCodes.USER_DOES_NOT_EXIST,
+            expected_status=400,
+        )
+
+    def test_invalid_secret_key(self, client, user, recovery_status):
+        response = client.post(self.endpoint, self.get_post_data(user))
+        self.assert_fail_response(
+            response,
+            expected_code=ErrorCodes.INVALID_SECRET_KEY,
+        )
+
+    def test_invalid_deactivation_token(self, client, user_with_deactivation_token, recovery_status):
+        data = self.get_post_data(user_with_deactivation_token, recovery_status)
+        data["token"] = "wrong"
+        response = client.post(self.endpoint, data)
+        self.assert_fail_response(
+            response,
+            expected_code=ErrorCodes.INVALID_TOKEN,
+        )
+
+    def test_expired_deactivation_token(self, client, user_with_expired_deactivation_token, recovery_status):
+        response = client.post(
+            self.endpoint, self.get_post_data(user_with_expired_deactivation_token, recovery_status)
+        )
+        self.assert_fail_response(
+            response,
+            expected_code=ErrorCodes.TOKEN_EXPIRED,
+        )
