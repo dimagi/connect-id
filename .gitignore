@@ -12,3 +12,4 @@
 /.envrc
 *.env
 !*.env_example
+.coverage
