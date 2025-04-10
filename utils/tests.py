@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock, patch
 
+import factory
+
 from utils.twilio import lookup_telecom_provider
 
 
@@ -10,7 +12,7 @@ class TestLookupTelecomProvider:
         mock_phone_info.carrier = {"name": "Test Carrier"}
         mock_client.return_value.lookups.v1.phone_numbers.return_value.fetch.return_value = mock_phone_info
 
-        phone_number = "+1234567890"
+        phone_number = factory.Faker("phone_number")
         result = lookup_telecom_provider(phone_number)
 
         assert result == "Test Carrier"
@@ -21,7 +23,7 @@ class TestLookupTelecomProvider:
     def test_lookup_telecom_provider_failure(self, mock_client):
         mock_client.return_value.lookups.v1.phone_numbers.return_value.fetch.side_effect = Exception("Test error")
 
-        phone_number = "+1234567890"
+        phone_number = factory.Faker("phone_number")
         result = lookup_telecom_provider(phone_number)
 
         assert result is None
