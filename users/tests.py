@@ -8,7 +8,7 @@ from django.urls import reverse
 from django.utils.timezone import now
 from fcm_django.models import FCMDevice
 
-from users.const import ErrorCodes
+from users.const import NO_RECOVERY_PHONE_ERROR, ErrorCodes
 from users.factories import CredentialFactory
 from users.fcm_utils import create_update_device
 from users.models import ConnectUser, PhoneDevice, RecoveryStatus
@@ -135,6 +135,42 @@ def test_otp_generation_after_five_minutes(user):
         assert phone_device.token is not None
         assert phone_device.token != token
         assert send_sms.call_count == 3
+
+
+class TestValidateSecondaryPhone:
+    def test_no_recovery_phone(self, auth_device):
+        endpoint = reverse("validate_secondary_phone")
+        response = auth_device.post(endpoint)
+        assert isinstance(response, JsonResponse)
+        assert response.status_code == 400
+        assert response.json() == {"error": NO_RECOVERY_PHONE_ERROR}
+
+
+class TestConfirmSecondaryOTP:
+    def test_no_recovery_phone(self, auth_device, user):
+        endpoint = reverse("confirm_secondary_otp")
+        response = auth_device.post(endpoint)
+        assert isinstance(response, JsonResponse)
+        assert response.status_code == 400
+        assert response.json() == {"error": NO_RECOVERY_PHONE_ERROR}
+
+
+@pytest.mark.django_db
+class TestRecoverSecondaryPhone:
+    def test_no_recovery_phone(self, client, user):
+        RecoveryStatus.objects.create(
+            user=user,
+            secret_key="test_key",
+            step=RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY,
+        )
+        data = {
+            "phone": user.phone_number,
+            "secret_key": "test_key",
+        }
+        response = client.post(reverse("recover_secondary_phone"), data)
+        assert isinstance(response, JsonResponse)
+        assert response.status_code == 400
+        assert json.loads(response.content) == {"error": NO_RECOVERY_PHONE_ERROR}
 
 
 @pytest.mark.django_db

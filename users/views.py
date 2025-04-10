@@ -20,7 +20,7 @@ from rest_framework.views import APIView
 from utils import get_ip, get_sms_sender, send_sms
 from utils.rest_framework import ClientProtectedResourceAuth
 
-from .const import TEST_NUMBER_PREFIX, ErrorCodes
+from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from .fcm_utils import create_update_device
 from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
 
@@ -85,6 +85,8 @@ def confirm_otp(request):
 @api_view(["POST"])
 def validate_secondary_phone(request):
     user = request.user
+    if not user.recovery_phone:
+        return JsonResponse({"error": NO_RECOVERY_PHONE_ERROR}, status=400)
     return PhoneDevice.send_otp_httpresponse(phone_number=user.recovery_phone, user=user)
 
 
@@ -93,6 +95,8 @@ def confirm_secondary_otp(request):
     # check otp code for user
     # mark phone as confirmed on user model
     user = request.user
+    if not user.recovery_phone:
+        return JsonResponse({"error": NO_RECOVERY_PHONE_ERROR}, status=400)
     device, _ = PhoneDevice.objects.get_or_create(phone_number=user.recovery_phone, user=user)
     data = request.data
     verified = device.verify_token(data.get("token"))
@@ -162,6 +166,8 @@ def recover_secondary_phone(request):
         return HttpResponse(status=401)
     if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
         return HttpResponse(status=401)
+    if not user.recovery_phone:
+        return JsonResponse({"error": NO_RECOVERY_PHONE_ERROR}, status=400)
     otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.recovery_phone, user=user)
     otp_device.save()
     otp_device.generate_challenge()
@@ -189,7 +195,12 @@ def confirm_secondary_recovery_otp(request):
     status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
     status.save()
     db_key = UserKey.get_or_create_key_for_user(user)
-    user_data = {"name": user.name, "username": user.username, "db_key": db_key.key}
+    user_data = {
+        "name": user.name,
+        "username": user.username,
+        "secondary_phone": user.recovery_phone.as_e164,
+        "db_key": db_key.key,
+    }
     user_data.update(user_payment_profile(user))
     return JsonResponse(user_data)
 
@@ -320,6 +331,7 @@ def user_data(user):
     user_data = {
         "name": user.name,
         "username": user.username,
+        "secondary_phone": user.recovery_phone.as_e164 if user.recovery_phone else None,
         "secondary_phone_validate_by": user.recovery_phone_validation_deadline,
         "db_key": db_key.key,
     }
