@@ -4,7 +4,6 @@ NO_RECOVERY_PHONE_ERROR = "Recovery phone number does not exist for user"
 
 
 class ErrorCodes:
-    SUCCESS = "SUCCESS"
     INVALID_TOKEN = "INVALID_TOKEN"
     INVALID_SECRET_KEY = "INVALID_SECRET_KEY"
     USER_DOES_NOT_EXIST = "USER_DOES_NOT_EXIST"

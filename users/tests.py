@@ -3,7 +3,7 @@ from datetime import timedelta
 from unittest import mock
 
 import pytest
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
 from django.utils.timezone import now
 from fcm_django.models import FCMDevice
@@ -221,12 +221,11 @@ class BaseTestDeactivation:
             "token": token,
         }
 
-    def assert_response(self, response, expected_code, is_success=False, expected_status=401):
+    def assert_fail_response(self, response, expected_code, expected_status=401):
         assert response.status_code == expected_status
         assert isinstance(response, JsonResponse)
         assert json.loads(response.content) == {
-            "success": is_success,
-            "errorCode": expected_code,
+            "error_code": expected_code,
         }
 
 
@@ -238,25 +237,22 @@ class TestInitiateDeactivation(BaseTestDeactivation):
     def test_success(self, mock_initiate_deactivation, client, user):
         self.create_recovery_status(user)
         response = client.post(self.endpoint, self.get_post_data(user))
-        self.assert_response(
-            response,
-            expected_code=ErrorCodes.SUCCESS,
-            is_success=True,
-            expected_status=200,
-        )
+        assert response.status_code == 200
+        assert isinstance(response, HttpResponse)
         mock_initiate_deactivation.assert_called()
 
     def test_invalid_user(self, client):
         response = client.post(self.endpoint, self.get_post_data())
-        self.assert_response(
+        self.assert_fail_response(
             response,
             expected_code=ErrorCodes.USER_DOES_NOT_EXIST,
+            expected_status=400,
         )
 
     def test_invalid_secret_key(self, client, user):
         self.create_recovery_status(user)
         response = client.post(self.endpoint, self.get_post_data(user, valid_secret_key=False))
-        self.assert_response(
+        self.assert_fail_response(
             response,
             expected_code=ErrorCodes.INVALID_SECRET_KEY,
         )
@@ -277,24 +273,21 @@ class TestConfirmDeactivation(BaseTestDeactivation):
         self.create_recovery_status(user)
         self.add_deactivation_token_to_user(user)
         response = client.post(self.endpoint, self.get_post_data(user))
-        self.assert_response(
-            response,
-            expected_code=ErrorCodes.SUCCESS,
-            is_success=True,
-            expected_status=200,
-        )
+        assert response.status_code == 200
+        assert isinstance(response, HttpResponse)
 
     def test_invalid_user(self, client):
         response = client.post(self.endpoint, self.get_post_data())
-        self.assert_response(
+        self.assert_fail_response(
             response,
             expected_code=ErrorCodes.USER_DOES_NOT_EXIST,
+            expected_status=400,
         )
 
     def test_invalid_secret_key(self, client, user):
         self.create_recovery_status(user)
         response = client.post(self.endpoint, self.get_post_data(user, valid_secret_key=False))
-        self.assert_response(
+        self.assert_fail_response(
             response,
             expected_code=ErrorCodes.INVALID_SECRET_KEY,
         )
@@ -305,7 +298,7 @@ class TestConfirmDeactivation(BaseTestDeactivation):
         data = self.get_post_data(user)
         data["token"] = "wrong"
         response = client.post(self.endpoint, data)
-        self.assert_response(
+        self.assert_fail_response(
             response,
             expected_code=ErrorCodes.INVALID_TOKEN,
         )
@@ -314,7 +307,7 @@ class TestConfirmDeactivation(BaseTestDeactivation):
         self.create_recovery_status(user)
         self.add_deactivation_token_to_user(user, is_expired=True)
         response = client.post(self.endpoint, self.get_post_data(user))
-        self.assert_response(
+        self.assert_fail_response(
             response,
             expected_code=ErrorCodes.TOKEN_EXPIRED,
         )
