@@ -2,7 +2,7 @@ import factory
 from factory.django import DjangoModelFactory
 from fcm_django.models import FCMDevice
 
-from users.models import ConnectUser, Credential
+from users.models import ConnectUser, Credential, RecoveryStatus
 
 
 class UserFactory(DjangoModelFactory):
@@ -31,3 +31,12 @@ class CredentialFactory(DjangoModelFactory):
     name = factory.Faker("name")
     slug = factory.Faker("slug")
     organization_slug = factory.Faker("slug")
+
+
+class RecoveryStatusFactory(DjangoModelFactory):
+    class Meta:
+        model = RecoveryStatus
+
+    user = factory.SubFactory(UserFactory)
+    secret_key = factory.Faker("uuid4")
+    step = RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY

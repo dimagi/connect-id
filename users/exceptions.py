@@ -1,0 +1,2 @@
+class RecoveryPinNotSetError(Exception):
+    pass

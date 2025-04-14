@@ -21,6 +21,7 @@ from utils import get_ip, get_sms_sender, send_sms
 from utils.rest_framework import ClientProtectedResourceAuth
 
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX
+from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
 from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
 
@@ -368,8 +369,13 @@ def confirm_recovery_pin(request):
     if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
         return HttpResponse(status=401)
     recovery_pin = data["recovery_pin"]
-    if not user.check_recovery_pin(recovery_pin):
-        return JsonResponse({"error": "Recovery PIN is incorrect"}, status=401)
+
+    try:
+        if not user.check_recovery_pin(recovery_pin):
+            return JsonResponse({"error": "Recovery PIN is incorrect"}, status=401)
+    except RecoveryPinNotSetError as e:
+        return JsonResponse({"error": str(e)}, status=401)
+
     status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
     status.save()
     return JsonResponse(user_data(user))

@@ -8,7 +8,7 @@ from django.urls import reverse
 from fcm_django.models import FCMDevice
 
 from users.const import NO_RECOVERY_PHONE_ERROR
-from users.factories import CredentialFactory
+from users.factories import CredentialFactory, RecoveryStatusFactory
 from users.fcm_utils import create_update_device
 from users.models import ConnectUser, PhoneDevice, RecoveryStatus
 
@@ -194,3 +194,71 @@ class TestFetchCredentials:
     def test_fetch_credential_without_org_slug(self, authed_client):
         response = authed_client.get(self.url)
         self.assert_statements(response, expected_count=13)
+
+
+@pytest.fixture
+def recovering_user(user):
+    RecoveryStatusFactory(user=user, step=RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY)
+    user.set_recovery_pin("1234")
+    user.save()
+    return user
+
+
+@pytest.mark.django_db
+class TestRecoveryPinConfirmationApi:
+    url = reverse("confirm_recovery_pin")
+
+    def _get_recovery_status(self, user):
+        return RecoveryStatus.objects.get(user=user)
+
+    def test_recovery_status_secret_mismatch(self, recovering_user, client):
+        self._get_recovery_status(recovering_user)
+        data = {
+            "phone": recovering_user.phone_number,
+            "secret_key": "another_test_key",
+            "recovery_pin": "1234",
+        }
+        response = client.post(self.url, data=data)
+        assert response.status_code == 401
+
+    def test_recovery_status_wrong_step(self, recovering_user, client):
+        recovery_status = self._get_recovery_status(recovering_user)
+        recovery_status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
+        recovery_status.save()
+
+        data = {
+            "phone": recovering_user.phone_number,
+            "secret_key": recovery_status.secret_key,
+            "recovery_pin": "1234",
+        }
+        response = client.post(self.url, data=data)
+        assert response.status_code == 401
+
+    def test_recovery_pin_not_set(self, recovering_user, client):
+        recovering_user.recovery_pin = None
+        recovering_user.save()
+
+        recovery_status = self._get_recovery_status(recovering_user)
+        data = {
+            "phone": recovering_user.phone_number,
+            "secret_key": recovery_status.secret_key,
+            "recovery_pin": "1234",
+        }
+        response = client.post(self.url, data=data)
+
+        assert response.status_code == 401
+        assert response.json() == {"error": "Recovery pin is not set"}
+
+    def test_confirm_recovery_pin_success(self, recovering_user, client):
+        recovery_status = self._get_recovery_status(recovering_user)
+
+        data = {
+            "phone": recovering_user.phone_number,
+            "secret_key": recovery_status.secret_key,
+            "recovery_pin": "1234",
+        }
+        response = client.post(self.url, data=data)
+
+        recovery_status.refresh_from_db()
+        assert response.status_code == 200
+        assert recovery_status.step == RecoveryStatus.RecoverySteps.RESET_PASSWORD
