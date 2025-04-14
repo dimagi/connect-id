@@ -6,8 +6,7 @@ from django.utils.timezone import now
 from oauth2_provider.models import Application
 from rest_framework.test import APIClient
 
-from users.factories import FCMDeviceFactory, UserFactory
-from users.models import RecoveryStatus
+from users.factories import FCMDeviceFactory, RecoveryStatusFactory, UserFactory
 
 
 @pytest.fixture
@@ -75,9 +74,5 @@ def authed_client(api_client, oauth_app):
 
 
 @pytest.fixture
-def recovery_status(user):
-    return RecoveryStatus.objects.create(
-        user=user,
-        secret_key="test_key",
-        step=RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY,
-    )
+def recovery_status():
+    return RecoveryStatusFactory()
