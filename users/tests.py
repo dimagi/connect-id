@@ -7,8 +7,8 @@ from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
 from fcm_django.models import FCMDevice
 
-from users.const import NO_RECOVERY_PHONE_ERROR, ErrorCodes
-from users.factories import CredentialFactory
+from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
+from users.factories import CredentialFactory, PhoneDeviceFactory, UserFactory
 from users.fcm_utils import create_update_device
 from users.models import ConnectUser, PhoneDevice, RecoveryStatus
 
@@ -291,3 +291,45 @@ class TestConfirmDeactivation(BaseTestDeactivation):
             response,
             expected_code=ErrorCodes.TOKEN_EXPIRED,
         )
+
+
+@pytest.mark.django_db
+class TestGetDemoUsers:
+    def setup_method(self):
+        self.valid_user = UserFactory.create(
+            phone_number=TEST_NUMBER_PREFIX + "1234567",
+        )
+        invalid_user = UserFactory.create(
+            phone_number=TEST_NUMBER_PREFIX + "7654321",
+            deactivation_token=None,
+        )
+        self.valid_device = PhoneDeviceFactory.create(
+            phone_number=TEST_NUMBER_PREFIX + "1234567",
+            user=self.valid_user,
+        )
+        PhoneDeviceFactory.create(phone_number=TEST_NUMBER_PREFIX + "7654321", token=None, user=invalid_user)
+
+    @property
+    def endpoint(self):
+        return reverse("demo_users")
+
+    def test_no_authentication(self, client):
+        response = client.get(reverse("demo_users"))
+        assert response.status_code == 403
+
+    def test_success(self, authed_client):
+        response = authed_client.get(self.endpoint)
+        assert response.status_code == 200
+        assert isinstance(response, JsonResponse)
+        assert response.json() == {
+            "demo_users": [
+                {
+                    "phone_number": TEST_NUMBER_PREFIX + "1234567",
+                    "token": self.valid_device.token,
+                },
+                {
+                    "phone_number": TEST_NUMBER_PREFIX + "1234567",
+                    "token": self.valid_user.deactivation_token,
+                },
+            ]
+        }

@@ -5,7 +5,7 @@ from django.utils.timezone import now
 from factory.django import DjangoModelFactory
 from fcm_django.models import FCMDevice
 
-from users.models import ConnectUser, Credential, RecoveryStatus
+from users.models import ConnectUser, Credential, PhoneDevice, RecoveryStatus
 
 
 class UserFactory(DjangoModelFactory):
@@ -36,6 +36,15 @@ class CredentialFactory(DjangoModelFactory):
     name = factory.Faker("name")
     slug = factory.Faker("slug")
     organization_slug = factory.Faker("slug")
+
+
+class PhoneDeviceFactory(DjangoModelFactory):
+    class Meta:
+        model = PhoneDevice
+
+    phone_number = factory.Faker("phone_number")
+    token = factory.Faker("bothify", text="????####")
+    user = factory.SubFactory(UserFactory)
 
 
 class RecoveryStatusFactory(DjangoModelFactory):
