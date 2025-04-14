@@ -15,21 +15,6 @@ def user(db):
 
 
 @pytest.fixture
-def user_with_deactivation_token(user):
-    user.deactivation_token = "123ABC"
-    user.deactivation_token_valid_until = now() + timedelta(days=1)
-    user.save()
-    return user
-
-
-@pytest.fixture
-def user_with_expired_deactivation_token(user_with_deactivation_token):
-    user_with_deactivation_token.deactivation_token_valid_until = now() - timedelta(days=1)
-    user_with_deactivation_token.save()
-    return user_with_deactivation_token
-
-
-@pytest.fixture
 def fcm_device(user):
     return FCMDeviceFactory(user=user)
 
@@ -76,3 +61,11 @@ def authed_client(api_client, oauth_app):
 @pytest.fixture
 def recovery_status():
     return RecoveryStatusFactory()
+
+
+@pytest.fixture
+def recovery_status_with_expired_token_user():
+    status = RecoveryStatusFactory()
+    status.user.deactivation_token_valid_until = now() - timedelta(days=1)
+    status.user.save()
+    return status

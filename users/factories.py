@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 import factory
+from django.utils.timezone import now
 from factory.django import DjangoModelFactory
 from fcm_django.models import FCMDevice
 
@@ -12,6 +15,8 @@ class UserFactory(DjangoModelFactory):
     username = factory.Faker("user_name")
     password = factory.PostGenerationMethodCall("set_password", "testpass")
     phone_number = factory.Faker("phone_number")
+    deactivation_token = factory.Faker("random_number", digits=5)
+    deactivation_token_valid_until = now() + timedelta(days=1)
 
 
 class FCMDeviceFactory(DjangoModelFactory):

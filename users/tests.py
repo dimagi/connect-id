@@ -282,9 +282,10 @@ class TestConfirmDeactivation(BaseTestDeactivation):
             expected_code=ErrorCodes.INVALID_TOKEN,
         )
 
-    def test_expired_deactivation_token(self, client, user_with_expired_deactivation_token, recovery_status):
+    def test_expired_deactivation_token(self, client, recovery_status_with_expired_token_user):
         response = client.post(
-            self.endpoint, self.get_post_data(user_with_expired_deactivation_token, recovery_status)
+            self.endpoint,
+            self.get_post_data(recovery_status_with_expired_token_user.user, recovery_status_with_expired_token_user),
         )
         self.assert_fail_response(
             response,
