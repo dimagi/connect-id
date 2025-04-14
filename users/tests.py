@@ -200,56 +200,38 @@ class TestFetchCredentials:
 class TestRecoveryPinConfirmationApi:
     url = reverse("confirm_recovery_pin")
 
-    def _get_recovery_status(self, user):
-        return RecoveryStatus.objects.get(user=user)
-
-    def test_recovery_status_secret_mismatch(self, recovering_user, client):
-        self._get_recovery_status(recovering_user)
-        data = {
-            "phone": recovering_user.phone_number,
-            "secret_key": "another_test_key",
+    def _get_post_data(self, recovery_status):
+        return {
+            "phone": recovery_status.user.phone_number,
+            "secret_key": recovery_status.secret_key,
             "recovery_pin": "1234",
         }
+
+    def test_recovery_status_secret_mismatch(self, recovery_status, client):
+        data = self._get_post_data(recovery_status)
+        data["secret_key"] = "another_test_key"
         response = client.post(self.url, data=data)
         assert response.status_code == 401
 
-    def test_recovery_status_wrong_step(self, recovering_user, client):
-        recovery_status = self._get_recovery_status(recovering_user)
+    def test_recovery_status_wrong_step(self, recovery_status, client):
         recovery_status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
         recovery_status.save()
 
-        data = {
-            "phone": recovering_user.phone_number,
-            "secret_key": recovery_status.secret_key,
-            "recovery_pin": "1234",
-        }
-        response = client.post(self.url, data=data)
+        response = client.post(self.url, data=self._get_post_data(recovery_status))
         assert response.status_code == 401
 
-    def test_recovery_pin_not_set(self, recovering_user, client):
-        recovering_user.recovery_pin = None
-        recovering_user.save()
+    def test_recovery_pin_not_set(self, recovery_status, client):
+        data = self._get_post_data(recovery_status)
 
-        recovery_status = self._get_recovery_status(recovering_user)
-        data = {
-            "phone": recovering_user.phone_number,
-            "secret_key": recovery_status.secret_key,
-            "recovery_pin": "1234",
-        }
+        recovery_status.user.recovery_pin = None
+        recovery_status.user.save()
+
         response = client.post(self.url, data=data)
-
         assert response.status_code == 401
         assert response.json() == {"error": "Recovery pin is not set"}
 
-    def test_confirm_recovery_pin_success(self, recovering_user, client):
-        recovery_status = self._get_recovery_status(recovering_user)
-
-        data = {
-            "phone": recovering_user.phone_number,
-            "secret_key": recovery_status.secret_key,
-            "recovery_pin": "1234",
-        }
-        response = client.post(self.url, data=data)
+    def test_confirm_recovery_pin_success(self, recovery_status, client):
+        response = client.post(self.url, data=self._get_post_data(recovery_status))
 
         recovery_status.refresh_from_db()
         assert response.status_code == 200
