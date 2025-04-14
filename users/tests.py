@@ -8,7 +8,7 @@ from django.urls import reverse
 from fcm_django.models import FCMDevice
 
 from users.const import NO_RECOVERY_PHONE_ERROR
-from users.factories import CredentialFactory, RecoveryStatusFactory
+from users.factories import CredentialFactory
 from users.fcm_utils import create_update_device
 from users.models import ConnectUser, PhoneDevice, RecoveryStatus
 
@@ -194,14 +194,6 @@ class TestFetchCredentials:
     def test_fetch_credential_without_org_slug(self, authed_client):
         response = authed_client.get(self.url)
         self.assert_statements(response, expected_count=13)
-
-
-@pytest.fixture
-def recovering_user(user):
-    RecoveryStatusFactory(user=user, step=RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY)
-    user.set_recovery_pin("1234")
-    user.save()
-    return user
 
 
 @pytest.mark.django_db
