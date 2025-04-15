@@ -366,8 +366,8 @@ class TestRecoveryPinConfirmationApi:
         recovery_status.user.save()
 
         response = client.post(self.url, data=data)
-        assert response.status_code == 401
-        assert response.json() == {"error": "Recovery pin is not set"}
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}
 
     def test_confirm_recovery_pin_success(self, recovery_status, client):
         response = client.post(self.url, data=self._get_post_data(recovery_status))
