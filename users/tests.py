@@ -370,6 +370,9 @@ class TestRecoveryPinConfirmationApi:
         assert response.json() == {"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}
 
     def test_confirm_recovery_pin_success(self, recovery_status, client):
+        recovery_status.user.set_recovery_pin("1234")
+        recovery_status.user.save()
+
         response = client.post(self.url, data=self._get_post_data(recovery_status))
 
         recovery_status.refresh_from_db()
