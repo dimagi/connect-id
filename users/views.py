@@ -372,7 +372,7 @@ def confirm_recovery_pin(request):
 
     try:
         if not user.check_recovery_pin(recovery_pin):
-            return JsonResponse({"error": "Recovery PIN is incorrect"}, status=401)
+            return JsonResponse({"error_code": ErrorCodes.INCORRECT_CODE}, status=401)
     except RecoveryPinNotSetError:
         return JsonResponse({"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}, status=400)
 
