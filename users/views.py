@@ -365,9 +365,9 @@ def confirm_recovery_pin(request):
     user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
     status = RecoveryStatus.objects.get(user=user)
     if status.secret_key != secret_key:
-        return HttpResponse(status=401)
+        return JsonResponse({"error_code": ErrorCodes.INVALID_SECRET_KEY}, status=401)
     if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
-        return HttpResponse(status=401)
+        return JsonResponse({"error_code": ErrorCodes.INVALID_STEP}, status=401)
     recovery_pin = data["recovery_pin"]
 
     try:
