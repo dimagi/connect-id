@@ -1,10 +1,12 @@
 import base64
+from datetime import timedelta
 
 import pytest
+from django.utils.timezone import now
 from oauth2_provider.models import Application
 from rest_framework.test import APIClient
 
-from users.factories import FCMDeviceFactory, UserFactory
+from users.factories import FCMDeviceFactory, RecoveryStatusFactory, UserFactory
 
 
 @pytest.fixture
@@ -54,3 +56,16 @@ def authed_client(api_client, oauth_app):
     credentials = base64.b64encode(auth).decode("utf-8")
     api_client.defaults["HTTP_AUTHORIZATION"] = "Basic " + credentials
     return api_client
+
+
+@pytest.fixture
+def recovery_status():
+    return RecoveryStatusFactory()
+
+
+@pytest.fixture
+def recovery_status_with_expired_token_user():
+    status = RecoveryStatusFactory()
+    status.user.deactivation_token_valid_until = now() - timedelta(days=1)
+    status.user.save()
+    return status

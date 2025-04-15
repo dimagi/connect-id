@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 import factory
+from django.utils.timezone import now
 from factory.django import DjangoModelFactory
 from fcm_django.models import FCMDevice
 
@@ -13,6 +16,7 @@ class UserFactory(DjangoModelFactory):
     password = factory.PostGenerationMethodCall("set_password", "testpass")
     phone_number = factory.Faker("phone_number")
     deactivation_token = factory.Faker("bothify", text="????####")
+    deactivation_token_valid_until = now() + timedelta(days=1)
 
 
 class FCMDeviceFactory(DjangoModelFactory):
@@ -47,6 +51,6 @@ class RecoveryStatusFactory(DjangoModelFactory):
     class Meta:
         model = RecoveryStatus
 
-    user = factory.SubFactory(UserFactory)
     secret_key = factory.Faker("uuid4")
-    step = RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY
+    user = factory.SubFactory(UserFactory)
+    step = RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
