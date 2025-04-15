@@ -2,7 +2,7 @@ import factory
 from factory.django import DjangoModelFactory
 from fcm_django.models import FCMDevice
 
-from users.models import ConnectUser, Credential, RecoveryStatus
+from users.models import ConnectUser, Credential, PhoneDevice, RecoveryStatus
 
 
 class UserFactory(DjangoModelFactory):
@@ -12,6 +12,7 @@ class UserFactory(DjangoModelFactory):
     username = factory.Faker("user_name")
     password = factory.PostGenerationMethodCall("set_password", "testpass")
     phone_number = factory.Faker("phone_number")
+    deactivation_token = factory.Faker("bothify", text="????####")
 
 
 class FCMDeviceFactory(DjangoModelFactory):
@@ -31,6 +32,15 @@ class CredentialFactory(DjangoModelFactory):
     name = factory.Faker("name")
     slug = factory.Faker("slug")
     organization_slug = factory.Faker("slug")
+
+
+class PhoneDeviceFactory(DjangoModelFactory):
+    class Meta:
+        model = PhoneDevice
+
+    phone_number = factory.Faker("phone_number")
+    token = factory.Faker("bothify", text="????####")
+    user = factory.SubFactory(UserFactory)
 
 
 class RecoveryStatusFactory(DjangoModelFactory):

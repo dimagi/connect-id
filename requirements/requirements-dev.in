@@ -8,3 +8,4 @@ flake8
 flake8-isort
 black
 pre-commit
+pytest-cov

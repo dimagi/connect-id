@@ -7,7 +7,7 @@ from django.conf import settings
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
-from django.db.models import Count
+from django.db.models import Count, F
 from django.db.models.functions import TruncMonth
 from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
@@ -417,10 +417,25 @@ class GetDemoUsers(ClientProtectedResourceMixin, View):
     required_scopes = ["user_fetch"]
 
     def get(self, request, *args, **kwargs):
-        demo_users = PhoneDevice.objects.filter(phone_number__startswith=TEST_NUMBER_PREFIX).values(
-            "phone_number", "token"
+        demo_phone_devices = PhoneDevice.objects.filter(
+            phone_number__startswith=TEST_NUMBER_PREFIX,
+            token__isnull=False,
+        ).values("phone_number", "token")
+        demo_connect_users = (
+            ConnectUser.objects.filter(
+                phone_number__startswith=TEST_NUMBER_PREFIX,
+                deactivation_token__isnull=False,
+            )
+            .annotate(token=F("deactivation_token"))
+            .values("phone_number", "token")
         )
-        results = {"demo_users": list(demo_users)}
+
+        demo_users = list(demo_phone_devices) + list(demo_connect_users)
+        sorted_demo_users = sorted(
+            demo_users,
+            key=lambda x: x["phone_number"],
+        )
+        results = {"demo_users": sorted_demo_users}
         return JsonResponse(results)
 
 
