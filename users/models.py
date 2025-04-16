@@ -15,6 +15,7 @@ from django_otp.models import SideChannelDevice
 from django_otp.util import random_hex
 from phonenumber_field.modelfields import PhoneNumberField
 
+from users.exceptions import RecoveryPinNotSetError
 from utils import get_sms_sender, send_sms
 
 from .const import TEST_NUMBER_PREFIX
@@ -46,6 +47,8 @@ class ConnectUser(AbstractUser):
         self.recovery_pin = hashed_value
 
     def check_recovery_pin(self, pin):
+        if not self.recovery_pin:
+            raise RecoveryPinNotSetError("Recovery pin is not set")
         return check_password(pin, self.recovery_pin)
 
     def initiate_deactivation(self):
