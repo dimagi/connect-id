@@ -4,7 +4,7 @@ import uuid
 from collections import defaultdict
 from unittest import mock
 from unittest.mock import Mock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.urls import reverse
@@ -168,8 +168,7 @@ class TestCreateChannelView:
 
         return response
 
-    def test_create_channel_success(self, client, fcm_device, oauth_app):
-        server = ServerFactory.create()
+    def test_create_channel_success(self, client, fcm_device, oauth_app, server):
         data = rest_channel_data(fcm_device.user)
 
         with mock.patch("fcm_django.models.messaging.send_each", wraps=_fake_send) as mock_send_message:
@@ -224,6 +223,18 @@ def test_send_fcm_notification_view(client, channel):
 class TestSendMessageView:
     url = reverse("messaging:post_message")
 
+    def _get_expected_message_data(self, msgs, channel, server):
+        serialized_msgs = []
+
+        # Prepare the expected message data in a defaultdict format
+        for m in msgs:
+            serialized = MessageSerializer(m).data
+            serialized["channel"] = str(serialized["channel"])
+            serialized_msgs.append(serialized)
+        expected_message_data = defaultdict(lambda: {"messages": [], "url": None})
+        expected_message_data[str(channel.channel_id)] = {"url": server.delivery_url, "messages": serialized_msgs}
+        return expected_message_data
+
     def test_send_message_from_mobile(self, auth_device, channel, server):
         data = rest_message(channel.channel_id)
 
@@ -238,11 +249,7 @@ class TestSendMessageView:
 
             msg = Message.objects.filter(message_id=message_id).first()
 
-            # Prepare the expected message data in a defaultdict format
-            serialized_msg = MessageSerializer(msg).data
-            serialized_msg["channel"] = str(serialized_msg["channel"])
-            expected_message_data = defaultdict(lambda: {"messages": [], "url": None})
-            expected_message_data[str(channel.channel_id)] = {"url": server.delivery_url, "messages": [serialized_msg]}
+            expected_message_data = self._get_expected_message_data([msg], channel, server)
             mock_make_request.assert_called_once_with(expected_message_data, MessageStatus.SENT_TO_SERVICE)
 
     def test_multiple_messages(self, auth_device, channel, server):
@@ -263,18 +270,31 @@ class TestSendMessageView:
             assert len(message_ids) == 2
 
             msgs = Message.objects.filter(message_id__in=message_ids)
-            serialized_msgs = []
-
-            for m in msgs:
-                serialized = MessageSerializer(m).data
-                serialized["channel"] = str(serialized["channel"])
-                serialized_msgs.append(serialized)
-            expected_message_data = defaultdict(lambda: {"messages": [], "url": None})
-            expected_message_data[str(channel.channel_id)] = {
-                "url": server.delivery_url,
-                "messages": serialized_msgs,
-            }
+            expected_message_data = self._get_expected_message_data(msgs, channel, server)
             mock_send_bulk_message.assert_called_once_with(expected_message_data, MessageStatus.SENT_TO_SERVICE)
+
+    def test_message_already_exists(self, auth_device, channel, server):
+        data = [rest_message(channel.channel_id), rest_message(channel.channel_id)]
+        pending_msg = MessageFactory.create(
+            channel=channel, message_id=data[0]["message_id"], status=MessageStatus.PENDING
+        )
+        MessageFactory.create(
+            channel=channel, message_id=UUID(data[1]["message_id"]), status=MessageStatus.SENT_TO_SERVICE
+        )
+
+        with mock.patch("messaging.views.send_messages_to_service_and_mark_status") as mock_send_bulk_message:
+            response = auth_device.post(
+                self.url,
+                data=json.dumps(data),
+                content_type=APPLICATION_JSON,
+            )
+            json_data = response.json()
+            expected_message_data = self._get_expected_message_data([pending_msg], channel, server)
+            mock_send_bulk_message.assert_called_once()
+            mock_send_bulk_message.assert_called_once_with(expected_message_data, MessageStatus.SENT_TO_SERVICE)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert json_data["message_id"] == [pending_msg.message_id]
 
 
 @pytest.mark.django_db
