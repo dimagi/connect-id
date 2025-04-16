@@ -38,6 +38,7 @@ class BulkMessageSerializer(serializers.Serializer):
 
 class MessageSerializer(serializers.ModelSerializer):
     ciphertext = serializers.SerializerMethodField()
+    channel = serializers.SerializerMethodField()
     tag = serializers.SerializerMethodField()
     nonce = serializers.SerializerMethodField()
     message_id = serializers.SerializerMethodField()
@@ -61,3 +62,6 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def get_action(self, obj):
         return CCC_MESSAGE_ACTION
+
+    def get_channel(self, obj):
+        return str(obj.channel_id)
