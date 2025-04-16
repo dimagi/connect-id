@@ -13,6 +13,7 @@ class MessageData:
     title: str = None
     body: str = None
     data: dict = None
+    fcm_options: dict = dataclasses.field(default_factory=lambda: {})
 
 
 class SingleMessageSerializer(serializers.Serializer):
@@ -21,6 +22,7 @@ class SingleMessageSerializer(serializers.Serializer):
     title = serializers.CharField(required=False)
     body = serializers.CharField(required=False)
     data = serializers.DictField(required=False)
+    fcm_options = serializers.DictField(required=False, default={})
 
     def create(self, validated_data):
         username = validated_data.pop("username", None)
