@@ -4,7 +4,7 @@ import uuid
 from collections import defaultdict
 from unittest import mock
 from unittest.mock import Mock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.urls import reverse
@@ -272,7 +272,29 @@ class TestSendMessageView:
             msgs = Message.objects.filter(message_id__in=message_ids)
             expected_message_data = self._get_expected_message_data(msgs, channel, server)
             mock_send_bulk_message.assert_called_once_with(expected_message_data, MessageStatus.SENT_TO_SERVICE)
+
+    def test_message_already_exists(self, auth_device, channel, server):
+        data = [rest_message(channel.channel_id), rest_message(channel.channel_id)]
+        pending_msg = MessageFactory.create(
+            channel=channel, message_id=data[0]["message_id"], status=MessageStatus.PENDING
+        )
+        MessageFactory.create(
+            channel=channel, message_id=UUID(data[1]["message_id"]), status=MessageStatus.SENT_TO_SERVICE
+        )
+
+        with mock.patch("messaging.views.send_messages_to_service_and_mark_status") as mock_send_bulk_message:
+            response = auth_device.post(
+                self.url,
+                data=json.dumps(data),
+                content_type=APPLICATION_JSON,
+            )
+            json_data = response.json()
+            expected_message_data = self._get_expected_message_data([pending_msg], channel, server)
+            mock_send_bulk_message.assert_called_once()
             mock_send_bulk_message.assert_called_once_with(expected_message_data, MessageStatus.SENT_TO_SERVICE)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert json_data["message_id"] == [pending_msg.message_id]
 
 
 @pytest.mark.django_db
