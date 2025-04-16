@@ -275,6 +275,9 @@ class SendMobileConnectMessage(APIView):
         messages_ready_to_be_sent_ids = []
 
         for msg in message_objs:
+            if msg.status != MessageStatus.PENDING:
+                continue
+
             channel = msg.channel
             server = channel.server
 
