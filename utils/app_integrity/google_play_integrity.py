@@ -1,4 +1,12 @@
+from utils.app_integrity.exceptions import (
+    AccountDetailsError,
+    AppIntegrityError,
+    DeviceIntegrityError,
+    IntegrityRequestError,
+)
 from utils.app_integrity.schemas import AccountDetails, AppIntegrity, DeviceIntegrity, RequestDetails, VerdictResponse
+
+APP_PACKAGE_NAME = "todo"
 
 
 class AppIntegrityService:
@@ -29,13 +37,19 @@ class AppIntegrityService:
         self._check_account_details(verdict.accountDetails)
 
     def _check_request_details(self, request_details: RequestDetails):
-        pass
+        if request_details.requestHash != self.request_hash:
+            raise IntegrityRequestError("Request hash mismatch")
+        if request_details.requestPackageName != APP_PACKAGE_NAME:
+            raise IntegrityRequestError("Request package name mismatch")
 
     def _check_app_integrity(self, app_integrity: AppIntegrity):
-        pass
+        if app_integrity.appRecognitionVerdict != "PLAY_RECOGNIZED":
+            raise AppIntegrityError("App not recognized")
 
     def _check_device_integrity(self, device_integrity: DeviceIntegrity):
-        pass
+        if device_integrity.deviceRecognitionVerdict != "MEETS_DEVICE_INTEGRITY":
+            raise DeviceIntegrityError("Device integrity compromised")
 
     def _check_account_details(self, account_details: AccountDetails):
-        pass
+        if account_details.appLicensingVerdict != "LICENSED":
+            raise AccountDetailsError("Account not licensed")
