@@ -6,7 +6,7 @@ from utils.app_integrity.exceptions import (
 )
 from utils.app_integrity.schemas import AccountDetails, AppIntegrity, DeviceIntegrity, RequestDetails, VerdictResponse
 
-APP_PACKAGE_NAME = "todo"
+APP_PACKAGE_NAME = "org.commcare.dalvik"
 
 
 class AppIntegrityService:
