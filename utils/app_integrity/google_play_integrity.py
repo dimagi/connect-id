@@ -1,3 +1,7 @@
+import google.auth
+from django.conf import settings
+from googleapiclient.discovery import build
+
 from utils.app_integrity.exceptions import (
     AccountDetailsError,
     AppIntegrityError,
@@ -7,6 +11,8 @@ from utils.app_integrity.exceptions import (
 from utils.app_integrity.schemas import AccountDetails, AppIntegrity, DeviceIntegrity, RequestDetails, VerdictResponse
 
 APP_PACKAGE_NAME = "org.commcare.dalvik"
+AUTH_SCOPE = "https://www.googleapis.com/auth/androidpublisher"
+GOOGLE_SERVICE_NAME = "playintegrity"
 
 
 class AppIntegrityService:
@@ -19,12 +25,36 @@ class AppIntegrityService:
         self.request_hash = request_hash
 
     def verify_integrity(self):
+        """
+        Raises an exception if the app integrity is compromised, otherwise does nothing.
+        """
         verdict_response = self._obtain_verdict()
         self._analyze_verdict(verdict_response)
 
     def _obtain_verdict(self) -> VerdictResponse:
-        """Obtain token verdict from Google"""
-        pass
+        """
+        This method uses the Google Play Integrity API to decode the integrity token
+
+        Documentation:
+        https://github.com/googleapis/google-api-python-client/blob/main/docs/start.md#building-and-calling-a-service
+        """
+        service_spec = {
+            "serviceName": GOOGLE_SERVICE_NAME,
+            "version": "v1",
+            "credentials": self._google_service_account_credentials,
+        }
+        with build(**service_spec) as service:
+            body = {"integrityToken": self.token}
+            response = service.v1().decodeIntegrityToken(packageName=APP_PACKAGE_NAME, body=body).execute()
+
+        return VerdictResponse.from_dict(**response)
+
+    @property
+    def _google_service_account_credentials(self):
+        credentials, _ = google.auth.load_credentials_from_file(
+            settings.GOOGLE_APPLICATION_CREDENTIALS, scopes=[AUTH_SCOPE]
+        )
+        return credentials
 
     def _analyze_verdict(self, verdict: VerdictResponse):
         """
