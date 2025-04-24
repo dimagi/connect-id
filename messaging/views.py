@@ -2,17 +2,19 @@ import base64
 from collections import defaultdict
 from uuid import UUID
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from fcm_django.models import FCMDevice
 from firebase_admin import messaging
+from psycopg2.errors import ForeignKeyViolation
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.views import APIView
 
+from messaging.const import ErrorCodes
 from messaging.models import Channel, Message, MessageDirection, MessageServer, MessageStatus
 from messaging.serializers import (
     CCC_MESSAGE_ACTION,
@@ -210,7 +212,7 @@ class SendServerConnectMessage(APIView):
         content = data["content"]
         for field in ("nonce", "tag", "ciphertext"):
             if not content[field]:
-                return JsonResponse({"errors": "invalid message content"}, status=status.HTTP_400_BAD_REQUEST)
+                return JsonResponse({"errors": ErrorCodes.INVALID_MESSAGE_CONTENT}, status=status.HTTP_400_BAD_REQUEST)
         message_data = {
             "channel_id": data["channel"],
             "content": data["content"],
@@ -218,7 +220,10 @@ class SendServerConnectMessage(APIView):
             "direction": MessageDirection.MOBILE,
         }
         message = Message(**message_data)
-        message.save()
+        try:
+            message.save()
+        except (IntegrityError, ForeignKeyViolation):
+            return JsonResponse({"errors": ErrorCodes.CHANNEL_DOES_NOT_EXIST}, status=status.HTTP_400_BAD_REQUEST)
         channel = message.channel
         message_to_send = MessageData(usernames=[channel.connect_user.username], data=MessageSerializer(message).data)
         send_bulk_message(message_to_send)
