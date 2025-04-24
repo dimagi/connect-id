@@ -20,7 +20,7 @@ class AppIntegrityService:
     Verifies the application integrity of the app using Google Play Integrity API.
     """
 
-    def __init__(self, token: str, request_hash: str = None):
+    def __init__(self, token: str, request_hash: str):
         self.token = token
         self.request_hash = request_hash
 
