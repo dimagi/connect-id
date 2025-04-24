@@ -51,6 +51,9 @@ class AppIntegrityService:
 
     @property
     def _google_service_account_credentials(self):
+        if not settings.GOOGLE_APPLICATION_CREDENTIALS:
+            raise Exception("GOOGLE_APPLICATION_CREDENTIALS must be set")
+
         credentials, _ = google.auth.load_credentials_from_file(
             settings.GOOGLE_APPLICATION_CREDENTIALS, scopes=[AUTH_SCOPE]
         )
