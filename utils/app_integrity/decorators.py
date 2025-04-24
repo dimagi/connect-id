@@ -1,5 +1,6 @@
 from django.http import JsonResponse
 
+from utils.app_integrity.const import ErrorCodes
 from utils.app_integrity.exceptions import (
     AccountDetailsError,
     AppIntegrityError,
@@ -19,15 +20,15 @@ def require_integrity_check(view):
         request_hash = request.POST.get("request_hash")
 
         if not (integrity_token and request_hash):
-            return JsonResponse({"error_code": "INTEGRITY_DATA_MISSING"}, status=400)
+            return JsonResponse({"error_code": ErrorCodes.INTEGRITY_DATA_MISSING}, status=400)
 
         service = AppIntegrityService(token=integrity_token, request_hash=request_hash)
         try:
             service.verify_integrity()
         except AccountDetailsError:
-            return JsonResponse({"error_code": "UNLICENSED_APP"}, status=400)
+            return JsonResponse({"error_code": ErrorCodes.UNLICENSED_APP}, status=400)
         except (IntegrityRequestError, AppIntegrityError, DeviceIntegrityError):
-            return JsonResponse({"error_code": "INTEGRITY_ERROR"}, status=400)
+            return JsonResponse({"error_code": ErrorCodes.INTEGRITY_ERROR}, status=400)
 
         return view(request, *args, **kwargs)
 
