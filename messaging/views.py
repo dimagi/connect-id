@@ -1,5 +1,6 @@
 import base64
 from collections import defaultdict
+from uuid import UUID
 
 from django.db import transaction
 from django.db.models import Prefetch
@@ -233,6 +234,7 @@ class SendMobileConnectMessage(APIView):
         if not isinstance(data, list):
             data = [data]
         messages = []
+        message_ids = []
         errors = set()
         for message in data:
             if not message.get("message_id"):
@@ -255,15 +257,27 @@ class SendMobileConnectMessage(APIView):
                 "direction": MessageDirection.SERVER,
             }
             messages.append(Message(**message_data))
+            message_ids.append(message["message_id"])
 
         if errors:
             return JsonResponse({"errors": list(errors)}, status=status.HTTP_400_BAD_REQUEST)
 
-        message_objs = Message.objects.bulk_create(messages)
+        existing_messages = Message.objects.filter(message_id__in=message_ids)
+        if existing_messages:
+            existing_message_ids = list(existing_messages.values_list("message_id", flat=True))
+            new_messages = [msg for msg in messages if UUID(msg.message_id) not in existing_message_ids]
+        else:
+            existing_message_ids = []
+            new_messages = messages
+        message_objs = Message.objects.bulk_create(new_messages)
+        message_objs += list(existing_messages)
         messages_ready_to_be_sent = defaultdict(lambda: {"messages": [], "url": None})
         messages_ready_to_be_sent_ids = []
 
         for msg in message_objs:
+            if msg.status != MessageStatus.PENDING:
+                continue
+
             channel = msg.channel
             server = channel.server
 
