@@ -19,7 +19,7 @@ def require_integrity_check(view):
         request_hash = request.POST.get("request_hash")
 
         if not (integrity_token and request_hash):
-            return JsonResponse({"error_code": "INTEGRITY_TOKEN_MISSING"}, status=400)
+            return JsonResponse({"error_code": "INTEGRITY_DATA_MISSING"}, status=400)
 
         service = AppIntegrityService(token=integrity_token, request_hash=request_hash)
         try:
