@@ -10,7 +10,7 @@ from utils.app_integrity.exceptions import (
 from utils.app_integrity.google_play_integrity import AppIntegrityService
 
 
-def require_integrity_check(view):
+def require_app_integrity(view):
     """
     Checks the integrity of the app using the Google Play Integrity API.
     """

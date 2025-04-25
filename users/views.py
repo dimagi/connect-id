@@ -18,7 +18,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.views import APIView
 
 from utils import get_ip, get_sms_sender, send_sms
-from utils.app_integrity.decorators import require_integrity_check
+from utils.app_integrity.decorators import require_app_integrity
 from utils.rest_framework import ClientProtectedResourceAuth
 
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
@@ -30,7 +30,7 @@ from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCr
 # Create your views here.
 @api_view(["POST"])
 @permission_classes([])
-@require_integrity_check
+@require_app_integrity
 def register(request):
     data = request.data
     fields = ["username", "password", "phone_number", "recovery_phone", "name", "dob"]
