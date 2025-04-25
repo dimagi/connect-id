@@ -1,6 +1,7 @@
 import json
 from datetime import timedelta
 from unittest import mock
+from unittest.mock import patch
 
 import pytest
 from django.http import HttpResponse, JsonResponse
@@ -11,21 +12,55 @@ from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from users.factories import CredentialFactory, PhoneDeviceFactory, UserFactory
 from users.fcm_utils import create_update_device
 from users.models import ConnectUser, PhoneDevice, RecoveryStatus
+from utils.app_integrity.const import ErrorCodes as IntegrityErrorCodes
+from utils.app_integrity.google_play_integrity import AppIntegrityService
 
 
 @pytest.mark.django_db
-def test_registration(client):
-    response = client.post(
-        "/users/register",
-        {
-            "username": "testuser",
-            "password": "testpass",
-            "phone_number": "+27734567657",
-        },
-    )
-    assert response.status_code == 200, response.content
-    user = ConnectUser.objects.get(username="testuser")
-    assert user.phone_number == "+27734567657"
+class TestRegistration:
+    def test_registration_v1(self, client):
+        response = client.post(
+            "/users/register",
+            {
+                "username": "testuser",
+                "password": "testpass",
+                "phone_number": "+27734567657",
+            },
+        )
+        assert response.status_code == 200, response.content
+        user = ConnectUser.objects.get(username="testuser")
+        assert user.phone_number == "+27734567657"
+
+    def test_registration_v2_without_integrity_data(self, client):
+        response = client.post(
+            "/users/register",
+            {
+                "username": "testuser",
+                "password": "testpass",
+                "phone_number": "+27734567657",
+            },
+            HTTP_ACCEPT="application/json; version=2.0",
+        )
+        assert response.status_code == 400
+        assert response.json()["error_code"] == IntegrityErrorCodes.INTEGRITY_DATA_MISSING
+        assert not ConnectUser.objects.filter(username="testuser").exists()
+
+    @patch.object(AppIntegrityService, "verify_integrity", new=lambda x: ())
+    def test_registration_v2_integrity_passed(self, client):
+        response = client.post(
+            "/users/register",
+            {
+                "username": "testuser",
+                "password": "testpass",
+                "phone_number": "+27734567657",
+            },
+            HTTP_ACCEPT="application/json; version=2.0",
+            HTTP_CC_INTEGRITY_TOKEN="integrity_token",
+            HTTP_CC_REQUEST_HASH="request_hash",
+        )
+        assert response.status_code == 200, response.content
+        user = ConnectUser.objects.get(username="testuser")
+        assert user.phone_number == "+27734567657"
 
 
 @pytest.mark.django_db
