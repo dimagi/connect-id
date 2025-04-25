@@ -173,6 +173,8 @@ class APIVersion:
     V2 = "2.0"
 
 
+API_VERSION = APIVersion
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.BasicAuthentication",
@@ -187,10 +189,10 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_THROTTLE_RATES": {"anon": "100/day", "user": "1000/day"},
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
-    "DEFAULT_VERSION": APIVersion.V1,
+    "DEFAULT_VERSION": API_VERSION.V1,
     "ALLOWED_VERSIONS": [
-        APIVersion.V1,
-        APIVersion.V2,
+        API_VERSION.V1,
+        API_VERSION.V2,
     ],
 }
 

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.http import JsonResponse
 
 from utils.app_integrity.const import INTEGRITY_REQUEST_HASH_KEY, INTEGRITY_TOKEN_HEADER_KEY, ErrorCodes
@@ -18,7 +19,7 @@ def require_app_integrity(view):
     """
 
     def wrapper(request, *args, **kwargs):
-        if request.version == "1.0":
+        if request.version == settings.API_VERSION.V1:
             return view(request, *args, **kwargs)
 
         integrity_token = request.headers.get(INTEGRITY_TOKEN_HEADER_KEY)
