@@ -1,6 +1,6 @@
 from django.http import JsonResponse
 
-from utils.app_integrity.const import ErrorCodes
+from utils.app_integrity.const import INTEGRITY_REQUEST_HASH_KEY, INTEGRITY_TOKEN_HEADER_KEY, ErrorCodes
 from utils.app_integrity.exceptions import (
     AccountDetailsError,
     AppIntegrityError,
@@ -16,8 +16,11 @@ def require_integrity_check(view):
     """
 
     def wrapper(request, *args, **kwargs):
-        integrity_token = request.POST.get("integrity_token")
-        request_hash = request.POST.get("request_hash")
+        if request.version == "1.0":
+            return view(request, *args, **kwargs)
+
+        integrity_token = request.headers.get(INTEGRITY_TOKEN_HEADER_KEY)
+        request_hash = request.headers.get(INTEGRITY_REQUEST_HASH_KEY)
 
         if not (integrity_token and request_hash):
             return JsonResponse({"error_code": ErrorCodes.INTEGRITY_DATA_MISSING}, status=400)
