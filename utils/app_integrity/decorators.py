@@ -13,6 +13,8 @@ from utils.app_integrity.google_play_integrity import AppIntegrityService
 def require_app_integrity(view):
     """
     Checks the integrity of the app using the Google Play Integrity API.
+
+    For backwards compatibility we're not enforcing this on API v1.0.
     """
 
     def wrapper(request, *args, **kwargs):
