@@ -43,6 +43,7 @@ class SendMessage(APIView):
         "title": "test title",
         "body": "test message",
         "data": {"test": "data"},
+        "fcm_options": {"analytics_label": "label"}
     }
 
     Response:
@@ -76,6 +77,7 @@ class SendMessageBulk(APIView):
                 "title": "test title",
                 "body": "test message",
                 "data": {"test": "data"},
+                "fcm_options": {"analytics_label": "label"}
             },
         ]
     }
@@ -157,7 +159,12 @@ def send_bulk_message(message):
 
 def _build_message(message):
     notification = _build_notification(message)
-    return messaging.Message(data=message.data, notification=notification)
+    return messaging.Message(
+        data=message.data,
+        notification=notification,
+        fcm_options=messaging.FCMOptions(**message.fcm_options),
+        android=messaging.AndroidConfig(priority="high"),
+    )
 
 
 def _build_notification(data):
@@ -220,7 +227,12 @@ class SendServerConnectMessage(APIView):
         message = Message(**message_data)
         message.save()
         channel = message.channel
-        message_to_send = MessageData(usernames=[channel.connect_user.username], data=MessageSerializer(message).data)
+        fcm_options = data.get("fcm_options", {})
+        message_to_send = MessageData(
+            usernames=[channel.connect_user.username],
+            data=MessageSerializer(message).data,
+            fcm_options=fcm_options,
+        )
         send_bulk_message(message_to_send)
         return JsonResponse(
             {"message_id": str(message.message_id)},
