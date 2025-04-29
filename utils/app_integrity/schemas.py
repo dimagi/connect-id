@@ -12,6 +12,9 @@ class RequestDetails:
 @dataclass
 class AppIntegrity:
     appRecognitionVerdict: str
+    packageName: str
+    certificateSha256Digest: str
+    versionCode: str
 
 
 @dataclass

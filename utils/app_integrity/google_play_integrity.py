@@ -80,7 +80,7 @@ class AppIntegrityService:
             raise AppIntegrityError("App not recognized")
 
     def _check_device_integrity(self, device_integrity: DeviceIntegrity):
-        if device_integrity.deviceRecognitionVerdict != "MEETS_DEVICE_INTEGRITY":
+        if device_integrity.deviceRecognitionVerdict[0] != "MEETS_DEVICE_INTEGRITY":
             raise DeviceIntegrityError("Device integrity compromised")
 
     def _check_account_details(self, account_details: AccountDetails):
