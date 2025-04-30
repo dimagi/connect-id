@@ -189,7 +189,7 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_THROTTLE_RATES": {"anon": "100/day", "user": "1000/day"},
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
-    "DEFAULT_VERSION": API_VERSION.V1,
+    "DEFAULT_VERSION": API_VERSION.V2,
     "ALLOWED_VERSIONS": [
         API_VERSION.V1,
         API_VERSION.V2,
