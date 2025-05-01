@@ -8,7 +8,6 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import AbstractUser
 from django.contrib.sites.models import Site
 from django.db import models
-from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
@@ -120,15 +119,6 @@ class PhoneDevice(SideChannelDevice):
             self.save()
 
         return message
-
-    @classmethod
-    def send_otp_httpresponse(cls, phone_number, user):
-        # create otp device for user
-        # send otp code via twilio
-        otp_device, _ = cls.objects.get_or_create(phone_number=phone_number, user=user)
-        otp_device.save()
-        otp_device.generate_challenge()
-        return HttpResponse()
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["phone_number", "user"], name="phone_number_user")]

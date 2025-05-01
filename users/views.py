@@ -65,7 +65,9 @@ def test(request):
 @api_view(["POST"])
 def validate_phone(request):
     user = request.user
-    return PhoneDevice.send_otp_httpresponse(phone_number=user.phone_number, user=user)
+    otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.phone_number, user=user)
+    otp_device.generate_challenge()
+    return HttpResponse()
 
 
 @api_view(["POST"])
@@ -88,7 +90,10 @@ def validate_secondary_phone(request):
     user = request.user
     if not user.recovery_phone:
         return JsonResponse({"error": NO_RECOVERY_PHONE_ERROR}, status=400)
-    return PhoneDevice.send_otp_httpresponse(phone_number=user.recovery_phone, user=user)
+
+    otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.recovery_phone, user=user)
+    otp_device.generate_challenge()
+    return HttpResponse()
 
 
 @api_view(["POST"])
