@@ -19,7 +19,7 @@ class AppIntegrity:
 
 @dataclass
 class DeviceIntegrity:
-    deviceRecognitionVerdict: str
+    deviceRecognitionVerdict: list
 
 
 @dataclass
