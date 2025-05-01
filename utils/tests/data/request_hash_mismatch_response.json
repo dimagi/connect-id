@@ -1,0 +1,19 @@
+{
+  "requestDetails": {
+    "requestPackageName": "org.commcare.dalvik",
+    "timestampMillis": "1617893780",
+    "requestHash": "1234"
+  },
+  "appIntegrity": {
+    "appRecognitionVerdict": "PLAY_RECOGNIZED",
+    "packageName": "org.commcare.dalvik",
+    "certificateSha256Digest": ["6a6a1474b5cbbb2b1aa57e0bc3"],
+    "versionCode": "42"
+  },
+  "deviceIntegrity": {
+    "deviceRecognitionVerdict": ["MEETS_DEVICE_INTEGRITY"]
+  },
+  "accountDetails": {
+    "appLicensingVerdict": "LICENSED"
+  }
+}

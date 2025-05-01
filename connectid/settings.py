@@ -288,3 +288,6 @@ if FCM_PRIVATE_KEY:
 
     creds = credentials.Certificate(FCM_CREDENTIALS)
     default_app = initialize_app(credential=creds)
+
+
+GOOGLE_APPLICATION_CREDENTIALS = env("GOOGLE_APPLICATION_CREDENTIALS", default="")
