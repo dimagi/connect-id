@@ -41,6 +41,7 @@ class BulkMessageSerializer(serializers.Serializer):
 class MessageSerializer(serializers.ModelSerializer):
     ciphertext = serializers.SerializerMethodField()
     channel = serializers.SerializerMethodField()
+    channel_name = serializers.SerializerMethodField()
     tag = serializers.SerializerMethodField()
     nonce = serializers.SerializerMethodField()
     message_id = serializers.SerializerMethodField()
@@ -48,7 +49,17 @@ class MessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Message
-        fields = ["message_id", "channel", "ciphertext", "tag", "nonce", "timestamp", "status", "action"]
+        fields = [
+            "message_id",
+            "channel",
+            "channel_name",
+            "ciphertext",
+            "tag",
+            "nonce",
+            "timestamp",
+            "status",
+            "action",
+        ]
 
     def get_ciphertext(self, obj):
         return obj.content["ciphertext"]
@@ -67,3 +78,6 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def get_channel(self, obj):
         return str(obj.channel_id)
+
+    def get_channel_name(self, obj):
+        return obj.channel.visible_name
