@@ -14,8 +14,8 @@ from django_otp.models import SideChannelDevice
 from django_otp.util import random_hex
 from phonenumber_field.modelfields import PhoneNumberField
 
+from messaging import send_sms
 from users.exceptions import RecoveryPinNotSetError
-from utils import get_sms_sender, send_sms
 
 from .const import TEST_NUMBER_PREFIX
 
@@ -61,8 +61,7 @@ class ConnectUser(AbstractUser):
             f"please ignore this message. \n\n {settings.APP_HASH}"
         )
         if not self.phone_number.raw_input.startswith(TEST_NUMBER_PREFIX):
-            sender = get_sms_sender(self.phone_number.country_code)
-            send_sms(self.phone_number.as_e164, message, sender)
+            send_sms(self.phone_number.as_e164, message)
         return message
 
     class Meta:
@@ -112,8 +111,7 @@ class PhoneDevice(SideChannelDevice):
             self.otp_last_sent and now() - self.otp_last_sent >= timedelta(minutes=wait_time)
         ):
             if not self.phone_number.raw_input.startswith(TEST_NUMBER_PREFIX):
-                sender = get_sms_sender(self.phone_number.country_code)
-                send_sms(self.phone_number.as_e164, message, sender)
+                send_sms(self.phone_number.as_e164, message)
             self.otp_last_sent = now()
             self.attempts += 1
             self.save()
@@ -161,5 +159,4 @@ class UserCredential(models.Model):
                 f"You have been given credential '{credential.name}'."
                 f"Please click the following link to accept {url}"
             )
-            sender = get_sms_sender(user.phone_number.country_code)
-            send_sms(user.phone_number.as_e164, message, sender)
+            send_sms(user.phone_number.as_e164, message)

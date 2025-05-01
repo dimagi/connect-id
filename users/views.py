@@ -17,7 +17,8 @@ from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.views import APIView
 
-from utils import get_ip, get_sms_sender, send_sms
+from messaging import send_sms
+from utils import get_ip
 from utils.rest_framework import ClientProtectedResourceAuth
 
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
@@ -524,8 +525,7 @@ class ForwardHQInvite(APIView):
         Thanks.
         -The ConnectID Team.
         """
-        sender = get_sms_sender(user.phone_number.country_code)
-        send_sms(user.phone_number.as_e164, message, sender)
+        send_sms(user.phone_number.as_e164, message)
         return JsonResponse({"success": True})
 
 
