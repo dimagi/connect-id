@@ -119,6 +119,7 @@ def recover_account(request):
     data = request.data
     if not data.get("phone"):
         return JsonResponse({"error": "OTP missing required key phone"}, status=400)
+
     user = ConnectUser.objects.get(phone_number=data["phone"], is_active=True)
     device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
     device.generate_challenge()
@@ -280,6 +281,7 @@ def change_phone(request):
     if error:
         return JsonResponse({"error": error}, status=400)
     user.phone_number = data["new_phone_number"]
+
     try:
         user.full_clean()
     except ValidationError as e:
