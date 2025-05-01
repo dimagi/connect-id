@@ -26,6 +26,7 @@ class TestRegistration:
                 "password": "testpass",
                 "phone_number": "+27734567657",
             },
+            HTTP_ACCEPT="application/json; version=1.0",
         )
         assert response.status_code == 200, response.content
         user = ConnectUser.objects.get(username="testuser")
@@ -68,6 +69,7 @@ def test_registration_with_fcm_token(client):
     response = client.post(
         "/users/register",
         {"username": "testuser", "password": "testpass", "phone_number": "+27734567657", "fcm_token": "testtoken"},
+        HTTP_ACCEPT="application/json; version=1.0",
     )
     assert response.status_code == 200, response.content
     user = ConnectUser.objects.get(username="testuser")
