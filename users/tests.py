@@ -657,3 +657,26 @@ class TestChangePhone:
             HTTP_CC_INTEGRITY_TOKEN="integrity_token",
             HTTP_CC_REQUEST_HASH="request_hash",
         )
+
+
+class TestSetRecoveryPin:
+    @pass_app_integrity_test
+    def test_success(self, auth_device, user):
+        response = self._make_post(auth_device, data={"recovery_pin": "1234"})
+        assert response.status_code == 200
+        user.refresh_from_db()
+        assert user.check_recovery_pin("1234")
+
+    @pass_app_integrity_test
+    def test_no_pin(self, auth_device, user):
+        response = self._make_post(auth_device, data={"recovery_pin": ""})
+        assert response.status_code == 400
+        assert response.json()["error"] == "Missing recovery pin"
+
+    def _make_post(self, client, data):
+        return client.post(
+            reverse("set_recovery_pin"),
+            data=data,
+            HTTP_CC_INTEGRITY_TOKEN="integrity_token",
+            HTTP_CC_REQUEST_HASH="request_hash",
+        )
