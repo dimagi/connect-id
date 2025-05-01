@@ -1,6 +1,8 @@
 import google.auth
 from django.conf import settings
+from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 from utils.app_integrity.exceptions import (
     AccountDetailsError,
@@ -11,7 +13,6 @@ from utils.app_integrity.exceptions import (
 from utils.app_integrity.schemas import AccountDetails, AppIntegrity, DeviceIntegrity, RequestDetails, VerdictResponse
 
 APP_PACKAGE_NAME = "org.commcare.dalvik"
-AUTH_SCOPE = "https://www.googleapis.com/auth/androidpublisher"
 GOOGLE_SERVICE_NAME = "playintegrity"
 
 
@@ -45,18 +46,19 @@ class AppIntegrityService:
         }
         with build(**service_spec) as service:
             body = {"integrityToken": self.token}
-            response = service.v1().decodeIntegrityToken(packageName=APP_PACKAGE_NAME, body=body).execute()
+            try:
+                response = service.v1().decodeIntegrityToken(packageName=APP_PACKAGE_NAME, body=body).execute()
+            except HttpError:
+                raise IntegrityRequestError("Invalid token")
 
         return VerdictResponse.from_dict(**response)
 
     @property
-    def _google_service_account_credentials(self):
+    def _google_service_account_credentials(self) -> Credentials:
         if not settings.GOOGLE_APPLICATION_CREDENTIALS:
             raise Exception("GOOGLE_APPLICATION_CREDENTIALS must be set")
 
-        credentials, _ = google.auth.load_credentials_from_file(
-            settings.GOOGLE_APPLICATION_CREDENTIALS, scopes=[AUTH_SCOPE]
-        )
+        credentials, _ = google.auth.load_credentials_from_file(settings.GOOGLE_APPLICATION_CREDENTIALS, scopes=[])
         return credentials
 
     def _analyze_verdict(self, verdict: VerdictResponse):
