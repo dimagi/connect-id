@@ -35,7 +35,6 @@ def update_payment_profile_phone(request):
 
 
 @api_view(["POST"])
-@require_app_integrity
 def confirm_payment_profile_otp(request):
     payment_profile = request.user.payment_profile
     device = PhoneDevice.objects.get(phone_number=payment_profile.phone_number, user=payment_profile.user)

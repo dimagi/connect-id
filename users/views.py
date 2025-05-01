@@ -563,7 +563,6 @@ class ConfirmHQInviteCallback(APIView):
 
 @api_view(["GET"])
 @permission_classes([])
-@require_app_integrity
 def accept_credential(request, invite_id):
     try:
         credential = UserCredential.objects.get(invite_id=invite_id)
