@@ -9,6 +9,7 @@ from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
 from fcm_django.models import FCMDevice
 
+from payments.models import PaymentProfile
 from test_utils.decorators import pass_app_integrity_test
 from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from users.factories import CredentialFactory, PhoneDeviceFactory, RecoveryStatusFactory, UserFactory
@@ -659,6 +660,33 @@ class TestChangePhone:
         )
 
 
+class TestChangePassword:
+    @pass_app_integrity_test
+    def test_success(self, auth_device, user):
+        response = self._make_post(auth_device, data={"password": "Ydi!asnf#i%48fnjas"})
+        assert response.status_code == 200
+        user.refresh_from_db()
+        assert user.check_password("Ydi!asnf#i%48fnjas")
+
+    @pass_app_integrity_test
+    def test_no_password(self, auth_device):
+        response = self._make_post(auth_device, data={"password": ""})
+        assert response.status_code == 400
+
+    @pass_app_integrity_test
+    def test_weak_password(self, auth_device):
+        response = self._make_post(auth_device, data={"password": "1234"})
+        assert response.status_code == 400
+
+    def _make_post(self, client, data):
+        return client.post(
+            reverse("change_password"),
+            data=data,
+            HTTP_CC_INTEGRITY_TOKEN="integrity_token",
+            HTTP_CC_REQUEST_HASH="request_hash",
+        )
+
+
 class TestSetRecoveryPin:
     @pass_app_integrity_test
     def test_success(self, auth_device, user):
@@ -680,3 +708,29 @@ class TestSetRecoveryPin:
             HTTP_CC_INTEGRITY_TOKEN="integrity_token",
             HTTP_CC_REQUEST_HASH="request_hash",
         )
+
+
+class TestUpdatePaymentProfilePhone:
+    @pass_app_integrity_test
+    @patch.object(PhoneDevice, "generate_challenge")
+    @patch("payments.views.lookup_telecom_provider")
+    def test_success(self, lookup_telecom_provider_mock, generate_challenge_mock, auth_device, user):
+        lookup_telecom_provider_mock.return_value = "Test carrier"
+
+        auth_device.post(
+            reverse("update_payment_profile_phone"),
+            data={
+                "phone_number": user.phone_number,
+                "owner_name": user.name,
+            },
+            HTTP_CC_INTEGRITY_TOKEN="integrity_token",
+            HTTP_CC_REQUEST_HASH="request_hash",
+        )
+
+        generate_challenge_mock.assert_called_once()
+        profile = PaymentProfile.objects.get(user=user)
+
+        assert profile.phone_number == user.phone_number
+        assert profile.owner_name == user.name
+        assert not profile.is_verified
+        assert profile.status == PaymentProfile.PENDING

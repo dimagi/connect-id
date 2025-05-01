@@ -294,12 +294,15 @@ def change_phone(request):
 @require_app_integrity
 def change_password(request):
     data = request.data
+    if not data.get("password"):
+        return JsonResponse({"error": "No password provided"}, status=400)
+
     user = request.user
     password = data["password"]
     try:
         validate_password(password)
-    except ValidationError as e:
-        return JsonResponse(e.message_dict, status=400)
+    except ValidationError:
+        return JsonResponse({"error": "Password is not complex enough"}, status=400)
     user.set_password(password)
     user.save()
     return HttpResponse()
