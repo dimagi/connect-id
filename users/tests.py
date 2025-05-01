@@ -10,7 +10,7 @@ from django.urls import reverse
 from fcm_django.models import FCMDevice
 
 from payments.models import PaymentProfile
-from test_utils.decorators import pass_app_integrity_test
+from test_utils.decorators import skip_app_integrity_check
 from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from users.factories import CredentialFactory, PhoneDeviceFactory, RecoveryStatusFactory, UserFactory
 from users.fcm_utils import create_update_device
@@ -177,7 +177,7 @@ def test_otp_generation_after_five_minutes(user):
 
 
 class TestValidatePhone:
-    @pass_app_integrity_test
+    @skip_app_integrity_check
     @patch.object(PhoneDevice, "generate_challenge")
     def test_otp_device_created(self, generate_challenge_mock, auth_device):
         assert not PhoneDevice.objects.all().exists()
@@ -194,7 +194,7 @@ class TestValidatePhone:
 
 
 class TestValidateSecondaryPhone:
-    @pass_app_integrity_test
+    @skip_app_integrity_check
     def test_no_recovery_phone(self, auth_device):
         endpoint = reverse("validate_secondary_phone")
         response = auth_device.post(
@@ -248,7 +248,7 @@ class TestConfirmSecondaryOTP:
 
 
 class TestRecoverAccount:
-    @pass_app_integrity_test
+    @skip_app_integrity_check
     @patch.object(PhoneDevice, "generate_challenge")
     def test_missing_phone_number(self, generate_challenge_mock, client, user):
         response = client.post(
@@ -264,7 +264,7 @@ class TestRecoverAccount:
         generate_challenge_mock.assert_not_called()
         assert not RecoveryStatus.objects.filter(user=user).exists()
 
-    @pass_app_integrity_test
+    @skip_app_integrity_check
     @patch.object(PhoneDevice, "generate_challenge")
     def test_success(self, generate_challenge_mock, client, user):
         user.phone_number = TEST_NUMBER_PREFIX + "1234567"
@@ -449,7 +449,7 @@ class TestInitiateDeactivation(BaseTestDeactivation):
     urlname = "initiate_deactivation"
 
     @mock.patch("users.models.ConnectUser.initiate_deactivation")
-    @pass_app_integrity_test
+    @skip_app_integrity_check
     def test_success(self, mock_initiate_deactivation, client, recovery_status):
         response = client.post(
             self.endpoint,
@@ -461,7 +461,7 @@ class TestInitiateDeactivation(BaseTestDeactivation):
         assert isinstance(response, HttpResponse)
         mock_initiate_deactivation.assert_called()
 
-    @pass_app_integrity_test
+    @skip_app_integrity_check
     def test_invalid_user(self, client):
         response = client.post(
             self.endpoint,
@@ -475,7 +475,7 @@ class TestInitiateDeactivation(BaseTestDeactivation):
             expected_status=400,
         )
 
-    @pass_app_integrity_test
+    @skip_app_integrity_check
     def test_invalid_secret_key(self, client, recovery_status):
         response = client.post(
             self.endpoint,
@@ -624,7 +624,7 @@ class TestRecoveryPinConfirmationApi:
 
 
 class TestChangePhone:
-    @pass_app_integrity_test
+    @skip_app_integrity_check
     def test_phone_is_validated(self, auth_device, user):
         user.phone_validated = True
         user.save()
@@ -633,19 +633,19 @@ class TestChangePhone:
         assert response.status_code == 400
         assert response.json()["error"] == "You cannot change a validated number"
 
-    @pass_app_integrity_test
+    @skip_app_integrity_check
     def test_old_number_mismatch(self, auth_device, user):
         response = self._make_post(auth_device, data={"old_phone_number": "1234"})
         assert response.status_code == 400
         assert response.json()["error"] == "Old phone number does not match"
 
-    @pass_app_integrity_test
+    @skip_app_integrity_check
     def test_invalid_new_phone_number(self, auth_device, user):
         data = {"old_phone_number": user.phone_number, "new_phone_number": "1234567890"}
         response = self._make_post(auth_device, data=data)
         assert response.status_code == 400
 
-    @pass_app_integrity_test
+    @skip_app_integrity_check
     def test_success(self, auth_device, user):
         data = {"old_phone_number": user.phone_number, "new_phone_number": factory.Faker("phone_number")}
         response = self._make_post(auth_device, data=data)
@@ -661,19 +661,19 @@ class TestChangePhone:
 
 
 class TestChangePassword:
-    @pass_app_integrity_test
+    @skip_app_integrity_check
     def test_success(self, auth_device, user):
         response = self._make_post(auth_device, data={"password": "Ydi!asnf#i%48fnjas"})
         assert response.status_code == 200
         user.refresh_from_db()
         assert user.check_password("Ydi!asnf#i%48fnjas")
 
-    @pass_app_integrity_test
+    @skip_app_integrity_check
     def test_no_password(self, auth_device):
         response = self._make_post(auth_device, data={"password": ""})
         assert response.status_code == 400
 
-    @pass_app_integrity_test
+    @skip_app_integrity_check
     def test_weak_password(self, auth_device):
         response = self._make_post(auth_device, data={"password": "1234"})
         assert response.status_code == 400
@@ -688,14 +688,14 @@ class TestChangePassword:
 
 
 class TestSetRecoveryPin:
-    @pass_app_integrity_test
+    @skip_app_integrity_check
     def test_success(self, auth_device, user):
         response = self._make_post(auth_device, data={"recovery_pin": "1234"})
         assert response.status_code == 200
         user.refresh_from_db()
         assert user.check_recovery_pin("1234")
 
-    @pass_app_integrity_test
+    @skip_app_integrity_check
     def test_no_pin(self, auth_device, user):
         response = self._make_post(auth_device, data={"recovery_pin": ""})
         assert response.status_code == 400
@@ -711,7 +711,7 @@ class TestSetRecoveryPin:
 
 
 class TestUpdatePaymentProfilePhone:
-    @pass_app_integrity_test
+    @skip_app_integrity_check
     @patch.object(PhoneDevice, "generate_challenge")
     @patch("payments.views.lookup_telecom_provider")
     def test_success(self, lookup_telecom_provider_mock, generate_challenge_mock, auth_device, user):
