@@ -8,6 +8,7 @@ from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
 from fcm_django.models import FCMDevice
 
+from test_utils.decorators import pass_app_integrity_test
 from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from users.factories import CredentialFactory, PhoneDeviceFactory, UserFactory
 from users.fcm_utils import create_update_device
@@ -174,9 +175,14 @@ def test_otp_generation_after_five_minutes(user):
 
 
 class TestValidateSecondaryPhone:
+    @pass_app_integrity_test
     def test_no_recovery_phone(self, auth_device):
         endpoint = reverse("validate_secondary_phone")
-        response = auth_device.post(endpoint)
+        response = auth_device.post(
+            endpoint,
+            HTTP_CC_INTEGRITY_TOKEN="integrity_token",
+            HTTP_CC_REQUEST_HASH="request_hash",
+        )
         assert isinstance(response, JsonResponse)
         assert response.status_code == 400
         assert response.json() == {"error": NO_RECOVERY_PHONE_ERROR}
@@ -261,22 +267,40 @@ class TestInitiateDeactivation(BaseTestDeactivation):
     urlname = "initiate_deactivation"
 
     @mock.patch("users.models.ConnectUser.initiate_deactivation")
+    @pass_app_integrity_test
     def test_success(self, mock_initiate_deactivation, client, recovery_status):
-        response = client.post(self.endpoint, self.get_post_data(recovery_status.user, recovery_status))
+        response = client.post(
+            self.endpoint,
+            self.get_post_data(recovery_status.user, recovery_status),
+            HTTP_CC_INTEGRITY_TOKEN="integrity_token",
+            HTTP_CC_REQUEST_HASH="request_hash",
+        )
         assert response.status_code == 200
         assert isinstance(response, HttpResponse)
         mock_initiate_deactivation.assert_called()
 
+    @pass_app_integrity_test
     def test_invalid_user(self, client):
-        response = client.post(self.endpoint, self.get_post_data())
+        response = client.post(
+            self.endpoint,
+            self.get_post_data(),
+            HTTP_CC_INTEGRITY_TOKEN="integrity_token",
+            HTTP_CC_REQUEST_HASH="request_hash",
+        )
         self.assert_fail_response(
             response,
             expected_code=ErrorCodes.USER_DOES_NOT_EXIST,
             expected_status=400,
         )
 
+    @pass_app_integrity_test
     def test_invalid_secret_key(self, client, recovery_status):
-        response = client.post(self.endpoint, self.get_post_data(recovery_status.user))
+        response = client.post(
+            self.endpoint,
+            self.get_post_data(recovery_status.user),
+            HTTP_CC_INTEGRITY_TOKEN="integrity_token",
+            HTTP_CC_REQUEST_HASH="request_hash",
+        )
         self.assert_fail_response(
             response,
             expected_code=ErrorCodes.INVALID_SECRET_KEY,
