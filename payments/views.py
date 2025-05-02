@@ -1,4 +1,4 @@
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from rest_framework import status as drf_status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -29,7 +29,9 @@ def update_payment_profile_phone(request):
             "status": PaymentProfile.PENDING,
         },
     )
-    return PhoneDevice.send_otp_httpresponse(phone_number=payment_profile.phone_number, user=payment_profile.user)
+    otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=payment_profile.phone_number, user=user)
+    otp_device.generate_challenge()
+    return HttpResponse()
 
 
 @api_view(["POST"])
