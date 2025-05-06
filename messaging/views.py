@@ -236,6 +236,8 @@ class SendServerConnectMessage(APIView):
         message_to_send = MessageData(
             usernames=[channel.connect_user.username],
             data=MessageSerializer(message).data,
+            title="New Connect Message",
+            body=f"You received a new message from {channel.visible_name}",
             fcm_options=fcm_options,
         )
         send_bulk_message(message_to_send)

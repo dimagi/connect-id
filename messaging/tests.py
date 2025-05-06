@@ -218,7 +218,12 @@ def test_send_fcm_notification_view(client, channel):
 
         serialized_msg = MessageSerializer(db_msg).data
         serialized_msg["channel"] = str(db_msg.channel.channel_id)
-        expected = MessageData(usernames=[channel.connect_user.username], data=serialized_msg)
+        expected = MessageData(
+            usernames=[channel.connect_user.username],
+            data=serialized_msg,
+            title="New Connect Message",
+            body=f"You received a new message from {channel.visible_name}",
+        )
 
         mock_send_bulk_message.assert_called_once_with(expected)
 
