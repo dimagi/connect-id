@@ -1,0 +1,6 @@
+**/__pycache__/
+*.log
+connectid/localsettings2.py
+.env
+*.env
+.gitignore
