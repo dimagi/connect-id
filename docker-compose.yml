@@ -7,7 +7,7 @@ services:
     volumes:
       - .:/app/
     ports:
-      - "8000:8000"
+      - '8000:8000'
     depends_on:
       - db
     env_file:
@@ -21,7 +21,7 @@ services:
       - POSTGRES_PASSWORD=connect
       - POSTGRES_DB=connect
     ports:
-      - "5433:5432"
+      - '5433:5432'
     healthcheck:
       test: pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}
       interval: 2s
