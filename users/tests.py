@@ -699,7 +699,7 @@ class TestSetRecoveryPin:
     def test_no_pin(self, auth_device, user):
         response = self._make_post(auth_device, data={"recovery_pin": ""})
         assert response.status_code == 400
-        assert response.json()["error"] == "Missing recovery pin"
+        assert response.json()["error"] == ErrorCodes.MISSING_RECOVERY_PIN
 
     def _make_post(self, client, data):
         return client.post(

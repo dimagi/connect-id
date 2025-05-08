@@ -336,7 +336,7 @@ def set_recovery_pin(request):
     user = request.user
 
     if not data.get("recovery_pin"):
-        return JsonResponse({"error": "Missing recovery pin"}, status=400)
+        return JsonResponse({"error": ErrorCodes.MISSING_RECOVERY_PIN}, status=400)
 
     recovery_pin = data["recovery_pin"]
     user.set_recovery_pin(recovery_pin)
