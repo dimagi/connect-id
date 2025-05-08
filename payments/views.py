@@ -7,7 +7,6 @@ from rest_framework.views import APIView
 from messaging.serializers import MessageData
 from messaging.views import send_bulk_message
 from users.models import PhoneDevice
-from utils.app_integrity.decorators import require_app_integrity
 from utils.rest_framework import ClientProtectedResourceAuth
 from utils.twilio import lookup_telecom_provider
 
@@ -15,7 +14,6 @@ from .models import PaymentProfile
 
 
 @api_view(["POST"])
-@require_app_integrity
 def update_payment_profile_phone(request):
     user = request.user
     phone_number = request.data.get("phone_number")

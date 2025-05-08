@@ -86,7 +86,6 @@ def confirm_otp(request):
 
 
 @api_view(["POST"])
-@require_app_integrity
 def validate_secondary_phone(request):
     user = request.user
     if not user.recovery_phone:
@@ -114,7 +113,6 @@ def confirm_secondary_otp(request):
 
 @api_view(["POST"])
 @permission_classes([])
-@require_app_integrity
 def recover_account(request):
     data = request.data
     if not data.get("phone"):
@@ -269,7 +267,6 @@ def phone_available(request):
 
 @api_view(["POST"])
 @permission_classes([])
-@require_app_integrity
 def change_phone(request):
     data = request.data
     user = request.user
@@ -291,7 +288,6 @@ def change_phone(request):
 
 
 @api_view(["POST"])
-@require_app_integrity
 def change_password(request):
     data = request.data
     if not data.get("password"):
@@ -309,7 +305,6 @@ def change_password(request):
 
 
 @api_view(["POST"])
-@require_app_integrity
 def update_profile(request):
     data = request.data
     user = request.user
@@ -330,7 +325,6 @@ def update_profile(request):
 
 
 @api_view(["POST"])
-@require_app_integrity
 def set_recovery_pin(request):
     data = request.data
     user = request.user
@@ -595,7 +589,6 @@ class FetchCredentials(ClientProtectedResourceMixin, View):
 
 @api_view(["POST"])
 @permission_classes([])
-@require_app_integrity
 def initiate_deactivation(request):
     data = request.data
     phone_number = data["phone_number"]
