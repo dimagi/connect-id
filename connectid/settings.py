@@ -130,38 +130,29 @@ LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
-        "django.server": {
-            "()": "django.utils.log.ServerFormatter",
-            "format": "[{server_time}] {message}",
-            "style": "{",
-        }
+        "verbose": {
+            "format": "%(levelname)s %(asctime)s %(name)s %(message)s",
+        },
     },
     "handlers": {
-        "file": {
-            "level": "INFO",
-            "class": "logging.handlers.RotatingFileHandler",
-            "filename": DJANGO_LOG_FILE,
-            "maxBytes": 10 * 1024 * 1024,  # 10 MB
-            "backupCount": 20,  # Backup 200 MB of logs
-        },
         "console": {
+            "level": "DEBUG",
             "class": "logging.StreamHandler",
+            "formatter": "verbose",
         },
-        "django.server": {
-            "level": "INFO",
-            "class": "logging.StreamHandler",
-            "formatter": "django.server",
+        "null": {
+            "class": "logging.NullHandler",
         },
     },
+    "root": {"level": "INFO", "handlers": ["console"]},
+    "django.template": {
+        "handlers": ["console"],
+        "level": "WARN",
+        "propagate": False,
+    },
     "loggers": {
-        "django": {
-            "handlers": ["file", "console"],
-            "level": "INFO",
-            "propagate": True,
-        },
-        "django.server": {
-            "handlers": ["django.server"],
-            "level": "INFO",
+        "django.security.DisallowedHost": {
+            "handlers": ["null"],
             "propagate": False,
         },
     },
@@ -179,11 +170,12 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",
     ],
-    "DEFAULT_THROTTLE_RATES": {"anon": "100/day", "user": "1000/day"},
+    "DEFAULT_THROTTLE_RATES": {"anon": "1000/day", "user": "10000/day"},
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
     "DEFAULT_VERSION": "1.0",
     "ALLOWED_VERSIONS": ["1.0"],
 }
+
 
 AXES_COOLOFF_TIME = 6
 AXES_IPWARE_META_PRECEDENCE_ORDER = [
@@ -191,7 +183,7 @@ AXES_IPWARE_META_PRECEDENCE_ORDER = [
     "REMOTE_ADDR",
 ]
 
-LOGIN_URL = "/admin/login/"
+AXES_ENABLED = False
 
 FCM_CREDENTIALS = None
 
@@ -246,7 +238,7 @@ DEBUG = env("DEBUG", default=False)
 DATABASES = {
     "default": env.db(
         "DATABASE_URL",
-        default="postgres:///connect",
+        default="postgresql:///connect",
     ),
 }
 
@@ -260,13 +252,13 @@ TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default=None)
 
 OAUTH2_PROVIDER = {
     "OIDC_ENABLED": True,
-    "OIDC_RSA_PRIVATE_KEY": env("OIDC_RSA_PRIVATE_KEY", default=""),
+    "OIDC_RSA_PRIVATE_KEY": env.str("OIDC_RSA_PRIVATE_KEY", multiline=True, default=""),
     "SCOPES": {"openid": "OpenID Connect scope", "sync": "sync with commcarehq"},
     "PKCE_REQUIRED": False,
     "OAUTH2_VALIDATOR_CLASS": "users.oauth.ConnectOAuth2Validator",
 }
 
-FCM_PRIVATE_KEY = env("FCM_PRIVATE_KEY", default="")
+FCM_PRIVATE_KEY = env.str("FCM_PRIVATE_KEY", multiline=True, default="")
 
 if FCM_PRIVATE_KEY:
     FCM_CREDENTIALS = {
