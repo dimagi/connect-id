@@ -1,0 +1,45 @@
+service: connectid
+
+# Name of the container image.
+image: connectid
+
+ssh:
+  user: connect
+
+# Deploy to these servers.
+servers:
+  web:
+    hosts:
+      - 54.160.64.28
+    options:
+      env-file: '/home/connect/www/docker.env'
+  celery:
+    hosts:
+      - 54.160.64.28
+    options:
+      env-file: '/home/connect/www/docker.env'
+    cmd: /start_celery
+    labels:
+      traefik.enable: false
+
+registry:
+  server: 037129986032.dkr.ecr.us-east-1.amazonaws.com
+  username: AWS
+  password: <%= %x(./config/registry_password.sh) %>
+
+logging:
+  driver: awslogs
+  options:
+    awslogs-region: 'us-east-1'
+    awslogs-group: 'connect-id'
+
+builder:
+  multiarch: false
+  dockerfile: './Dockerfile'
+  context: './'
+
+healthcheck:
+  path: /users/
+  port: 8000
+  max_attempts: 10
+  interval: 20s
