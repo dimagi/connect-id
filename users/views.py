@@ -308,6 +308,9 @@ def update_profile(request):
     if data.get("secondary_phone"):
         user.recovery_phone = data["secondary_phone"]
         changed = True
+    if data.get("photo"):
+        user.photo = data["photo"]
+        changed = True
     if changed:
         try:
             user.full_clean()
