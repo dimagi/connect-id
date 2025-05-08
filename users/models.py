@@ -35,6 +35,7 @@ class ConnectUser(AbstractUser):
     recovery_phone_validation_deadline = models.DateField(blank=True, null=True)
     deactivation_token = models.CharField(max_length=25, blank=True, null=True)
     deactivation_token_valid_until = models.DateTimeField(blank=True, null=True)
+    photo = models.TextField(blank=True, null=True, help_text="Base64 encoded image")
 
     # removed from base class
     first_name = None
