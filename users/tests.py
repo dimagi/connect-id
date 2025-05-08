@@ -378,3 +378,35 @@ class TestRecoveryPinConfirmationApi:
         recovery_status.refresh_from_db()
         assert response.status_code == 200
         assert recovery_status.step == RecoveryStatus.RecoverySteps.RESET_PASSWORD
+
+
+@pytest.mark.django_db
+class TestUpdateProfile:
+    test_number = "+27734567657"
+
+    url = reverse("update_profile")
+
+    def test_success(self, auth_device, user):
+        data = {"name": "FooBar", "photo": "123456789"}
+        user.phone_number = self.test_number
+        user.save()
+        response = auth_device.post(self.url, data)
+        assert response.status_code == 200
+        assert isinstance(response, HttpResponse)
+
+        updated_user = ConnectUser.objects.get(id=user.id)
+        assert updated_user.name == data["name"]
+        assert updated_user.photo == data["photo"]
+
+    def test_no_authentication(self, client):
+        response = client.get(reverse("demo_users"))
+        assert response.status_code == 403
+
+    def test_validation_error(self, auth_device, user):
+        data = {"secondary_phone": "-12415"}
+        user.phone_number = self.test_number
+        user.save()
+        response = auth_device.post(self.url, data)
+        assert response.status_code == 400
+        assert isinstance(response, JsonResponse)
+        assert response.json() == {"recovery_phone": ["The phone number entered is not valid."]}
