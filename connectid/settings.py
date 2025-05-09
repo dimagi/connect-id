@@ -31,23 +31,33 @@ env.read_env(str(BASE_DIR / ".env"))
 
 # Application definition
 
-INSTALLED_APPS = [
-    "django.contrib.admin",
-    "django.contrib.auth",
-    "django.contrib.contenttypes",
-    "django.contrib.sessions",
-    "django.contrib.messages",
-    "django.contrib.staticfiles",
-    "phonenumber_field",
-    "users.apps.UsersConfig",
+LOCAL_APPS = [
+    "users",
     "messaging",
-    "oauth2_provider",
     "payments",
+]
+
+THIRD_PARTY_APPS = [
     "rest_framework",
     "axes",
+    "oauth2_provider",
     "fcm_django",
-    "django.contrib.sites",
+    "phonenumber_field",
 ]
+
+INSTALLED_APPS = (
+    [
+        "django.contrib.admin",
+        "django.contrib.auth",
+        "django.contrib.contenttypes",
+        "django.contrib.sessions",
+        "django.contrib.messages",
+        "django.contrib.staticfiles",
+        "django.contrib.sites",
+    ]
+    + LOCAL_APPS
+    + THIRD_PARTY_APPS
+)
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
