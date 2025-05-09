@@ -35,8 +35,8 @@ logging:
 
 builder:
   multiarch: false
-  dockerfile: './Dockerfile'
-  context: './'
+  dockerfile: '../Dockerfile'
+  context: '../'
 
 healthcheck:
   path: /users/
