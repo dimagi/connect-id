@@ -402,16 +402,20 @@ class TestUpdateProfile:
     def test_update_photo(self, mock_boto3_client, auth_device, user):
         mock_s3 = mock.MagicMock()
         mock_boto3_client.return_value = mock_s3
-
         data = {
             "photo": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
         }
-        user.phone_number = self.test_number
-        user.save()
         auth_device.post(self.url, data)
         mock_s3.put_object.assert_called_once()
         _, kwargs = mock_s3.put_object.call_args
         assert kwargs["Key"] == f"{user.id}.jpg"
+
+    def test_update_photo_invalid(self, auth_device):
+        data = {"photo": "invalid-base64"}
+        response = auth_device.post(self.url, data)
+        assert response.status_code == 400
+        assert isinstance(response, JsonResponse)
+        assert response.json() == {"error": ErrorCodes.FAILED_TO_UPLOAD}
 
     def test_no_authentication(self, client):
         response = client.get(reverse("demo_users"))
