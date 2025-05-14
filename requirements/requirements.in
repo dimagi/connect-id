@@ -16,3 +16,4 @@ zxcvbn
 django-environ
 google-auth
 google-api-python-client
+boto3
