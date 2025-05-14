@@ -12,6 +12,7 @@ from django.db.models.functions import TruncMonth
 from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
 from django.views import View
+from firebase_admin import auth
 from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, permission_classes
@@ -65,6 +66,26 @@ def test(request):
 def validate_phone(request):
     user = request.user
     return PhoneDevice.send_otp_httpresponse(phone_number=user.phone_number, user=user)
+
+
+@api_view(["POST"])
+def validate_firebase_id_token(request):
+    user = request.user
+    id_token = request.data.get("id_token")
+    if not id_token:
+        return JsonResponse({"error": ErrorCodes.MISSING_TOKEN}, status=400)
+    try:
+        decoded_token = auth.verify_id_token(id_token)
+    except Exception:
+        return JsonResponse({"error": ErrorCodes.FAILED_VALIDATING_TOKEN}, status=400)
+
+    if not decoded_token.get("uid"):
+        return JsonResponse({"error": ErrorCodes.INVALID_TOKEN}, status=400)
+    if decoded_token.get("phone_number") != user.phone_number.as_e164:
+        return JsonResponse({"error": ErrorCodes.PHONE_MISMATCH}, status=400)
+    user.phone_validated = True
+    user.save()
+    return HttpResponse()
 
 
 @api_view(["POST"])
