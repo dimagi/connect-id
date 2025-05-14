@@ -378,3 +378,50 @@ class TestRecoveryPinConfirmationApi:
         recovery_status.refresh_from_db()
         assert response.status_code == 200
         assert recovery_status.step == RecoveryStatus.RecoverySteps.RESET_PASSWORD
+
+
+@pytest.mark.django_db
+class TestUpdateProfile:
+    test_number = "+27734567657"
+
+    url = reverse("update_profile")
+
+    def test_success(self, auth_device, user):
+        data = {"name": "FooBar", "secondary_phone": "+27731234567"}
+        user.phone_number = self.test_number
+        user.save()
+        response = auth_device.post(self.url, data)
+        assert response.status_code == 200
+        assert isinstance(response, HttpResponse)
+
+        updated_user = ConnectUser.objects.get(id=user.id)
+        assert updated_user.name == data["name"]
+        assert updated_user.recovery_phone == data["secondary_phone"]
+
+    @mock.patch("users.services.boto3.client")
+    def test_update_photo(self, mock_boto3_client, auth_device, user):
+        mock_s3 = mock.MagicMock()
+        mock_boto3_client.return_value = mock_s3
+
+        data = {
+            "photo": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+        }
+        user.phone_number = self.test_number
+        user.save()
+        auth_device.post(self.url, data)
+        mock_s3.put_object.assert_called_once()
+        _, kwargs = mock_s3.put_object.call_args
+        assert kwargs["Key"] == f"{user.id}.jpg"
+
+    def test_no_authentication(self, client):
+        response = client.get(reverse("demo_users"))
+        assert response.status_code == 403
+
+    def test_validation_error(self, auth_device, user):
+        data = {"secondary_phone": "-12415"}
+        user.phone_number = self.test_number
+        user.save()
+        response = auth_device.post(self.url, data)
+        assert response.status_code == 400
+        assert isinstance(response, JsonResponse)
+        assert response.json() == {"recovery_phone": ["The phone number entered is not valid."]}
