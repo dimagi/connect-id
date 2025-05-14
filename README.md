@@ -57,7 +57,7 @@
 (requires Ruby)
 
 ```bash
-gem install kamal -v '~> 1.0.0'
+gem install kamal -v '~> 1.9.2'
 ```
 
 #### 1Password CLI
