@@ -26,7 +26,6 @@ from .fcm_utils import create_update_device
 from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
 
 
-# Create your views here.
 @api_view(["POST"])
 @permission_classes([])
 def register(request):
