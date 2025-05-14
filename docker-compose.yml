@@ -1,17 +1,6 @@
 version: '3.8'
 
 services:
-  web:
-    build: .
-    command: python manage.py runserver 0.0.0.0:8000
-    volumes:
-      - .:/app/
-    ports:
-      - '8000:8000'
-    depends_on:
-      - db
-    env_file:
-      - ./docker.env
   db:
     image: postgres
     volumes:
@@ -26,6 +15,19 @@ services:
       test: pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}
       interval: 2s
       retries: 10
+  redis:
+    image: redis
+    # persistent storage
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: bash -c 'exec 6<>/dev/tcp/redis/6379'
+      interval: 2s
+      retries: 10
 
 volumes:
   postgres_data:
+  redis_data:

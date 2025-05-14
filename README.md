@@ -35,7 +35,13 @@
    DEBUG=True
    ```
 
-6. **Run Django migrations and start the development server:**
+````
+6. **Run local services with docker-compose**
+   ```bash
+   docker compose up
+````
+
+7. **Run Django migrations and start the development server:**
 
    ```bash
    ./manage.py migrate
@@ -88,4 +94,4 @@ Note: If you used a different profile name you will need to set the `AWS_PROFILE
 
 ### Deploy
 
-To deploy run `kamal deploy` from within the `deploy` directory
+To deploy run `kamal deploy` from within the `deploy` directory. Make sure you are on the `main` branch and have pulled the latest code.
