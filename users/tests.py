@@ -378,3 +378,45 @@ class TestRecoveryPinConfirmationApi:
         recovery_status.refresh_from_db()
         assert response.status_code == 200
         assert recovery_status.step == RecoveryStatus.RecoverySteps.RESET_PASSWORD
+
+
+class TestValidateFirebaseIDToken:
+    url = reverse("validate_firebase_id_token")
+
+    @property
+    def post_data(self):
+        return {"id_token": "123-456"}
+
+    @mock.patch("users.views.auth.verify_id_token")
+    def test_success(self, mock_verify_token, auth_device, user):
+        mock_verify_token.return_value = {"uid": "test-uid", "phone_number": user.phone_number.as_e164}
+        response = auth_device.post(self.url, data=self.post_data)
+        assert response.status_code == 200
+        assert isinstance(response, HttpResponse)
+        mock_verify_token.assert_called_once_with(self.post_data["id_token"])
+
+    def test_no_authentication(self, client):
+        response = client.post(self.url)
+        assert response.status_code == 401
+
+    def test_missing_token(self, auth_device):
+        response = auth_device.post(self.url)
+        assert response.status_code == 400
+        assert isinstance(response, JsonResponse)
+        assert response.json() == {"error": ErrorCodes.MISSING_TOKEN}
+
+    @mock.patch("users.views.auth.verify_id_token")
+    def test_invalid_token(self, mock_verify_token, auth_device):
+        mock_verify_token.return_value = {}
+        response = auth_device.post(self.url, data=self.post_data)
+        assert response.status_code == 400
+        assert isinstance(response, JsonResponse)
+        assert response.json() == {"error": ErrorCodes.INVALID_TOKEN}
+
+    @mock.patch("users.views.auth.verify_id_token")
+    def test_phone_mismatch(self, mock_verify_token, auth_device):
+        mock_verify_token.return_value = {"uid": "test-uid", "phone_number": "+1234567890"}
+        response = auth_device.post(self.url, data=self.post_data)
+        assert response.status_code == 400
+        assert isinstance(response, JsonResponse)
+        assert response.json() == {"error": ErrorCodes.PHONE_MISMATCH}
