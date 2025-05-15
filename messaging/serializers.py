@@ -8,7 +8,7 @@ CCC_MESSAGE_ACTION = "ccc_message"
 
 
 @dataclasses.dataclass
-class MessageData:
+class NotificationData:
     usernames: list[str] = None
     title: str = None
     body: str = None
@@ -28,14 +28,14 @@ class SingleMessageSerializer(serializers.Serializer):
         username = validated_data.pop("username", None)
         if username:
             validated_data["usernames"] = [username]
-        return MessageData(**validated_data)
+        return NotificationData(**validated_data)
 
 
 class BulkMessageSerializer(serializers.Serializer):
     messages = serializers.ListField(child=SingleMessageSerializer())
 
     def create(self, validated_data):
-        return [MessageData(**message) for message in validated_data["messages"]]
+        return [NotificationData(**message) for message in validated_data["messages"]]
 
 
 class MessageSerializer(serializers.ModelSerializer):

@@ -19,12 +19,13 @@ from messaging.models import Channel, Message, MessageDirection, MessageServer, 
 from messaging.serializers import (
     CCC_MESSAGE_ACTION,
     BulkMessageSerializer,
-    MessageData,
     MessageSerializer,
+    NotificationData,
     SingleMessageSerializer,
 )
 from messaging.task import make_request, send_messages_to_service_and_mark_status
 from users.models import ConnectUser
+from utils.notification import send_bulk_notification
 from utils.rest_framework import ClientProtectedResourceAuth, MessagingServerAuth
 
 
@@ -63,7 +64,7 @@ class SendMessage(APIView):
         serializer = SingleMessageSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         message = serializer.save()
-        result = send_bulk_message(message)
+        result = send_bulk_notification(message)
         return JsonResponse(result, status=200)
 
 
@@ -109,7 +110,7 @@ class SendMessageBulk(APIView):
         global_all_success = True
         results = []
         for message in messages:
-            message_result = send_bulk_message(message)
+            message_result = send_bulk_notification(message)
             results.append(message_result)
             if not message_result["all_success"]:
                 global_all_success = False
@@ -192,7 +193,7 @@ class CreateChannelView(APIView):
         )
         response_dict = {"channel_id": str(channel.channel_id), "consent": channel.user_consent}
         if created:
-            message = MessageData(
+            message = NotificationData(
                 usernames=[channel.connect_user.username],
                 title="Channel created",
                 body="Please provide your consent to send/receive message.",
@@ -205,7 +206,7 @@ class CreateChannelView(APIView):
                 },
             )
             # send fcm notification.
-            send_bulk_message(message)
+            send_bulk_notification(message)
             return JsonResponse(response_dict, status=status.HTTP_201_CREATED)
         else:
             return JsonResponse(response_dict, status=status.HTTP_200_OK)
@@ -233,14 +234,14 @@ class SendServerConnectMessage(APIView):
             return JsonResponse({"errors": ErrorCodes.CHANNEL_DOES_NOT_EXIST}, status=status.HTTP_400_BAD_REQUEST)
         channel = message.channel
         fcm_options = data.get("fcm_options", {})
-        message_to_send = MessageData(
+        message_to_send = NotificationData(
             usernames=[channel.connect_user.username],
             data=MessageSerializer(message).data,
             title="New Connect Message",
             body=f"You received a new message from {channel.visible_name}",
             fcm_options=fcm_options,
         )
-        send_bulk_message(message_to_send)
+        send_bulk_notification(message_to_send)
         return JsonResponse(
             {"message_id": str(message.message_id)},
             status=status.HTTP_200_OK,
