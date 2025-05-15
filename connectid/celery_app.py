@@ -25,5 +25,5 @@ app.conf.beat_schedule = {
     "resend_notifications_for_undelivered_messages": {
         "task": "messaging.task.resend_notifications_for_undelivered_messages",
         "schedule": timedelta(hours=1),
-    }
+    },
 }

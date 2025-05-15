@@ -12,8 +12,8 @@ from django.utils.timezone import now
 from rest_framework import status
 from rest_framework.generics import get_object_or_404
 
-from messaging.models import Message, MessageStatus, Channel, MessageDirection
-from messaging.serializers import NotificationData, MessageSerializer
+from messaging.models import Channel, Message, MessageDirection, MessageStatus
+from messaging.serializers import MessageSerializer, NotificationData
 from utils.notification import send_bulk_notification
 
 logger = logging.getLogger(__name__)
@@ -27,9 +27,9 @@ class CommCareHQAPIException(Exception):
 
 def make_request(url, json_data, secret):
     try:
-        data = json.dumps(json_data).encode('utf-8')
-        digest = hmac.new(secret.encode('utf-8'), data, hashlib.sha256).digest()
-        mac_digest = base64.b64encode(digest).decode('utf-8')
+        data = json.dumps(json_data).encode("utf-8")
+        digest = hmac.new(secret.encode("utf-8"), data, hashlib.sha256).digest()
+        mac_digest = base64.b64encode(digest).decode("utf-8")
         headers = {
             "Content-Type": "application/json",
             "X-MAC-DIGEST": mac_digest,
@@ -41,8 +41,7 @@ def make_request(url, json_data, secret):
         return CommCareHQAPIException({"status": "error", "message": str(e)})
 
 
-def send_messages_to_service_and_mark_status(channel_messages,
-                                             status_to_be_updated: MessageStatus):
+def send_messages_to_service_and_mark_status(channel_messages, status_to_be_updated: MessageStatus):
     sent_message_ids = []
 
     for channel_id, data in channel_messages.items():
@@ -58,12 +57,12 @@ def send_messages_to_service_and_mark_status(channel_messages,
                     "channel_id": str(channel_id),
                     "messages": messages,
                 },
-                secret=channel.server.secret_key
+                secret=channel.server.secret_key,
             )
             if response == status.HTTP_200_OK:
                 sent_message_ids.extend(msg["message_id"] for msg in messages)
 
-        except CommCareHQAPIException as e:
+        except CommCareHQAPIException:
             # To-Do: All the messages which gets failed should be sent again with some task.
             pass
 
@@ -74,7 +73,7 @@ def send_messages_to_service_and_mark_status(channel_messages,
 @shared_task(name="delete_old_messages")
 def delete_old_messages():
     """
-      Deletes messages that are older than 7 days.
+    Deletes messages that are older than 7 days.
     """
     cutoff_date = now() - timedelta(days=MESSAGE_RETENTION_DAYS)
     deleted_count, _ = Message.objects.filter(received__lte=cutoff_date).delete()
@@ -82,20 +81,19 @@ def delete_old_messages():
 
 @shared_task(name="resend_notifications_for_undelivered_messages")
 def resend_notifications_for_undelivered_messages():
-    undelivered_msgs = (Message.objects.filter(received__isnull=True,
-                                               direction=MessageDirection.MOBILE).select_related('channel',
-                                                                                                 'channel__connect_user'))
+    undelivered_msgs = Message.objects.filter(received__isnull=True, direction=MessageDirection.MOBILE).select_related(
+        "channel", "channel__connect_user"
+    )
     for msg in undelivered_msgs:
         channel = msg.channel
         serialized_msg = MessageSerializer(msg)
         username = channel.connect_user.username
-        message_to_send = NotificationData(
-            usernames=[username],
-            data=serialized_msg.data
-        )
+        message_to_send = NotificationData(usernames=[username], data=serialized_msg.data)
         try:
             send_bulk_notification(message_to_send)
         except Exception as e:
-            error_msg = (f"Error occurred while sending undelivered notification "
-                         f"to user :{username} for channel: {channel.channel_id} : {str(e)}")
+            error_msg = (
+                f"Error occurred while sending undelivered notification "
+                f"to user :{username} for channel: {channel.channel_id} : {str(e)}"
+            )
             sentry_sdk.capture_message(msg=error_msg, level="error")

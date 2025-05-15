@@ -11,15 +11,15 @@ def send_bulk_notification(message: NotificationData):
         message_result["all_success"] = message_all_success
         return message_result
 
-    active_devices = FCMDevice.objects.filter(
-        user__username__in=message.usernames, active=True
-    ).values_list('registration_id', 'user__username')
+    active_devices = FCMDevice.objects.filter(user__username__in=message.usernames, active=True).values_list(
+        "registration_id", "user__username"
+    )
     registration_id_to_username = {reg_id: username for reg_id, username in active_devices}
 
     batch_response = FCMDevice.objects.send_message(
         _build_message(message),
         additional_registration_ids=list(registration_id_to_username),
-        skip_registration_id_lookup=True
+        skip_registration_id_lookup=True,
     )
 
     for response, registration_id in zip(batch_response.response.responses, batch_response.registration_ids_sent):
@@ -48,7 +48,12 @@ def send_bulk_notification(message: NotificationData):
 
 def _build_message(message):
     notification = _build_notification(message)
-    return messaging.Message(data=message.data, notification=notification)
+    return messaging.Message(
+        data=message.data,
+        notification=notification,
+        fcm_options=messaging.FCMOptions(**message.fcm_options),
+        android=messaging.AndroidConfig(priority="high"),
+    )
 
 
 def _build_notification(data):
