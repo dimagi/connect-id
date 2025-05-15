@@ -4,3 +4,8 @@ pip-tools
 pytest
 pytest-django
 factory-boy
+flake8
+flake8-isort
+black
+pre-commit
+pytest-cov

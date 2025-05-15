@@ -7,7 +7,6 @@ import phonenumber_field.modelfields
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
@@ -16,17 +15,31 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='PaymentProfile',
+            name="PaymentProfile",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('phone_number', phonenumber_field.modelfields.PhoneNumberField(max_length=128, region=None)),
-                ('owner_name', models.TextField(max_length=150, blank=True)),
-                ('telecom_provider', models.CharField(blank=True, max_length=50, null=True)),
-                ('is_verified', models.BooleanField(default=False)),
-                ('status', models.CharField(choices=[('pending', 'Pending'), ('approved', 'Approved'), ('rejected', 'Rejected')], default='pending', max_length=10)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='payment_profile', to=settings.AUTH_USER_MODEL)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("phone_number", phonenumber_field.modelfields.PhoneNumberField(max_length=128, region=None)),
+                ("owner_name", models.TextField(max_length=150, blank=True)),
+                ("telecom_provider", models.CharField(blank=True, max_length=50, null=True)),
+                ("is_verified", models.BooleanField(default=False)),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[("pending", "Pending"), ("approved", "Approved"), ("rejected", "Rejected")],
+                        default="pending",
+                        max_length=10,
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "user",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="payment_profile",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
         ),
     ]

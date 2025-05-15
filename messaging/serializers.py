@@ -1,20 +1,19 @@
 import dataclasses
-from typing import List
 
 from rest_framework import serializers
 
 from messaging.models import Message
-
 
 CCC_MESSAGE_ACTION = "ccc_message"
 
 
 @dataclasses.dataclass
 class MessageData:
-    usernames: List[str] = None
+    usernames: list[str] = None
     title: str = None
     body: str = None
     data: dict = None
+    fcm_options: dict = dataclasses.field(default_factory=lambda: {})
 
 
 class SingleMessageSerializer(serializers.Serializer):
@@ -23,9 +22,10 @@ class SingleMessageSerializer(serializers.Serializer):
     title = serializers.CharField(required=False)
     body = serializers.CharField(required=False)
     data = serializers.DictField(required=False)
+    fcm_options = serializers.DictField(required=False, default={})
 
     def create(self, validated_data):
-        username = validated_data.pop('username', None)
+        username = validated_data.pop("username", None)
         if username:
             validated_data["usernames"] = [username]
         return MessageData(**validated_data)
@@ -40,6 +40,8 @@ class BulkMessageSerializer(serializers.Serializer):
 
 class MessageSerializer(serializers.ModelSerializer):
     ciphertext = serializers.SerializerMethodField()
+    channel = serializers.SerializerMethodField()
+    channel_name = serializers.SerializerMethodField()
     tag = serializers.SerializerMethodField()
     nonce = serializers.SerializerMethodField()
     message_id = serializers.SerializerMethodField()
@@ -47,7 +49,17 @@ class MessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Message
-        fields = ["message_id", "channel", "ciphertext", "tag", "nonce", "timestamp", "status", "action"]
+        fields = [
+            "message_id",
+            "channel",
+            "channel_name",
+            "ciphertext",
+            "tag",
+            "nonce",
+            "timestamp",
+            "status",
+            "action",
+        ]
 
     def get_ciphertext(self, obj):
         return obj.content["ciphertext"]
@@ -63,3 +75,9 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def get_action(self, obj):
         return CCC_MESSAGE_ACTION
+
+    def get_channel(self, obj):
+        return str(obj.channel_id)
+
+    def get_channel_name(self, obj):
+        return obj.channel.visible_name

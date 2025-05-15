@@ -1,10 +1,10 @@
 import base64
 import logging
 
-logger = logging.getLogger(__name__)
-
 import sentry_sdk
 from rest_framework.settings import api_settings
+
+logger = logging.getLogger(__name__)
 
 
 class CurrentVersionMiddleware:
@@ -20,7 +20,7 @@ class CurrentVersionMiddleware:
         return response
 
     def process_view(self, request, view_func, view_args, view_kwargs):
-        if hasattr(view_func, 'cls') and view_func.cls.versioning_class is not None:
+        if hasattr(view_func, "cls") and view_func.cls.versioning_class is not None:
             request.include_version_headers = True
 
 
@@ -32,21 +32,25 @@ class Log401ErrorsMiddleware:
         response = self.get_response(request)
 
         if response.status_code == 401:
-            auth_header = request.headers.get('AUTHORIZATION', '')
+            auth_header = request.headers.get("AUTHORIZATION", "")
             username = None
             auth_error = None
 
-            if auth_header.startswith('Basic '):
+            if auth_header.startswith("Basic "):
                 try:
-                    encoded_credentials = auth_header.split(' ')[1]
-                    decoded_credentials = base64.b64decode(encoded_credentials).decode('utf-8')
-                    username, _ = decoded_credentials.split(':')
+                    encoded_credentials = auth_header.split(" ")[1]
+                    decoded_credentials = base64.b64decode(encoded_credentials).decode("utf-8")
+                    username, _ = decoded_credentials.split(":")
                 except ValueError as e:
                     auth_error = str(e)
                     username = None
 
             scope = sentry_sdk.get_current_scope()
-            scope.set_user({'username': username, })
+            scope.set_user(
+                {
+                    "username": username,
+                }
+            )
 
             error_msg = "401 Unauthorized captured Error."
             if auth_error:

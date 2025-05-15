@@ -1,6 +1,7 @@
 celery
 Django
 django-axes[ipware]
+django-allow-cidr
 django-oauth-toolkit
 django-otp
 django-phonenumber-field
@@ -13,3 +14,6 @@ redis
 sentry-sdk[django]
 twilio
 zxcvbn
+django-environ
+google-auth
+google-api-python-client

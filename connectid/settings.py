@@ -10,20 +10,20 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.1/ref/settings/
 """
 import logging
-import os
-import sentry_sdk
-
 from pathlib import Path
+
+import environ
+import sentry_sdk
 from sentry_sdk.integrations.celery import CeleryIntegration
 from sentry_sdk.integrations.django import DjangoIntegration
-from sentry_sdk.integrations.logging import LoggingIntegration, ignore_logger
+from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.redis import RedisIntegration
-
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-env = os.environ
+env = environ.Env()
+env.read_env(str(BASE_DIR / ".env"))
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.1/howto/deployment/checklist/
@@ -32,62 +32,62 @@ env = os.environ
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'phonenumber_field',
-    'users.apps.UsersConfig',
-    'messaging',
-    'oauth2_provider',
-    'payments',
-    'rest_framework',
-    'axes',
-    'fcm_django',
-    'django.contrib.sites',
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "phonenumber_field",
+    "users.apps.UsersConfig",
+    "messaging",
+    "oauth2_provider",
+    "payments",
+    "rest_framework",
+    "axes",
+    "fcm_django",
+    "django.contrib.sites",
 ]
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'axes.middleware.AxesMiddleware',
-    'utils.middleware.CurrentVersionMiddleware',
-    'utils.middleware.Log401ErrorsMiddleware'
+    "allow_cidr.middleware.AllowCIDRMiddleware",
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "axes.middleware.AxesMiddleware",
+    "utils.middleware.CurrentVersionMiddleware",
+    "utils.middleware.Log401ErrorsMiddleware",
 ]
 
 AUTHENTICATION_BACKENDS = [
     # AxesStandaloneBackend should be the first backend in the AUTHENTICATION_BACKENDS list.
-    'axes.backends.AxesStandaloneBackend',
-    'django.contrib.auth.backends.ModelBackend',
+    "axes.backends.AxesStandaloneBackend",
+    "django.contrib.auth.backends.ModelBackend",
 ]
 
-ROOT_URLCONF = 'connectid.urls'
+ROOT_URLCONF = "connectid.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
         "DIRS": [BASE_DIR / "templates"],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.debug',
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'connectid.wsgi.application'
-
+WSGI_APPLICATION = "connectid.wsgi.application"
 
 TRUSTED_COMMCAREHQ_HOSTS = [
     "www.commcarehq.org",
@@ -99,20 +99,15 @@ TRUSTED_COMMCAREHQ_HOSTS = [
 # https://docs.djangoproject.com/en/4.1/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'users.validators.EntropyPasswordValidator',
-        'OPTIONS': {
-            'min_strength': 2
-        }
-    },
+    {"NAME": "users.validators.EntropyPasswordValidator", "OPTIONS": {"min_strength": 2}},
 ]
 
 # Internationalization
 # https://docs.djangoproject.com/en/4.1/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = "UTC"
 
 USE_I18N = True
 
@@ -121,102 +116,76 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.1/howto/static-files/
 
-STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.1/ref/settings/#default-auto-field
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-AUTH_USER_MODEL = 'users.ConnectUser'
+AUTH_USER_MODEL = "users.ConnectUser"
 
 LOG_DIR = BASE_DIR
-DJANGO_LOG_FILE = LOG_DIR / 'django.log'
+DJANGO_LOG_FILE = LOG_DIR / "django.log"
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'django.server': {
-            '()': 'django.utils.log.ServerFormatter',
-            'format': '[{server_time}] {message}',
-            'style': '{',
-        }
-    },
-    'handlers': {
-        'file' : {
-            'level': 'INFO',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': DJANGO_LOG_FILE,
-            'maxBytes': 10 * 1024 * 1024,  # 10 MB
-            'backupCount': 20  # Backup 200 MB of logs
-        },
-        'console': {
-            'class': 'logging.StreamHandler',
-        },
-        'django.server': {
-            'level': 'INFO',
-            'class': 'logging.StreamHandler',
-            'formatter': 'django.server',
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "%(levelname)s %(asctime)s %(name)s %(message)s",
         },
     },
-    'loggers': {
-        'django': {
-            'handlers': ['file', 'console'],
-            'level': 'INFO',
-            'propagate': True,
+    "handlers": {
+        "console": {
+            "level": "DEBUG",
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
         },
-        'django.server': {
-            'handlers': ['django.server'],
-            'level': 'INFO',
-            'propagate': False,
+        "null": {
+            "class": "logging.NullHandler",
+        },
+    },
+    "root": {"level": "INFO", "handlers": ["console"]},
+    "django.template": {
+        "handlers": ["console"],
+        "level": "WARN",
+        "propagate": False,
+    },
+    "loggers": {
+        "django.security.DisallowedHost": {
+            "handlers": ["null"],
+            "propagate": False,
         },
     },
 }
 
-
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.BasicAuthentication',
-        'oauth2_provider.contrib.rest_framework.OAuth2Authentication',
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.BasicAuthentication",
+        "oauth2_provider.contrib.rest_framework.OAuth2Authentication",
     ],
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
     ],
-    'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.AnonRateThrottle',
-        'rest_framework.throttling.UserRateThrottle'
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
     ],
-    'DEFAULT_THROTTLE_RATES': {
-        'anon': '100/day',
-        'user': '1000/day'
-    },
+    "DEFAULT_THROTTLE_RATES": {"anon": "1000/day", "user": "10000/day"},
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
     "DEFAULT_VERSION": "1.0",
-    "ALLOWED_VERSIONS": ["1.0"]
+    "ALLOWED_VERSIONS": ["1.0"],
 }
 
 
 AXES_COOLOFF_TIME = 6
 AXES_IPWARE_META_PRECEDENCE_ORDER = [
-    'HTTP_X_FORWARDED_FOR',
-    'REMOTE_ADDR',
+    "HTTP_X_FORWARDED_FOR",
+    "REMOTE_ADDR",
 ]
 
-LOGIN_URL = '/admin/login/'
-
-OAUTH2_PROVIDER = {
-    "OIDC_ENABLED": True,
-    "OIDC_RSA_PRIVATE_KEY": """
-INSERT PRIVATE KEY HERE
-""",
-    "SCOPES": {
-        "openid": "OpenID Connect scope",
-    },
-    "PKCE_REQUIRED": False,
-    "OAUTH2_VALIDATOR_CLASS": "users.oauth.ConnectOAuth2Validator",
-    # ... any other settings you want
-}
+AXES_ENABLED = False
 
 FCM_CREDENTIALS = None
 
@@ -226,29 +195,20 @@ FCM_DJANGO_SETTINGS = {
     "DELETE_INACTIVE_DEVICES": False,
 }
 
-OAUTH2_PROVIDER_APPLICATION_MODEL = 'oauth2_provider.Application'
+OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
 
 SITE_ID = 1
 
-APP_HASH = "apphash"
+APP_HASH = env("APP_HASH", default="apphash")
 
-SENTRY_DSN = None
-SENTRY_ENVIRONMENT = "local"
-SENTRY_TRACES_SAMPLE_RATE = 0.0
-
-
-from .localsettings import *
-
-# Firebase
-if FCM_CREDENTIALS:
-    from firebase_admin import credentials, initialize_app
-    creds = credentials.Certificate(FCM_CREDENTIALS)
-    default_app = initialize_app(credential=creds)
+SENTRY_DSN = env("SENTRY_DSN", default=None)
+SENTRY_ENVIRONMENT = env("SENTRY_ENVIRONMENT", default="local")
+SENTRY_TRACES_SAMPLE_RATE = env("SENTRY_TRACES_SAMPLE_RATE", default="0.0")
 
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
 
-CELERY_BROKER_URL = env.get("CELERY_BROKER_URL", default="redis://localhost:6379/0")
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
 
 if SENTRY_DSN:
     sentry_logging = LoggingIntegration(
@@ -268,3 +228,61 @@ if SENTRY_DSN:
         environment=SENTRY_ENVIRONMENT,
         traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
     )
+
+SECRET_KEY = env(
+    "SECRET_KEY",
+    default="django-insecure-yofpqrszrdtv0ftihjd09cuim2al9^n9j^b85%-y0v*^_lj18d",
+)
+
+# SECURITY WARNING: don't run with debug turned on in production!!
+DEBUG = env("DEBUG", default=False)
+
+DATABASES = {
+    "default": env.db(
+        "DATABASE_URL",
+        default="postgresql:///connect",
+    ),
+}
+
+ALLOWED_HOSTS = ["127.0.0.1", "localhost", "commcarehq.org"] + env.list("DJANGO_ALLOWED_HOSTS", default=[])
+ALLOWED_CIDR_NETS = env.list("DJANGO_ALLOWED_CIDR_NETS", default=[])
+
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+
+TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default=None)
+TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default=None)
+TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default=None)
+
+OAUTH2_PROVIDER = {
+    "OIDC_ENABLED": True,
+    "OIDC_RSA_PRIVATE_KEY": env.str("OIDC_RSA_PRIVATE_KEY", multiline=True, default=""),
+    "SCOPES": {"openid": "OpenID Connect scope", "sync": "sync with commcarehq"},
+    "PKCE_REQUIRED": False,
+    "OAUTH2_VALIDATOR_CLASS": "users.oauth.ConnectOAuth2Validator",
+}
+
+FCM_PRIVATE_KEY = env.str("FCM_PRIVATE_KEY", multiline=True, default="")
+
+if FCM_PRIVATE_KEY:
+    FCM_CREDENTIALS = {
+        "type": "service_account",
+        "project_id": env("FCM_PROJECT_ID", default=""),
+        "private_key_id": env("FCM_PRIVATE_KEY_ID", default=""),
+        "private_key": FCM_PRIVATE_KEY,
+        "client_email": env("FCM_CLIENT_EMAIL", default=""),
+        "client_id": env("FCM_CLIENT_ID", default=""),
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "client_x509_cert_url": env("FCM_CLIENT_X509_CERT_URL", default=""),
+        "universe_domain": "googleapis.com",
+    }
+
+    # Firebase
+    from firebase_admin import credentials, initialize_app
+
+    creds = credentials.Certificate(FCM_CREDENTIALS)
+    default_app = initialize_app(credential=creds)
+
+
+GOOGLE_APPLICATION_CREDENTIALS = env("GOOGLE_APPLICATION_CREDENTIALS", default="")
