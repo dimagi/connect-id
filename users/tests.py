@@ -10,12 +10,10 @@ from django.urls import reverse
 from fcm_django.models import FCMDevice
 
 from payments.models import PaymentProfile
-from test_utils.decorators import skip_app_integrity_check
 from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from users.factories import CredentialFactory, PhoneDeviceFactory, RecoveryStatusFactory, UserFactory
 from users.fcm_utils import create_update_device
 from users.models import ConnectUser, PhoneDevice, RecoveryStatus
-from utils.app_integrity.const import ErrorCodes as IntegrityErrorCodes
 
 
 @pytest.mark.django_db
@@ -29,37 +27,6 @@ class TestRegistration:
                 "phone_number": "+27734567657",
             },
             HTTP_ACCEPT="application/json; version=1.0",
-        )
-        assert response.status_code == 200, response.content
-        user = ConnectUser.objects.get(username="testuser")
-        assert user.phone_number == "+27734567657"
-
-    def test_registration_v2_without_integrity_data(self, client):
-        response = client.post(
-            "/users/register",
-            {
-                "username": "testuser",
-                "password": "testpass",
-                "phone_number": "+27734567657",
-            },
-            HTTP_ACCEPT="application/json; version=2.0",
-        )
-        assert response.status_code == 400
-        assert response.json()["error_code"] == IntegrityErrorCodes.INTEGRITY_DATA_MISSING
-        assert not ConnectUser.objects.filter(username="testuser").exists()
-
-    @skip_app_integrity_check
-    def test_registration_v2_integrity_passed(self, client):
-        response = client.post(
-            "/users/register",
-            {
-                "username": "testuser",
-                "password": "testpass",
-                "phone_number": "+27734567657",
-            },
-            HTTP_ACCEPT="application/json; version=2.0",
-            HTTP_CC_INTEGRITY_TOKEN="integrity_token",
-            HTTP_CC_REQUEST_HASH="request_hash",
         )
         assert response.status_code == 200, response.content
         user = ConnectUser.objects.get(username="testuser")
@@ -176,15 +143,12 @@ def test_otp_generation_after_five_minutes(user):
 
 
 class TestValidatePhone:
-    @skip_app_integrity_check
     @patch.object(PhoneDevice, "generate_challenge")
     def test_otp_device_created(self, generate_challenge_mock, auth_device):
         assert not PhoneDevice.objects.all().exists()
 
         response = auth_device.post(
             reverse("validate_phone"),
-            HTTP_CC_INTEGRITY_TOKEN="integrity_token",
-            HTTP_CC_REQUEST_HASH="request_hash",
         )
 
         assert response.status_code == 200
@@ -632,8 +596,6 @@ class TestChangePhone:
         return client.post(
             reverse("change_phone"),
             data=data,
-            HTTP_CC_INTEGRITY_TOKEN="integrity_token",
-            HTTP_CC_REQUEST_HASH="request_hash",
         )
 
 
