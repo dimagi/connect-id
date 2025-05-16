@@ -417,6 +417,14 @@ class TestUpdateProfile:
         assert isinstance(response, JsonResponse)
         assert response.json() == {"error": ErrorCodes.FAILED_TO_UPLOAD}
 
+    @mock.patch("users.views.MAX_PHOTO_SIZE", 1)
+    def test_update_photo_too_large(self, auth_device):
+        data = {"photo": "123"}
+        response = auth_device.post(self.url, data)
+        assert response.status_code == 400
+        assert isinstance(response, JsonResponse)
+        assert response.json() == {"error": ErrorCodes.FILE_TOO_LARGE}
+
     def test_no_authentication(self, client):
         response = client.get(reverse("demo_users"))
         assert response.status_code == 403
