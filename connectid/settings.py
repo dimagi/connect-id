@@ -159,6 +159,14 @@ LOGGING = {
     },
 }
 
+
+class APIVersion:
+    V1 = "1.0"
+    V2 = "2.0"
+
+
+API_VERSION = APIVersion
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.BasicAuthentication",
@@ -173,8 +181,11 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_THROTTLE_RATES": {"anon": "1000/day", "user": "10000/day"},
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
-    "DEFAULT_VERSION": "1.0",
-    "ALLOWED_VERSIONS": ["1.0"],
+    "DEFAULT_VERSION": API_VERSION.V2,
+    "ALLOWED_VERSIONS": [
+        API_VERSION.V1,
+        API_VERSION.V2,
+    ],
 }
 
 

@@ -26,7 +26,6 @@ from .fcm_utils import create_update_device
 from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
 
 
-# Create your views here.
 @api_view(["POST"])
 @permission_classes([])
 def register(request):
@@ -115,6 +114,7 @@ def recover_account(request):
     data = request.data
     if not data.get("phone"):
         return JsonResponse({"error": "OTP missing required key phone"}, status=400)
+
     user = ConnectUser.objects.get(phone_number=data["phone"], is_active=True)
     device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
     device.generate_challenge()
@@ -275,6 +275,7 @@ def change_phone(request):
     if error:
         return JsonResponse({"error": error}, status=400)
     user.phone_number = data["new_phone_number"]
+
     try:
         user.full_clean()
     except ValidationError as e:
@@ -286,12 +287,15 @@ def change_phone(request):
 @api_view(["POST"])
 def change_password(request):
     data = request.data
+    if not data.get("password"):
+        return JsonResponse({"error": "No password provided"}, status=400)
+
     user = request.user
     password = data["password"]
     try:
         validate_password(password)
-    except ValidationError as e:
-        return JsonResponse(e.message_dict, status=400)
+    except ValidationError:
+        return JsonResponse({"error": "Password is not complex enough"}, status=400)
     user.set_password(password)
     user.save()
     return HttpResponse()
@@ -321,6 +325,10 @@ def update_profile(request):
 def set_recovery_pin(request):
     data = request.data
     user = request.user
+
+    if not data.get("recovery_pin"):
+        return JsonResponse({"error": ErrorCodes.MISSING_RECOVERY_PIN}, status=400)
+
     recovery_pin = data["recovery_pin"]
     user.set_recovery_pin(recovery_pin)
     user.save()
