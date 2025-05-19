@@ -1,6 +1,7 @@
 celery
 Django
 django-axes[ipware]
+django-allow-cidr
 django-oauth-toolkit
 django-otp
 django-phonenumber-field
