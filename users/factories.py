@@ -14,7 +14,7 @@ class UserFactory(DjangoModelFactory):
 
     username = factory.Faker("user_name")
     password = factory.PostGenerationMethodCall("set_password", "testpass")
-    phone_number = "+27734567657"
+    phone_number = factory.Faker("phone_number")
     deactivation_token = factory.Faker("bothify", text="????####")
     deactivation_token_valid_until = now() + timedelta(days=1)
 
