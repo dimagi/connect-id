@@ -14,6 +14,8 @@ def upload_photo_to_s3(image_base64, user_id):
     s3_client = boto3.client("s3")
     try:
         image_data = base64.b64decode(image_base64)
+        if not image_data.startswith(b"\xff\xd8"):  # Expected format for JPEG
+            return ErrorCodes.INVALID_IMAGE_FORMAT
         s3_client.put_object(
             Bucket=settings.AWS_S3_PHOTO_BUCKET_NAME,
             Key=filename,
