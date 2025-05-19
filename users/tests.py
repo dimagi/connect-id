@@ -417,7 +417,7 @@ class TestUpdateProfile:
         assert isinstance(response, JsonResponse)
         assert response.json() == {"error": ErrorCodes.FAILED_TO_UPLOAD}
 
-    @mock.patch("users.views.MAX_PHOTO_SIZE", 1)
+    @mock.patch("users.services.MAX_PHOTO_SIZE", 1)
     def test_update_photo_too_large(self, auth_device):
         data = {"photo": "123"}
         response = auth_device.post(self.url, data)

@@ -1,10 +1,15 @@
 import base64
 
 import boto3
+import sentry_sdk
 from django.conf import settings
+
+from users.const import MAX_PHOTO_SIZE, ErrorCodes
 
 
 def upload_photo_to_s3(image_base64, user_id):
+    if len(image_base64) > MAX_PHOTO_SIZE:
+        return ErrorCodes.FILE_TOO_LARGE
     filename = f"{user_id}.jpg"
     s3_client = boto3.client("s3")
     try:
@@ -15,6 +20,6 @@ def upload_photo_to_s3(image_base64, user_id):
             Body=image_data,
             ContentType="image/jpeg",
         )
-    except Exception:
-        return False
-    return True
+    except Exception as e:
+        sentry_sdk.capture_exception(e)
+        return ErrorCodes.FAILED_TO_UPLOAD
