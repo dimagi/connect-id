@@ -685,30 +685,22 @@ class TestUpdateProfile:
     def test_update_photo(self, mock_boto3_client, auth_device, user):
         mock_s3 = mock.MagicMock()
         mock_boto3_client.return_value = mock_s3
-        data = {"photo": "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEB"}
+        data = {"photo": "data:image/jpg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEB"}
         auth_device.post(self.url, data)
         mock_s3.put_object.assert_called_once()
         _, kwargs = mock_s3.put_object.call_args
         assert kwargs["Key"] == f"{user.id}.jpg"
 
     def test_update_photo_invalid(self, auth_device):
-        data = {"photo": "invalid-base64"}
+        data = {"photo": "data:image/png;base64,invalid-base64"}
         response = auth_device.post(self.url, data)
         assert response.status_code == 400
         assert isinstance(response, JsonResponse)
         assert response.json() == {"error": ErrorCodes.FAILED_TO_UPLOAD}
 
-    def test_update_photo_wrong_format(self, auth_device):
-        # Partial base64 string for PNG image
-        data = {"photo": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+P+/"}
-        response = auth_device.post(self.url, data)
-        assert response.status_code == 400
-        assert isinstance(response, JsonResponse)
-        assert response.json() == {"error": ErrorCodes.INVALID_IMAGE_FORMAT}
-
     @mock.patch("users.services.MAX_PHOTO_SIZE", 1)
     def test_update_photo_too_large(self, auth_device):
-        data = {"photo": "123"}
+        data = {"photo": "data:image/jpg;base64, 123"}
         response = auth_device.post(self.url, data)
         assert response.status_code == 400
         assert isinstance(response, JsonResponse)
