@@ -316,7 +316,7 @@ def update_profile(request):
     if data.get("photo"):
         error_code = upload_photo_to_s3(data["photo"], user.id)
         if error_code:
-            return JsonResponse({"error": error_code}, status=400)
+            return JsonResponse({"error": error_code}, status=500)
     if changed:
         try:
             user.full_clean()

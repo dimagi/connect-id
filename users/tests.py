@@ -694,7 +694,7 @@ class TestUpdateProfile:
     def test_update_photo_invalid(self, auth_device):
         data = {"photo": "data:image/png;base64,invalid-base64"}
         response = auth_device.post(self.url, data)
-        assert response.status_code == 400
+        assert response.status_code == 500
         assert isinstance(response, JsonResponse)
         assert response.json() == {"error": ErrorCodes.FAILED_TO_UPLOAD}
 
@@ -702,7 +702,7 @@ class TestUpdateProfile:
     def test_update_photo_too_large(self, auth_device):
         data = {"photo": "data:image/jpg;base64, 123"}
         response = auth_device.post(self.url, data)
-        assert response.status_code == 400
+        assert response.status_code == 500
         assert isinstance(response, JsonResponse)
         assert response.json() == {"error": ErrorCodes.FILE_TOO_LARGE}
 
