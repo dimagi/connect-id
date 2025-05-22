@@ -70,7 +70,7 @@ def start_device_configuration(request):
     data = request.data
 
     if "phone_number" not in data:
-        return JsonResponse({"error": ErrorCodes.MISSING_DATA}, status=400)
+        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
     token_session = ConfigurationTokenSession.objects.create(phone_number=data["phone_number"])
     response_data = {
