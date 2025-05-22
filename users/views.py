@@ -24,15 +24,7 @@ from utils.rest_framework import ClientProtectedResourceAuth
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
-from .models import (
-    ConfigurationTokenSession,
-    ConnectUser,
-    Credential,
-    PhoneDevice,
-    RecoveryStatus,
-    UserCredential,
-    UserKey,
-)
+from .models import ConfigurationSession, ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
 from .services import upload_photo_to_s3
 
 
@@ -70,9 +62,9 @@ def start_device_configuration(request):
     data = request.data
 
     if "phone_number" not in data:
-        return JsonResponse({"error": ErrorCodes.MISSING_DATA}, status=400)
+        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
-    token_session = ConfigurationTokenSession.objects.create(phone_number=data["phone_number"])
+    token_session = ConfigurationSession.objects.create(phone_number=data["phone_number"])
     response_data = {
         "required_lock": "",  # device" or "biometric"
         "demo_user": data["phone_number"].startswith(TEST_NUMBER_PREFIX),
