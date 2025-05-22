@@ -1,4 +1,5 @@
 import base64
+import binascii
 import os
 from datetime import timedelta
 from uuid import uuid4
@@ -163,3 +164,27 @@ class UserCredential(models.Model):
             )
             sender = get_sms_sender(user.phone_number.country_code)
             send_sms(user.phone_number.as_e164, message, sender)
+
+
+class ConfigurationTokenSession(models.Model):
+    key = models.CharField(max_length=40, primary_key=True)
+    created = models.DateTimeField(auto_now_add=True)
+    expires = models.DateTimeField()
+    phone_number = PhoneNumberField()
+
+    def save(self, *args, **kwargs):
+        if not self.key:
+            self.key = self.generate_key()
+        if not self.expires:
+            self.expires = now() + timedelta(hours=4)
+        return super().save(*args, **kwargs)
+
+    @classmethod
+    def generate_key(cls):
+        return binascii.hexlify(os.urandom(20)).decode()
+
+    def is_valid(self):
+        return self.expires > now()
+
+    def __str__(self):
+        return self.key
