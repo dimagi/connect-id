@@ -24,6 +24,7 @@ from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
 from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
+from .services import upload_photo_to_s3
 
 
 @api_view(["POST"])
@@ -317,6 +318,10 @@ def update_profile(request):
     if data.get("secondary_phone"):
         user.recovery_phone = data["secondary_phone"]
         changed = True
+    if data.get("photo"):
+        error_code = upload_photo_to_s3(data["photo"], user.id)
+        if error_code:
+            return JsonResponse({"error": error_code}, status=500)
     if changed:
         try:
             user.full_clean()
