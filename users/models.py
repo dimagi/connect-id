@@ -22,6 +22,10 @@ from .const import TEST_NUMBER_PREFIX
 
 
 class ConnectUser(AbstractUser):
+    class DeviceSecurity(models.TextChoices):
+        PIN = "pin", "pin"
+        BIOMETRIC = "biometric", "biometric"
+
     phone_number = PhoneNumberField()
     phone_validated = models.BooleanField(default=False)
     recovery_phone = PhoneNumberField(blank=True)
@@ -35,6 +39,8 @@ class ConnectUser(AbstractUser):
     recovery_phone_validation_deadline = models.DateField(blank=True, null=True)
     deactivation_token = models.CharField(max_length=25, blank=True, null=True)
     deactivation_token_valid_until = models.DateTimeField(blank=True, null=True)
+
+    device_security = models.CharField(choices=DeviceSecurity.choices, default=DeviceSecurity.BIOMETRIC, max_length=15)
 
     # removed from base class
     first_name = None
