@@ -13,7 +13,7 @@ from rest_framework import status
 
 from messaging.factories import ChannelFactory, MessageFactory, ServerFactory
 from messaging.models import Channel, Message, MessageDirection, MessageStatus
-from messaging.serializers import MessageData, MessageSerializer
+from messaging.serializers import MessageSerializer, NotificationData
 from users.factories import FCMDeviceFactory
 
 APPLICATION_JSON = "application/json"
@@ -206,7 +206,7 @@ def test_send_fcm_notification_view(client, channel):
     server = ServerFactory()
     headers = make_basic_auth_header(server.server_id, server.secret_key)
 
-    with mock.patch("messaging.views.send_bulk_message") as mock_send_bulk_message:
+    with mock.patch("messaging.views.send_bulk_notification") as mock_send_bulk_message:
         response = client.post(url, data=data, content_type=APPLICATION_JSON, **headers)
         json_data = response.json()
         assert response.status_code == status.HTTP_200_OK
@@ -218,7 +218,7 @@ def test_send_fcm_notification_view(client, channel):
 
         serialized_msg = MessageSerializer(db_msg).data
         serialized_msg["channel"] = str(db_msg.channel.channel_id)
-        expected = MessageData(
+        expected = NotificationData(
             usernames=[channel.connect_user.username],
             data=serialized_msg,
             title="New Connect Message",

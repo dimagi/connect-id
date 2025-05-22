@@ -25,6 +25,7 @@ from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
 from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
+from .services import upload_photo_to_s3
 
 
 @api_view(["POST"])
@@ -65,7 +66,9 @@ def test(request):
 @api_view(["POST"])
 def validate_phone(request):
     user = request.user
-    return PhoneDevice.send_otp_httpresponse(phone_number=user.phone_number, user=user)
+    otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.phone_number, user=user)
+    otp_device.generate_challenge()
+    return HttpResponse()
 
 
 @api_view(["POST"])
@@ -108,7 +111,10 @@ def validate_secondary_phone(request):
     user = request.user
     if not user.recovery_phone:
         return JsonResponse({"error": NO_RECOVERY_PHONE_ERROR}, status=400)
-    return PhoneDevice.send_otp_httpresponse(phone_number=user.recovery_phone, user=user)
+
+    otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.recovery_phone, user=user)
+    otp_device.generate_challenge()
+    return HttpResponse()
 
 
 @api_view(["POST"])
@@ -333,6 +339,10 @@ def update_profile(request):
     if data.get("secondary_phone"):
         user.recovery_phone = data["secondary_phone"]
         changed = True
+    if data.get("photo"):
+        error_code = upload_photo_to_s3(data["photo"], user.id)
+        if error_code:
+            return JsonResponse({"error": error_code}, status=500)
     if changed:
         try:
             user.full_clean()
