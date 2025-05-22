@@ -801,8 +801,24 @@ class TestStartConfigurationView:
 
     @skip_app_integrity_check
     def test_device_lock_required(self, client):
-        pass
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": Faker().phone_number()},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.json().get("required_lock") == ConnectUser.DeviceSecurity.BIOMETRIC
 
     @skip_app_integrity_check
     def test_biometric_lock_required(self, client):
-        pass
+        pin_user = UserFactory()
+        pin_user.device_security = ConnectUser.DeviceSecurity.PIN
+        pin_user.save()
+
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": pin_user.phone_number},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.json().get("required_lock") == ConnectUser.DeviceSecurity.PIN

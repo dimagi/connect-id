@@ -48,6 +48,14 @@ class ConnectUser(AbstractUser):
 
     REQUIRED_FIELDS = ["phone_number", "name"]
 
+    @classmethod
+    def get_device_security_requirement(cls, phone_number) -> str:
+        try:
+            user = cls.objects.get(phone_number=phone_number)
+        except ConnectUser.DoesNotExist:
+            return ConnectUser.DeviceSecurity.BIOMETRIC
+        return user.device_security
+
     def set_recovery_pin(self, pin):
         hashed_value = make_password(pin)
         self.recovery_pin = hashed_value

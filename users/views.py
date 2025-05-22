@@ -66,7 +66,7 @@ def start_device_configuration(request):
 
     token_session = ConfigurationSession.objects.create(phone_number=data["phone_number"])
     response_data = {
-        "required_lock": "",  # device" or "biometric"
+        "required_lock": ConnectUser.get_device_security_requirement(data["phone_number"]),
         "demo_user": data["phone_number"].startswith(TEST_NUMBER_PREFIX),
         "token": token_session.key,
     }
