@@ -171,6 +171,7 @@ class ConfigurationSession(models.Model):
     created = models.DateTimeField(auto_now_add=True)
     expires = models.DateTimeField()
     phone_number = PhoneNumberField()
+    is_phone_validated = models.BooleanField(default=False)
 
     def save(self, *args, **kwargs):
         if not self.key:
