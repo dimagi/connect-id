@@ -1,7 +1,7 @@
 import base64
-import binascii
 import os
 from datetime import timedelta
+from secrets import token_hex
 from uuid import uuid4
 
 from django.conf import settings
@@ -179,9 +179,9 @@ class ConfigurationSession(models.Model):
             self.expires = now() + timedelta(hours=4)
         return super().save(*args, **kwargs)
 
-    @classmethod
-    def generate_key(cls):
-        return binascii.hexlify(os.urandom(20)).decode()
+    @staticmethod
+    def generate_key():
+        return token_hex()
 
     def is_valid(self):
         return self.expires > now()
