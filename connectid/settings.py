@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "oauth2_provider",
     "payments",
     "rest_framework",
+    "rest_framework.authtoken",
     "axes",
     "fcm_django",
     "django.contrib.sites",
