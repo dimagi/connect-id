@@ -5,28 +5,28 @@ from django.utils import timezone
 from rest_framework import exceptions
 from rest_framework.test import APIRequestFactory
 
-from users.auth import BearerTokenAuthentication
-from users.factories import ConfigurationTokenSessionFactory
+from users.auth import SessionTokenAuthentication
+from users.factories import ConfigurationSessionFactory
 
 
 @pytest.fixture
 def token_auth():
-    return BearerTokenAuthentication()
+    return SessionTokenAuthentication()
 
 
 @pytest.fixture
 def valid_token():
-    return ConfigurationTokenSessionFactory()
+    return ConfigurationSessionFactory()
 
 
 @pytest.fixture
 def expired_token():
     expires = timezone.now() - timedelta(days=2)
-    return ConfigurationTokenSessionFactory(expires=expires)
+    return ConfigurationSessionFactory(expires=expires)
 
 
 @pytest.mark.django_db
-class TestBearerTokenAuthentication:
+class TestSessionTokenAuthentication:
     def test_authentication_valid_token(self, token_auth, valid_token):
         request = APIRequestFactory().get("/", HTTP_AUTHORIZATION=f"Bearer {valid_token.key}")
         user, token = token_auth.authenticate(request)

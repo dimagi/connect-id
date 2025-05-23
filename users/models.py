@@ -166,8 +166,8 @@ class UserCredential(models.Model):
             send_sms(user.phone_number.as_e164, message, sender)
 
 
-class ConfigurationTokenSession(models.Model):
-    key = models.CharField(max_length=40, primary_key=True)
+class ConfigurationSession(models.Model):
+    key = models.CharField(max_length=70, primary_key=True)
     created = models.DateTimeField(auto_now_add=True)
     expires = models.DateTimeField()
     phone_number = PhoneNumberField()

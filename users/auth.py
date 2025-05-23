@@ -2,12 +2,12 @@ from django.contrib.auth.models import User
 from rest_framework import exceptions
 from rest_framework.authentication import TokenAuthentication
 
-from users.models import ConfigurationTokenSession
+from users.models import ConfigurationSession
 
 
-class BearerTokenAuthentication(TokenAuthentication):
+class SessionTokenAuthentication(TokenAuthentication):
     keyword = "Bearer"
-    model = ConfigurationTokenSession
+    model = ConfigurationSession
 
     def authenticate_credentials(self, key):
         model = self.get_model()
