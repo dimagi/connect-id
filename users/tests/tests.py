@@ -7,13 +7,16 @@ import factory
 import pytest
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
+from faker import Faker
 from fcm_django.models import FCMDevice
 
 from payments.models import PaymentProfile
+from test_utils.decorators import skip_app_integrity_check
 from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from users.factories import CredentialFactory, PhoneDeviceFactory, RecoveryStatusFactory, UserFactory
 from users.fcm_utils import create_update_device
-from users.models import ConnectUser, PhoneDevice, RecoveryStatus
+from users.models import ConfigurationTokenSession, ConnectUser, PhoneDevice, RecoveryStatus
+from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
 
 
 @pytest.mark.django_db
@@ -718,3 +721,77 @@ class TestUpdateProfile:
         assert response.status_code == 400
         assert isinstance(response, JsonResponse)
         assert response.json() == {"recovery_phone": ["The phone number entered is not valid."]}
+
+
+@pytest.mark.django_db
+class TestStartConfigurationView:
+    def test_no_integrity_token(self, client):
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={},
+        )
+        assert response.status_code == 400
+        assert response.json().get("error_code") == AppIntegrityErrorCodes.INTEGRITY_DATA_MISSING
+
+    @skip_app_integrity_check
+    def test_no_phone_number(self, client):
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.status_code == 400
+        assert response.json().get("error_code") == ErrorCodes.MISSING_DATA
+
+    @skip_app_integrity_check
+    def test_session_started(self, client):
+        phone_number = Faker().phone_number()
+
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": phone_number},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.status_code == 200
+
+        token = response.json().get("token")
+        session = ConfigurationTokenSession.objects.get(key=token)
+        assert session.phone_number == phone_number
+
+    @skip_app_integrity_check
+    def test_is_demo_user(self, client):
+        phone_number = (TEST_NUMBER_PREFIX + "1234567",)
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": phone_number},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.status_code == 200
+        assert response.json().get("demo_user")
+
+    @skip_app_integrity_check
+    def test_device_lock_required(self, client):
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": Faker().phone_number()},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.json().get("required_lock") == ConnectUser.DeviceSecurity.BIOMETRIC
+
+    @skip_app_integrity_check
+    def test_biometric_lock_required(self, client):
+        pin_user = UserFactory()
+        pin_user.device_security = ConnectUser.DeviceSecurity.PIN
+        pin_user.save()
+
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": pin_user.phone_number},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.json().get("required_lock") == ConnectUser.DeviceSecurity.PIN
