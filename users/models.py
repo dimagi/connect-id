@@ -1,6 +1,7 @@
 import base64
 import os
 from datetime import timedelta
+from secrets import token_hex
 from uuid import uuid4
 
 from django.conf import settings
@@ -163,3 +164,28 @@ class UserCredential(models.Model):
             )
             sender = get_sms_sender(user.phone_number.country_code)
             send_sms(user.phone_number.as_e164, message, sender)
+
+
+class ConfigurationSession(models.Model):
+    key = models.CharField(max_length=70, primary_key=True)
+    created = models.DateTimeField(auto_now_add=True)
+    expires = models.DateTimeField()
+    phone_number = PhoneNumberField()
+    is_phone_validated = models.BooleanField(default=False)
+
+    def save(self, *args, **kwargs):
+        if not self.key:
+            self.key = self.generate_key()
+        if not self.expires:
+            self.expires = now() + timedelta(hours=4)
+        return super().save(*args, **kwargs)
+
+    @staticmethod
+    def generate_key():
+        return token_hex()
+
+    def is_valid(self):
+        return self.expires > now()
+
+    def __str__(self):
+        return self.key
