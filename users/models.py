@@ -68,10 +68,7 @@ class ConnectUser(AbstractUser):
         return message
 
     def get_photo(self):
-        try:
-            return get_user_photo_base64(self.id)
-        except Exception:
-            return ""
+        return get_user_photo_base64(self.id)
 
     class Meta:
         constraints = [
