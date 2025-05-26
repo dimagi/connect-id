@@ -296,8 +296,7 @@ if FCM_PRIVATE_KEY:
     default_app = initialize_app(credential=creds)
 
 
-GOOGLE_APPLICATION_CREDENTIALS = env("GOOGLE_APPLICATION_CREDENTIALS", default="")
-
+GOOGLE_APPLICATION_CREDENTIALS = env("GOOGLE_APPLICATION_CREDENTIALS", default={})
 
 # Bucket where user photos are stored on S3
 AWS_S3_PHOTO_BUCKET_NAME = env("AWS_S3_PHOTO_BUCKET_NAME", default="personalid-user-photos")
