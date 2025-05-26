@@ -53,7 +53,7 @@ class ConnectUser(AbstractUser):
         try:
             user = cls.objects.get(phone_number=phone_number)
         except ConnectUser.DoesNotExist:
-            return ConnectUser.DeviceSecurity.BIOMETRIC
+            return ConnectUser.DeviceSecurity.BIOMETRIC.value
         return user.device_security
 
     def set_recovery_pin(self, pin):
