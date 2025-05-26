@@ -22,6 +22,7 @@ from users.auth import SessionTokenAuthentication
 from utils import get_ip, get_sms_sender, send_sms
 from utils.rest_framework import ClientProtectedResourceAuth
 
+from .auth import SessionTokenAuthentication
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
@@ -671,3 +672,33 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
         )
         count_by_year_month = {item["date_joined_month"].strftime("%Y-%m"): item["monthly_count"] for item in counts}
         return JsonResponse(count_by_year_month)
+
+
+@api_view(["POST"])
+@permission_classes([])
+@authentication_classes([SessionTokenAuthentication])
+def check_name(request):
+    """
+    Check if a given name is similar to existing user's.
+    """
+    name = request.GET.get("name")
+    if not name:
+        return JsonResponse({"error": "Name parameter is required"}, status=400)
+
+    account_exists = False
+    # user_photo = None
+
+    try:
+        ConnectUser.objects.get(name=name)
+        account_exists = True
+        # user_photo = user.photo
+
+    except ConnectUser.DoesNotExist:
+        pass
+
+    return JsonResponse(
+        {
+            "account_exists": account_exists,
+            # "photo": user_photo if user_photo else None,
+        }
+    )
