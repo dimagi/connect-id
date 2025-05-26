@@ -11,7 +11,13 @@ from fcm_django.models import FCMDevice
 
 from payments.models import PaymentProfile
 from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
-from users.factories import CredentialFactory, PhoneDeviceFactory, RecoveryStatusFactory, UserFactory
+from users.factories import (
+    ConfigurationSessionFactory,
+    CredentialFactory,
+    PhoneDeviceFactory,
+    RecoveryStatusFactory,
+    UserFactory,
+)
 from users.fcm_utils import create_update_device
 from users.models import ConfigurationSession, ConnectUser, PhoneDevice, RecoveryStatus
 
@@ -737,6 +743,14 @@ class TestValidateFirebaseIDToken:
 
         config_session = ConfigurationSession.objects.get(key=valid_token.key)
         assert config_session.is_phone_validated is True
+
+    @pytest.mark.django_db
+    @mock.patch("users.views.auth.verify_id_token")
+    def test_invalid_sessions_removed(self, mock_verify_token, authed_client_token, valid_token):
+        mock_verify_token.return_value = {"uid": "test-uid", "phone_number": valid_token.phone_number}
+        ConfigurationSessionFactory.create_batch(3)
+        authed_client_token.post(self.url, data=self.post_data)
+        assert ConfigurationSession.objects.filter(phone_number=valid_token.phone_number).count() == 1
 
     def test_no_authentication(self, client, authed_client_token, expired_token):
         response = client.post(self.url)

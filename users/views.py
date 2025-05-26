@@ -25,7 +25,7 @@ from utils.rest_framework import ClientProtectedResourceAuth
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
-from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
+from .models import ConfigurationSession, ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
 from .services import upload_photo_to_s3
 
 
@@ -89,6 +89,12 @@ def validate_firebase_id_token(request):
         return JsonResponse({"error": ErrorCodes.PHONE_MISMATCH}, status=400)
     request.auth.is_phone_validated = True
     request.auth.save()
+
+    invalid_sessions = ConfigurationSession.objects.filter(phone_number=request.auth.phone_number).exclude(
+        key=request.auth.key
+    )
+    for session in invalid_sessions:
+        session.delete()
     return HttpResponse()
 
 
