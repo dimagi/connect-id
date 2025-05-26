@@ -15,9 +15,10 @@ from django.views import View
 from firebase_admin import auth
 from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
 
+from users.auth import SessionTokenAuthentication
 from utils import get_ip, get_sms_sender, send_sms
 from utils.rest_framework import ClientProtectedResourceAuth
 
@@ -72,8 +73,8 @@ def validate_phone(request):
 
 
 @api_view(["POST"])
+@authentication_classes([SessionTokenAuthentication])
 def validate_firebase_id_token(request):
-    user = request.user
     id_token = request.data.get("id_token")
     if not id_token:
         return JsonResponse({"error": ErrorCodes.MISSING_TOKEN}, status=400)
@@ -84,10 +85,10 @@ def validate_firebase_id_token(request):
 
     if not decoded_token.get("uid"):
         return JsonResponse({"error": ErrorCodes.INVALID_TOKEN}, status=400)
-    if decoded_token.get("phone_number") != user.phone_number.as_e164:
+    if decoded_token.get("phone_number") != request.auth.phone_number.as_e164:
         return JsonResponse({"error": ErrorCodes.PHONE_MISMATCH}, status=400)
-    user.phone_validated = True
-    user.save()
+    request.auth.is_phone_validated = True
+    request.auth.save()
     return HttpResponse()
 
 
