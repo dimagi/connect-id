@@ -18,7 +18,6 @@ from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
 
-from users.auth import SessionTokenAuthentication
 from utils import get_ip, get_sms_sender, send_sms
 from utils.rest_framework import ClientProtectedResourceAuth
 
@@ -678,16 +677,16 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
 @permission_classes([])
 @authentication_classes([SessionTokenAuthentication])
 def check_name(request):
-    name = request.GET.get("name")
+    name = request.POST.get("name")
     if not name:
-        return JsonResponse({"error": "Name parameter is required"}, status=400)
+        return JsonResponse({"error_code": ErrorCodes.NAME_REQUIRED}, status=400)
 
     account_exists = False
-    user_photo = None
+    user_photo_base64 = ""
 
     try:
         user = ConnectUser.objects.get(name=name)
-        user_photo = user.get_photo()
+        user_photo_base64 = user.get_photo()
         account_exists = True
     except ConnectUser.DoesNotExist:
         pass
@@ -695,6 +694,6 @@ def check_name(request):
     return JsonResponse(
         {
             "account_exists": account_exists,
-            "photo": user_photo if user_photo else None,
+            "photo": user_photo_base64,
         }
     )

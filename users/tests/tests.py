@@ -781,3 +781,27 @@ class TestValidateFirebaseIDToken:
         assert response.status_code == 400
         assert isinstance(response, JsonResponse)
         assert response.json() == {"error": ErrorCodes.PHONE_MISMATCH}
+
+
+@pytest.mark.django_db
+class TestCheckName:
+    def test_no_name_provided(self, authed_client_token):
+        response = authed_client_token.post(reverse("check_name"))
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.NAME_REQUIRED}
+
+    def test_user_with_name_does_not_exist(self, authed_client_token):
+        response = authed_client_token.post(reverse("check_name"), data={"name": "NonExistentUser"})
+        assert response.status_code == 200
+        assert not response.json()["account_exists"]
+
+    @patch.object(ConnectUser, "get_photo")
+    def test_user_with_name_exists(self, get_photo_mock, authed_client_token, user):
+        user.name = "ExistingUser"
+        user.save()
+        get_photo_mock.return_value = "some_base64_photo_data"
+
+        response = authed_client_token.post(reverse("check_name"), data={"name": user.name})
+        assert response.status_code == 200
+        assert response.json()["account_exists"] is True
+        assert response.json()["photo"] == "some_base64_photo_data"
