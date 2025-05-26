@@ -678,9 +678,6 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
 @permission_classes([])
 @authentication_classes([SessionTokenAuthentication])
 def check_name(request):
-    """
-    Check if a given name is similar to existing user's.
-    """
     name = request.GET.get("name")
     if not name:
         return JsonResponse({"error": "Name parameter is required"}, status=400)
