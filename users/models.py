@@ -16,6 +16,7 @@ from django_otp.util import random_hex
 from phonenumber_field.modelfields import PhoneNumberField
 
 from users.exceptions import RecoveryPinNotSetError
+from users.services import get_user_photo_base64
 from utils import get_sms_sender, send_sms
 
 from .const import TEST_NUMBER_PREFIX
@@ -65,6 +66,12 @@ class ConnectUser(AbstractUser):
             sender = get_sms_sender(self.phone_number.country_code)
             send_sms(self.phone_number.as_e164, message, sender)
         return message
+
+    def get_photo(self):
+        try:
+            return get_user_photo_base64(self.id)
+        except Exception:
+            return ""
 
     class Meta:
         constraints = [

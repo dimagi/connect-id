@@ -33,3 +33,7 @@ def upload_photo_to_s3(image_base64, user_id):
     except Exception as e:
         sentry_sdk.capture_exception(e)
         return ErrorCodes.FAILED_TO_UPLOAD
+
+
+def get_user_photo_base64(user_id):
+    pass

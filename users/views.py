@@ -686,19 +686,18 @@ def check_name(request):
         return JsonResponse({"error": "Name parameter is required"}, status=400)
 
     account_exists = False
-    # user_photo = None
+    user_photo = None
 
     try:
-        ConnectUser.objects.get(name=name)
+        user = ConnectUser.objects.get(name=name)
+        user_photo = user.get_photo()
         account_exists = True
-        # user_photo = user.photo
-
     except ConnectUser.DoesNotExist:
         pass
 
     return JsonResponse(
         {
             "account_exists": account_exists,
-            # "photo": user_photo if user_photo else None,
+            "photo": user_photo if user_photo else None,
         }
     )
