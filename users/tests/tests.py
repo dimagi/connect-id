@@ -11,9 +11,15 @@ from fcm_django.models import FCMDevice
 
 from payments.models import PaymentProfile
 from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
-from users.factories import CredentialFactory, PhoneDeviceFactory, RecoveryStatusFactory, UserFactory
+from users.factories import (
+    ConfigurationSessionFactory,
+    CredentialFactory,
+    PhoneDeviceFactory,
+    RecoveryStatusFactory,
+    UserFactory,
+)
 from users.fcm_utils import create_update_device
-from users.models import ConnectUser, PhoneDevice, RecoveryStatus
+from users.models import ConfigurationSession, ConnectUser, PhoneDevice, RecoveryStatus
 
 
 @pytest.mark.django_db
@@ -718,3 +724,60 @@ class TestUpdateProfile:
         assert response.status_code == 400
         assert isinstance(response, JsonResponse)
         assert response.json() == {"recovery_phone": ["The phone number entered is not valid."]}
+
+
+class TestValidateFirebaseIDToken:
+    url = reverse("validate_firebase_id_token")
+
+    @property
+    def post_data(self):
+        return {"id_token": "123-456"}
+
+    @mock.patch("users.views.auth.verify_id_token")
+    def test_success(self, mock_verify_token, authed_client_token, valid_token):
+        mock_verify_token.return_value = {"uid": "test-uid", "phone_number": valid_token.phone_number}
+        response = authed_client_token.post(self.url, data=self.post_data)
+        assert response.status_code == 200
+        assert isinstance(response, HttpResponse)
+        mock_verify_token.assert_called_once_with(self.post_data["id_token"])
+
+        config_session = ConfigurationSession.objects.get(key=valid_token.key)
+        assert config_session.is_phone_validated is True
+
+    @pytest.mark.django_db
+    @mock.patch("users.views.auth.verify_id_token")
+    def test_invalid_sessions_removed(self, mock_verify_token, authed_client_token, valid_token):
+        mock_verify_token.return_value = {"uid": "test-uid", "phone_number": valid_token.phone_number}
+        ConfigurationSessionFactory.create_batch(3)
+        authed_client_token.post(self.url, data=self.post_data)
+        assert ConfigurationSession.objects.filter(phone_number=valid_token.phone_number).count() == 1
+
+    def test_no_authentication(self, client, authed_client_token, expired_token):
+        response = client.post(self.url)
+        assert response.status_code == 401
+        response = authed_client_token.post(
+            self.url, data=self.post_data, HTTP_AUTHORIZATION=f"Bearer {expired_token.key}"
+        )
+        assert response.status_code == 401
+
+    def test_missing_token(self, authed_client_token):
+        response = authed_client_token.post(self.url)
+        assert response.status_code == 400
+        assert isinstance(response, JsonResponse)
+        assert response.json() == {"error": ErrorCodes.MISSING_TOKEN}
+
+    @mock.patch("users.views.auth.verify_id_token")
+    def test_invalid_token(self, mock_verify_token, authed_client_token):
+        mock_verify_token.return_value = {}
+        response = authed_client_token.post(self.url, data=self.post_data)
+        assert response.status_code == 400
+        assert isinstance(response, JsonResponse)
+        assert response.json() == {"error": ErrorCodes.INVALID_TOKEN}
+
+    @mock.patch("users.views.auth.verify_id_token")
+    def test_phone_mismatch(self, mock_verify_token, authed_client_token):
+        mock_verify_token.return_value = {"uid": "test-uid", "phone_number": "+1234567890"}
+        response = authed_client_token.post(self.url, data=self.post_data)
+        assert response.status_code == 400
+        assert isinstance(response, JsonResponse)
+        assert response.json() == {"error": ErrorCodes.PHONE_MISMATCH}

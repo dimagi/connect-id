@@ -9,6 +9,7 @@ urlpatterns = [
     path("register", views.register, name="register"),
     path("login", views.login, name="login"),
     path("validate_phone", views.validate_phone, name="validate_phone"),
+    path("validate_firebase_id_token", views.validate_firebase_id_token, name="validate_firebase_id_token"),
     path("confirm_otp", views.confirm_otp, name="confirm_otp"),
     path("validate_secondary_phone", views.validate_secondary_phone, name="validate_secondary_phone"),
     path("confirm_secondary_otp", views.confirm_secondary_otp, name="confirm_secondary_otp"),

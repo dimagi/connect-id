@@ -12,18 +12,20 @@ from django.db.models.functions import TruncMonth
 from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
 from django.views import View
+from firebase_admin import auth
 from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
 
+from users.auth import SessionTokenAuthentication
 from utils import get_ip, get_sms_sender, send_sms
 from utils.rest_framework import ClientProtectedResourceAuth
 
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
-from .models import ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
+from .models import ConfigurationSession, ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
 from .services import upload_photo_to_s3
 
 
@@ -67,6 +69,27 @@ def validate_phone(request):
     user = request.user
     otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.phone_number, user=user)
     otp_device.generate_challenge()
+    return HttpResponse()
+
+
+@api_view(["POST"])
+@authentication_classes([SessionTokenAuthentication])
+def validate_firebase_id_token(request):
+    id_token = request.data.get("id_token")
+    if not id_token:
+        return JsonResponse({"error": ErrorCodes.MISSING_TOKEN}, status=400)
+    try:
+        decoded_token = auth.verify_id_token(id_token)
+    except Exception:
+        return JsonResponse({"error": ErrorCodes.FAILED_VALIDATING_TOKEN}, status=400)
+
+    if not decoded_token.get("uid"):
+        return JsonResponse({"error": ErrorCodes.INVALID_TOKEN}, status=400)
+    if decoded_token.get("phone_number") != request.auth.phone_number.as_e164:
+        return JsonResponse({"error": ErrorCodes.PHONE_MISMATCH}, status=400)
+    request.auth.is_phone_validated = True
+    request.auth.save()
+    ConfigurationSession.objects.filter(phone_number=request.auth.phone_number).exclude(key=request.auth.key).delete()
     return HttpResponse()
 
 
