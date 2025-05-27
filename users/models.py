@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, AnonymousUser
 from django.contrib.sites.models import Site
 from django.db import models
 from django.urls import reverse
@@ -203,3 +203,9 @@ class ConfigurationSession(models.Model):
 
     def __str__(self):
         return self.key
+
+
+class SessionUser(AnonymousUser):
+    @property
+    def is_authenticated(self):
+        return True
