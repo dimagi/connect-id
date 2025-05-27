@@ -297,8 +297,19 @@ if FCM_PRIVATE_KEY:
     default_app = initialize_app(credential=creds)
 
 
-GOOGLE_APPLICATION_CREDENTIALS = env("GOOGLE_APPLICATION_CREDENTIALS", default="")
-
+GOOGLE_APPLICATION_CREDENTIALS = {
+    "type": "service_account",
+    "project_id": env("GOOGLE_PROJECT_ID", default=""),
+    "private_key_id": env("GOOGLE_PRIVATE_KEY_ID", default=""),
+    "private_key": env.str("GOOGLE_PRIVATE_KEY", multiline=True, default=""),
+    "client_email": env("GOOGLE_CLIENT_EMAIL", default=""),
+    "client_id": env("GOOGLE_CLIENT_ID", default=""),
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "client_x509_cert_url": env("GOOGLE_CLIENT_X509_CERT_URL", default=""),
+    "universe_domain": "googleapis.com",
+}
 
 # Bucket where user photos are stored on S3
 AWS_S3_PHOTO_BUCKET_NAME = env("AWS_S3_PHOTO_BUCKET_NAME", default="personalid-user-photos")
