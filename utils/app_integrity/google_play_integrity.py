@@ -1,5 +1,5 @@
-import google.auth
 from django.conf import settings
+from google.oauth2 import service_account
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -57,9 +57,7 @@ class AppIntegrityService:
     def _google_service_account_credentials(self) -> Credentials:
         if not settings.GOOGLE_APPLICATION_CREDENTIALS:
             raise Exception("GOOGLE_APPLICATION_CREDENTIALS must be set")
-
-        credentials, _ = google.auth.load_credentials_from_file(settings.GOOGLE_APPLICATION_CREDENTIALS, scopes=[])
-        return credentials
+        return service_account.Credentials.from_service_account_info(settings.GOOGLE_APPLICATION_CREDENTIALS)
 
     def _analyze_verdict(self, verdict: VerdictResponse):
         """

@@ -49,4 +49,5 @@ urlpatterns = [
     path("confirm_hq_invite", views.ConfirmHQInviteCallback.as_view(), name="confirm_hq_invite"),
     path("fetch_user_counts", views.FetchUserCounts.as_view(), name="fetch_user_counts"),
     path("check_name", views.check_name, name="check_name"),
+    path("start_configuration", views.start_device_configuration, name="start_device_configuration"),
 ]
