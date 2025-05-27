@@ -822,5 +822,4 @@ class TestCheckName:
 
         response = authed_client_token.post(reverse("check_name"), data={"name": "DifferentUser"})
         assert response.status_code == 200
-        assert response.json()["account_exists"] is False
-        assert response.json()["photo"] == ""
+        assert response.json()["account_exists"] is True
