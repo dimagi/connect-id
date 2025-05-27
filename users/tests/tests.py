@@ -914,7 +914,7 @@ class TestCheckName:
         assert response.json()["photo"] == "some_base64_photo_data"
 
     @patch.object(ConnectUser, "get_photo")
-    def test_user_with_different_name_does_not_exist(self, get_photo_mock, authed_client_token, user, valid_token):
+    def test_user_with_different_name_exists(self, get_photo_mock, authed_client_token, user, valid_token):
         valid_token.phone_number = user.phone_number
         valid_token.save()
 
