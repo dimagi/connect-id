@@ -1,28 +1,6 @@
-from datetime import timedelta
-
 import pytest
-from django.utils import timezone
 from rest_framework import exceptions
 from rest_framework.test import APIRequestFactory
-
-from users.auth import SessionTokenAuthentication
-from users.factories import ConfigurationSessionFactory
-
-
-@pytest.fixture
-def token_auth():
-    return SessionTokenAuthentication()
-
-
-@pytest.fixture
-def valid_token():
-    return ConfigurationSessionFactory()
-
-
-@pytest.fixture
-def expired_token():
-    expires = timezone.now() - timedelta(days=2)
-    return ConfigurationSessionFactory(expires=expires)
 
 
 @pytest.mark.django_db
