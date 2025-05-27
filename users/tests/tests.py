@@ -786,6 +786,7 @@ class TestValidateFirebaseIDToken:
         assert response.json() == {"error": ErrorCodes.PHONE_MISMATCH}
 
 
+@pytest.mark.django_db
 class TestStartConfigurationView:
     def test_no_integrity_token(self, client):
         response = client.post(
