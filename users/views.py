@@ -693,7 +693,6 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
 
 
 @api_view(["POST"])
-@permission_classes([])
 @authentication_classes([SessionTokenAuthentication])
 def check_name(request):
     name = request.POST.get("name")
