@@ -894,7 +894,18 @@ class TestCheckName:
         assert response.status_code == 400
         assert response.json() == {"error_code": ErrorCodes.NAME_REQUIRED}
 
-    def test_user_with_name_does_not_exist(self, authed_client_token):
+    def test_phone_not_validated(self, authed_client_token, valid_token):
+        valid_token.is_phone_validated = False
+        valid_token.save()
+
+        response = authed_client_token.post(reverse("check_name"), data={"name": "NonExistentUser"})
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.PHONE_NOT_VALIDATED}
+
+    def test_user_with_name_does_not_exist(self, authed_client_token, valid_token):
+        valid_token.is_phone_validated = True
+        valid_token.save()
+
         response = authed_client_token.post(reverse("check_name"), data={"name": "NonExistentUser"})
         assert response.status_code == 200
         assert not response.json()["account_exists"]
@@ -902,6 +913,7 @@ class TestCheckName:
     @patch.object(ConnectUser, "get_photo")
     def test_user_with_name_exists(self, get_photo_mock, authed_client_token, user, valid_token):
         valid_token.phone_number = user.phone_number
+        valid_token.is_phone_validated = True
         valid_token.save()
 
         user.name = "ExistingUser"
@@ -916,6 +928,7 @@ class TestCheckName:
     @patch.object(ConnectUser, "get_photo")
     def test_user_with_different_name_exists(self, get_photo_mock, authed_client_token, user, valid_token):
         valid_token.phone_number = user.phone_number
+        valid_token.is_phone_validated = True
         valid_token.save()
 
         user.name = "ExistingUser"

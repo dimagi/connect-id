@@ -699,6 +699,9 @@ def check_name(request):
     if not name:
         return JsonResponse({"error_code": ErrorCodes.NAME_REQUIRED}, status=400)
 
+    if not request.auth.is_phone_validated:
+        return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=400)
+
     account_exists = False
     user_photo_base64 = ""
 
