@@ -685,7 +685,7 @@ def check_name(request):
     user_photo_base64 = ""
 
     try:
-        user = ConnectUser.objects.get(name=name)
+        user = ConnectUser.objects.get(name=name, phone_number=request.auth.phone_number)
         user_photo_base64 = user.get_photo()
         account_exists = True
     except ConnectUser.DoesNotExist:

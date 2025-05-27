@@ -797,6 +797,10 @@ class TestCheckName:
 
     @patch.object(ConnectUser, "get_photo")
     def test_user_with_name_exists(self, get_photo_mock, authed_client_token, user):
+        session = ConfigurationSession.objects.first()
+        session.phone_number = user.phone_number
+        session.save()
+
         user.name = "ExistingUser"
         user.save()
         get_photo_mock.return_value = "some_base64_photo_data"
@@ -805,3 +809,18 @@ class TestCheckName:
         assert response.status_code == 200
         assert response.json()["account_exists"] is True
         assert response.json()["photo"] == "some_base64_photo_data"
+
+    @patch.object(ConnectUser, "get_photo")
+    def test_user_with_different_name_does_not_exist(self, get_photo_mock, authed_client_token, user):
+        session = ConfigurationSession.objects.first()
+        session.phone_number = user.phone_number
+        session.save()
+
+        user.name = "ExistingUser"
+        user.save()
+        get_photo_mock.return_value = "some_base64_photo_data"
+
+        response = authed_client_token.post(reverse("check_name"), data={"name": "DifferentUser"})
+        assert response.status_code == 200
+        assert response.json()["account_exists"] is False
+        assert response.json()["photo"] == ""
