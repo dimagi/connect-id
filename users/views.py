@@ -707,7 +707,7 @@ def check_name(request):
 
     try:
         # We won't consider the name yet - fuzzy matching the name is next phase
-        user = ConnectUser.objects.get(phone_number=request.auth.phone_number)
+        user = ConnectUser.objects.get(phone_number=request.auth.phone_number, is_active=True)
         user_photo_base64 = user.get_photo()
         account_exists = True
     except ConnectUser.DoesNotExist:

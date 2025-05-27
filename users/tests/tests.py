@@ -926,6 +926,22 @@ class TestCheckName:
         assert response.json()["photo"] == "some_base64_photo_data"
 
     @patch.object(ConnectUser, "get_photo")
+    def test_user_with_name_exists_inactive_user(self, get_photo_mock, authed_client_token, user, valid_token):
+        valid_token.phone_number = user.phone_number
+        valid_token.is_phone_validated = True
+        valid_token.save()
+
+        user.name = "ExistingUser"
+        user.is_active = False
+        user.save()
+        get_photo_mock.return_value = "some_base64_photo_data"
+
+        response = authed_client_token.post(reverse("check_name"), data={"name": user.name})
+        assert response.status_code == 200
+        assert response.json()["account_exists"] is False
+        assert response.json()["photo"] == ""
+
+    @patch.object(ConnectUser, "get_photo")
     def test_user_with_different_name_exists(self, get_photo_mock, authed_client_token, user, valid_token):
         valid_token.phone_number = user.phone_number
         valid_token.is_phone_validated = True
