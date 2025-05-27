@@ -20,6 +20,7 @@ from rest_framework.views import APIView
 
 from users.auth import SessionTokenAuthentication
 from utils import get_ip, get_sms_sender, send_sms
+from utils.app_integrity.decorators import require_app_integrity
 from utils.rest_framework import ClientProtectedResourceAuth
 
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
@@ -54,6 +55,24 @@ def register(request):
         create_update_device(user, data["fcm_token"])
     db_key = UserKey.get_or_create_key_for_user(user)
     return JsonResponse({"secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key})
+
+
+@api_view(["POST"])
+@permission_classes([])
+@require_app_integrity
+def start_device_configuration(request):
+    data = request.data
+
+    if "phone_number" not in data:
+        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+
+    token_session = ConfigurationSession.objects.create(phone_number=data["phone_number"])
+    response_data = {
+        "required_lock": ConnectUser.get_device_security_requirement(data["phone_number"]),
+        "demo_user": data["phone_number"].startswith(TEST_NUMBER_PREFIX),
+        "token": token_session.key,
+    }
+    return JsonResponse(response_data)
 
 
 def login(request):

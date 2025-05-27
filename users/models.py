@@ -22,6 +22,10 @@ from .const import TEST_NUMBER_PREFIX
 
 
 class ConnectUser(AbstractUser):
+    class DeviceSecurity(models.TextChoices):
+        PIN = "pin", "pin"
+        BIOMETRIC = "biometric", "biometric"
+
     phone_number = PhoneNumberField()
     phone_validated = models.BooleanField(default=False)
     recovery_phone = PhoneNumberField(blank=True)
@@ -36,11 +40,21 @@ class ConnectUser(AbstractUser):
     deactivation_token = models.CharField(max_length=25, blank=True, null=True)
     deactivation_token_valid_until = models.DateTimeField(blank=True, null=True)
 
+    device_security = models.CharField(choices=DeviceSecurity.choices, default=DeviceSecurity.BIOMETRIC, max_length=15)
+
     # removed from base class
     first_name = None
     last_name = None
 
     REQUIRED_FIELDS = ["phone_number", "name"]
+
+    @classmethod
+    def get_device_security_requirement(cls, phone_number) -> str:
+        try:
+            user = cls.objects.get(phone_number=phone_number)
+        except ConnectUser.DoesNotExist:
+            return ConnectUser.DeviceSecurity.BIOMETRIC.value
+        return user.device_security
 
     def set_recovery_pin(self, pin):
         hashed_value = make_password(pin)
