@@ -2,6 +2,8 @@ import pytest
 from rest_framework import exceptions
 from rest_framework.test import APIRequestFactory
 
+from users.models import SessionUser
+
 
 @pytest.mark.django_db
 class TestSessionTokenAuthentication:
@@ -9,7 +11,7 @@ class TestSessionTokenAuthentication:
         request = APIRequestFactory().get("/", HTTP_AUTHORIZATION=f"Bearer {valid_token.key}")
         user, token = token_auth.authenticate(request)
         assert token == valid_token
-        assert user.username == "annonymous"
+        assert isinstance(user, SessionUser)
         assert request.headers["authorization"] == f"Bearer {valid_token.key}"
 
     def test_authentication_expired_token(self, token_auth, expired_token):
