@@ -18,11 +18,11 @@ from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
 
-from users.auth import SessionTokenAuthentication
 from utils import get_ip, get_sms_sender, send_sms
 from utils.app_integrity.decorators import require_app_integrity
 from utils.rest_framework import ClientProtectedResourceAuth
 
+from .auth import SessionTokenAuthentication
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
@@ -690,3 +690,32 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
         )
         count_by_year_month = {item["date_joined_month"].strftime("%Y-%m"): item["monthly_count"] for item in counts}
         return JsonResponse(count_by_year_month)
+
+
+@api_view(["POST"])
+@authentication_classes([SessionTokenAuthentication])
+def check_name(request):
+    name = request.POST.get("name")
+    if not name:
+        return JsonResponse({"error_code": ErrorCodes.NAME_REQUIRED}, status=400)
+
+    if not request.auth.is_phone_validated:
+        return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=400)
+
+    account_exists = False
+    user_photo_base64 = ""
+
+    try:
+        # We won't consider the name yet - fuzzy matching the name is next phase
+        user = ConnectUser.objects.get(phone_number=request.auth.phone_number, is_active=True)
+        user_photo_base64 = user.get_photo()
+        account_exists = True
+    except ConnectUser.DoesNotExist:
+        pass
+
+    return JsonResponse(
+        {
+            "account_exists": account_exists,
+            "photo": user_photo_base64,
+        }
+    )
