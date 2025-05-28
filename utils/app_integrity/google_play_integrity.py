@@ -57,7 +57,10 @@ class AppIntegrityService:
     def _google_service_account_credentials(self) -> Credentials:
         if not settings.GOOGLE_APPLICATION_CREDENTIALS:
             raise Exception("GOOGLE_APPLICATION_CREDENTIALS must be set")
-        return service_account.Credentials.from_service_account_info(settings.GOOGLE_APPLICATION_CREDENTIALS)
+        return service_account.Credentials.from_service_account_info(
+            settings.GOOGLE_APPLICATION_CREDENTIALS,
+            scopes=["https://www.googleapis.com/auth/playintegrity"],
+        )
 
     def _analyze_verdict(self, verdict: VerdictResponse):
         """
