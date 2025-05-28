@@ -108,7 +108,6 @@ def validate_firebase_id_token(request):
         return JsonResponse({"error": ErrorCodes.PHONE_MISMATCH}, status=400)
     request.auth.is_phone_validated = True
     request.auth.save()
-    ConfigurationSession.objects.filter(phone_number=request.auth.phone_number).exclude(key=request.auth.key).delete()
     return HttpResponse()
 
 
