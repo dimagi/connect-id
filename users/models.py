@@ -190,6 +190,7 @@ class ConfigurationSession(models.Model):
     expires = models.DateTimeField()
     phone_number = PhoneNumberField()
     is_phone_validated = models.BooleanField(default=False)
+    incorrect_backup_code_attempts = models.IntegerField(default=0)
 
     def save(self, *args, **kwargs):
         if not self.key:

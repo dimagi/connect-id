@@ -417,28 +417,27 @@ def user_payment_profile(user):
 
 
 @api_view(["POST"])
-@permission_classes([])
+@authentication_classes([SessionTokenAuthentication])
 def confirm_recovery_pin(request):
     data = request.data
-    phone_number = data["phone"]
-    secret_key = data["secret_key"]
-    user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
-    status = RecoveryStatus.objects.get(user=user)
-    if status.secret_key != secret_key:
-        return JsonResponse({"error_code": ErrorCodes.INVALID_SECRET_KEY}, status=401)
-    if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
-        return JsonResponse({"error_code": ErrorCodes.INVALID_STEP}, status=401)
-    recovery_pin = data["recovery_pin"]
+    user = ConnectUser.objects.get(phone_number=request.auth.phone_number, is_active=True)
 
     try:
-        if not user.check_recovery_pin(recovery_pin):
+        if not user.check_recovery_pin(data["pin"]):
             return JsonResponse({"error_code": ErrorCodes.INCORRECT_CODE}, status=401)
     except RecoveryPinNotSetError:
         return JsonResponse({"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}, status=400)
 
-    status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
-    status.save()
-    return JsonResponse(user_data(user))
+    db_key = UserKey.get_or_create_key_for_user(user)
+
+    return JsonResponse(
+        {
+            "username": user.username,
+            "db_key": db_key.key,
+            "account_orphaned": False,  # should be tracked on the session
+            "password": "",  # todo
+        }
+    )
 
 
 @api_view(["GET"])
