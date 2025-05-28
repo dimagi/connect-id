@@ -21,7 +21,7 @@ from users.factories import (
     UserFactory,
 )
 from users.fcm_utils import create_update_device
-from users.models import ConfigurationSession, ConnectUser, PhoneDevice, RecoveryStatus
+from users.models import ConfigurationSession, ConnectUser, PhoneDevice, RecoveryStatus, UserKey
 from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
 
 
@@ -954,3 +954,55 @@ class TestCheckName:
         response = authed_client_token.post(reverse("check_name"), data={"name": "DifferentUser"})
         assert response.status_code == 200
         assert response.json()["account_exists"] is True
+
+
+class TestCompleteProfileView:
+    url = reverse("complete_profile")
+    post_data = {
+        "name": "Test User",
+        "recovery_pin": "1234",
+        "photo": "my-photo",
+    }
+
+    def test_no_authentication(self, client):
+        response = client.post(self.url)
+        assert response.status_code == 401
+
+    @patch("users.views.token_hex")
+    @patch("users.views.upload_photo_to_s3")
+    def test_success(self, mock_upload_photo, mock_token_hex, authed_client_token, valid_token):
+        mock_token_hex.return_value = "test-pass"
+        mock_upload_photo.return_value = None
+        valid_token.is_phone_validated = True
+        valid_token.save()
+
+        response = authed_client_token.post(self.url, data=self.post_data)
+        assert response.status_code == 200
+
+        user = ConnectUser.objects.get(phone_number=valid_token.phone_number)
+        assert user.check_recovery_pin(self.post_data["recovery_pin"])
+
+        user_key = UserKey.objects.get(user=user)
+        assert response.json() == {
+            "username": user.username,
+            "password": "test-pass",
+            "db_key": user_key.key,
+        }
+
+    def test_missing_required_fields(self, authed_client_token, valid_token):
+        valid_token.is_phone_validated = True
+        valid_token.save()
+
+        response = authed_client_token.post(self.url, data={})
+        assert response.status_code == 400
+        assert response.json() == {"error": ErrorCodes.MISSING_DATA}
+
+    @patch("users.views.upload_photo_to_s3")
+    def test_upload_photo_error(self, mock_upload_photo, authed_client_token, valid_token):
+        valid_token.is_phone_validated = True
+        valid_token.save()
+        mock_upload_photo.return_value = "test-error"
+
+        response = authed_client_token.post(self.url, data=self.post_data)
+        assert response.status_code == 500
+        assert response.json() == {"error": "test-error"}
