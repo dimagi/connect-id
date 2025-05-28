@@ -753,7 +753,7 @@ class TestValidateFirebaseIDToken:
 
     @mock.patch("users.views.auth.verify_id_token")
     def test_success(self, mock_verify_token, authed_client_token, valid_token):
-        mock_verify_token.return_value = {"uid": "test-uid", "phone_number": valid_token.phone_number}
+        mock_verify_token.return_value = {"uid": "test-uid", "phone_number": valid_token.phone_number.as_e164}
         response = authed_client_token.post(self.url, data=self.post_data)
         assert response.status_code == 200
         assert isinstance(response, HttpResponse)
@@ -917,8 +917,9 @@ class TestCheckName:
         assert response.status_code == 403
         assert response.json() == {"error_code": ErrorCodes.PHONE_NOT_VALIDATED}
 
-    def test_user_with_name_does_not_exist(self, authed_client_token, valid_token):
+    def test_user_does_not_exist(self, authed_client_token, valid_token):
         valid_token.is_phone_validated = True
+        valid_token.phone_number = Faker().phone_number()
         valid_token.save()
 
         response = authed_client_token.post(reverse("check_name"), data={"name": "NonExistentUser"})
