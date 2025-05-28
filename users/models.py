@@ -19,7 +19,7 @@ from users.exceptions import RecoveryPinNotSetError
 from users.services import get_user_photo_base64
 from utils import get_sms_sender, send_sms
 
-from .const import TEST_NUMBER_PREFIX
+from .const import MAX_BACKUP_CODE_ATTEMPTS, TEST_NUMBER_PREFIX
 
 
 class ConnectUser(AbstractUser):
@@ -208,6 +208,10 @@ class ConfigurationSession(models.Model):
 
     def __str__(self):
         return self.key
+
+    @property
+    def can_attempt_backup_code(self):
+        return self.incorrect_backup_code_attempts < MAX_BACKUP_CODE_ATTEMPTS
 
 
 class SessionUser(AnonymousUser):
