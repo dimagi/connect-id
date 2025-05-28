@@ -50,4 +50,5 @@ urlpatterns = [
     path("fetch_user_counts", views.FetchUserCounts.as_view(), name="fetch_user_counts"),
     path("check_name", views.check_name, name="check_name"),
     path("start_configuration", views.start_device_configuration, name="start_device_configuration"),
+    path("complete_profile", views.complete_profile, name="complete_profile"),
 ]

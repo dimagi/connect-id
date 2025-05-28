@@ -1,6 +1,7 @@
 from datetime import timedelta
 from secrets import token_hex
 from urllib.parse import urlencode, urlparse
+from uuid import uuid4
 
 import requests
 from django.conf import settings
@@ -153,6 +154,43 @@ def confirm_secondary_otp(request):
     user.recovery_phone_validation_deadline = None
     user.save()
     return HttpResponse()
+
+
+@api_view(["POST"])
+@authentication_classes([SessionTokenAuthentication])
+def complete_profile(request):
+    if not request.auth.is_phone_validated:
+        return JsonResponse({"error": ErrorCodes.PHONE_NOT_VALIDATED}, status=400)
+
+    name = request.POST.get("name")
+    recovery_pin = request.POST.get("recovery_pin")
+    photo = request.POST.get("photo")
+    if not (name and recovery_pin and photo):
+        return JsonResponse({"error": ErrorCodes.MISSING_DATA}, status=400)
+
+    user = ConnectUser(
+        username=f"{name}_{uuid4().hex[:5]}",
+        phone_number=request.auth.phone_number,
+        name=name,
+        phone_validated=True,
+    )
+    user.set_recovery_pin(recovery_pin)
+    password = token_hex()
+    user.set_password(password)
+
+    error_code = upload_photo_to_s3(photo, user.id)
+    if error_code:
+        return JsonResponse({"error": error_code}, status=500)
+
+    user.save()
+    db_key = UserKey.get_or_create_key_for_user(user)
+    return JsonResponse(
+        {
+            "username": user.username,
+            "password": password,
+            "db_key": db_key.key,
+        }
+    )
 
 
 @api_view(["POST"])
