@@ -12,7 +12,7 @@ class Migration(migrations.Migration):
     operations = [
         migrations.AddField(
             model_name="configurationsession",
-            name="incorrect_backup_code_attempts",
+            name="backup_code_attempts",
             field=models.IntegerField(default=0),
         ),
     ]

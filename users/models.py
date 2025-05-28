@@ -190,7 +190,10 @@ class ConfigurationSession(models.Model):
     expires = models.DateTimeField()
     phone_number = PhoneNumberField()
     is_phone_validated = models.BooleanField(default=False)
-    incorrect_backup_code_attempts = models.IntegerField(default=0)
+    backup_code_attempts = models.IntegerField(default=0)
+
+    def __str__(self):
+        return self.key
 
     def save(self, *args, **kwargs):
         if not self.key:
@@ -206,12 +209,13 @@ class ConfigurationSession(models.Model):
     def is_valid(self):
         return self.expires > now()
 
-    def __str__(self):
-        return self.key
+    def add_backup_code_attempt(self):
+        self.backup_code_attempts += 1
+        self.save()
 
     @property
     def can_attempt_backup_code(self):
-        return self.incorrect_backup_code_attempts < MAX_BACKUP_CODE_ATTEMPTS
+        return self.backup_code_attempts < MAX_BACKUP_CODE_ATTEMPTS
 
 
 class SessionUser(AnonymousUser):
