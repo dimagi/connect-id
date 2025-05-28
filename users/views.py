@@ -419,23 +419,37 @@ def user_payment_profile(user):
 @api_view(["POST"])
 @authentication_classes([SessionTokenAuthentication])
 def confirm_recovery_pin(request):
+    session = request.auth
+
+    if not session.is_phone_validated:
+        return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
+
     data = request.data
-    user = ConnectUser.objects.get(phone_number=request.auth.phone_number, is_active=True)
+    user = ConnectUser.objects.get(phone_number=session.phone_number, is_active=True)
 
     try:
-        if not user.check_recovery_pin(data["pin"]):
-            return JsonResponse({"error_code": ErrorCodes.INCORRECT_CODE}, status=401)
+        if not user.check_recovery_pin(data.get("pin")):
+            session.add_backup_code_attempt()
+            account_orphaned = False
+            if not session.can_attempt_backup_code:
+                user.is_active = False
+                user.save()
+                account_orphaned = True
+
+            return JsonResponse({"account_orphaned": account_orphaned}, status=401)
+
     except RecoveryPinNotSetError:
         return JsonResponse({"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}, status=400)
 
-    db_key = UserKey.get_or_create_key_for_user(user)
+    password = token_hex(16)
+    user.set_password(password)
+    user.save()
 
     return JsonResponse(
         {
             "username": user.username,
-            "db_key": db_key.key,
-            "account_orphaned": False,  # should be tracked on the session
-            "password": "",  # todo
+            "db_key": UserKey.get_or_create_key_for_user(user).key,
+            "password": password,
         }
     )
 
@@ -699,7 +713,7 @@ def check_name(request):
         return JsonResponse({"error_code": ErrorCodes.NAME_REQUIRED}, status=400)
 
     if not request.auth.is_phone_validated:
-        return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=400)
+        return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
 
     account_exists = False
     user_photo_base64 = ""

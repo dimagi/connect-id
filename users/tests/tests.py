@@ -21,7 +21,7 @@ from users.factories import (
     UserFactory,
 )
 from users.fcm_utils import create_update_device
-from users.models import ConfigurationSession, ConnectUser, PhoneDevice, RecoveryStatus
+from users.models import ConfigurationSession, ConnectUser, PhoneDevice, RecoveryStatus, UserKey
 from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
 
 
@@ -536,45 +536,60 @@ class TestGetDemoUsers:
 class TestRecoveryPinConfirmationApi:
     url = reverse("confirm_recovery_pin")
 
-    def _get_post_data(self, recovery_status):
-        return {
-            "phone": recovery_status.user.phone_number,
-            "secret_key": recovery_status.secret_key,
-            "recovery_pin": "1234",
-        }
+    def test_phone_not_validated(self, authed_client_token, valid_token):
+        valid_token.is_phone_validated = False
+        valid_token.save()
 
-    def test_recovery_status_secret_mismatch(self, recovery_status, client):
-        data = self._get_post_data(recovery_status)
-        data["secret_key"] = "another_test_key"
-        response = client.post(self.url, data=data)
-        assert response.status_code == 401
+        response = authed_client_token.post(self.url, data={})
+        assert response.status_code == 403
+        assert response.json() == {"error_code": ErrorCodes.PHONE_NOT_VALIDATED}
 
-    def test_recovery_status_wrong_step(self, recovery_status, client):
-        recovery_status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
-        recovery_status.save()
-
-        response = client.post(self.url, data=self._get_post_data(recovery_status))
-        assert response.status_code == 401
-
-    def test_recovery_pin_not_set(self, recovery_status, client):
-        data = self._get_post_data(recovery_status)
-
-        recovery_status.user.recovery_pin = None
-        recovery_status.user.save()
-
-        response = client.post(self.url, data=data)
+    def test_no_pin_set(self, authed_client_token):
+        response = authed_client_token.post(self.url, data={"pin": "4321"})
         assert response.status_code == 400
         assert response.json() == {"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}
 
-    def test_confirm_recovery_pin_success(self, recovery_status, client):
-        recovery_status.user.set_recovery_pin("1234")
-        recovery_status.user.save()
+    def test_wrong_pin(self, authed_client_token, valid_token, user):
+        user.set_recovery_pin("1234")
+        user.save()
 
-        response = client.post(self.url, data=self._get_post_data(recovery_status))
+        response = authed_client_token.post(self.url, data={"pin": "4321"})
+        assert response.status_code == 401
+        assert response.json() == {"account_orphaned": False}
 
-        recovery_status.refresh_from_db()
+        valid_token.refresh_from_db()
+        assert valid_token.backup_code_attempts == 1
+
+    def test_account_orphaned(self, authed_client_token, valid_token, user):
+        user.set_recovery_pin("4321")
+        user.save()
+
+        valid_token.backup_code_attempts = 3
+        valid_token.save()
+
+        response = authed_client_token.post(self.url, data={"pin": "1234"})
+        assert response.status_code == 401
+        assert response.json() == {"account_orphaned": True}
+
+        user.refresh_from_db()
+        assert not user.is_active
+
+    def test_successful_code_check(self, authed_client_token, valid_token, user):
+        user.set_recovery_pin("1234")
+        user.save()
+
+        valid_token.backup_code_attempts = 3
+        valid_token.save()
+
+        response = authed_client_token.post(self.url, data={"pin": "1234"})
         assert response.status_code == 200
-        assert recovery_status.step == RecoveryStatus.RecoverySteps.RESET_PASSWORD
+        user.refresh_from_db()
+
+        response_data = response.json()
+
+        assert response_data["username"] == user.username
+        assert user.check_password(response_data["password"])
+        assert UserKey.objects.filter(key=response_data.get("db_key")).exists()
 
 
 class TestChangePhone:
@@ -899,7 +914,7 @@ class TestCheckName:
         valid_token.save()
 
         response = authed_client_token.post(reverse("check_name"), data={"name": "NonExistentUser"})
-        assert response.status_code == 400
+        assert response.status_code == 403
         assert response.json() == {"error_code": ErrorCodes.PHONE_NOT_VALIDATED}
 
     def test_user_with_name_does_not_exist(self, authed_client_token, valid_token):

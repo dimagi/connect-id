@@ -84,8 +84,11 @@ def token_auth():
 
 
 @pytest.fixture
-def valid_token():
-    return ConfigurationSessionFactory()
+def valid_token(user):
+    return ConfigurationSessionFactory(
+        phone_number=user.phone_number,
+        is_phone_validated=True,
+    )
 
 
 @pytest.fixture
