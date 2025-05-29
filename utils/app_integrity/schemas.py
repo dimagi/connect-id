@@ -20,11 +20,19 @@ class AppIntegrity:
 @dataclass
 class DeviceIntegrity:
     deviceRecognitionVerdict: list
+    recentDeviceActivity: dict[str, Any]
+    deviceAttributes: str
 
 
 @dataclass
 class AccountDetails:
     appLicensingVerdict: str
+
+
+@dataclass
+class EnvironmentDetails:
+    playProtectVerdict: str
+    appAccessRiskVerdict: dict[str, Any]
 
 
 @dataclass
