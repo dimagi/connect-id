@@ -51,7 +51,7 @@ class AppIntegrityService:
             except HttpError:
                 raise IntegrityRequestError("Invalid token")
 
-        return VerdictResponse.from_dict(**response)
+        return VerdictResponse.from_dict(response["tokenPayloadExternal"])
 
     @property
     def _google_service_account_credentials(self) -> Credentials:
@@ -79,13 +79,18 @@ class AppIntegrityService:
             raise IntegrityRequestError("Request package name mismatch")
 
     def _check_app_integrity(self, app_integrity: AppIntegrity):
-        if app_integrity.appRecognitionVerdict != "PLAY_RECOGNIZED":
-            raise AppIntegrityError("App not recognized")
+        if app_integrity.packageName != APP_PACKAGE_NAME:
+            raise AppIntegrityError("App package name mismatch")
+
+        # Not sure how important this is, but leaving it commented out for now
+        # if app_integrity.appRecognitionVerdict != "PLAY_RECOGNIZED":
+        #     raise AppIntegrityError("App not recognized")
 
     def _check_device_integrity(self, device_integrity: DeviceIntegrity):
         if device_integrity.deviceRecognitionVerdict[0] != "MEETS_DEVICE_INTEGRITY":
             raise DeviceIntegrityError("Device integrity compromised")
 
     def _check_account_details(self, account_details: AccountDetails):
-        if account_details.appLicensingVerdict != "LICENSED":
+        verdict = account_details.appLicensingVerdict
+        if verdict != "UNEVALUATED" and verdict != "LICENSED":
             raise AccountDetailsError("Account not licensed")

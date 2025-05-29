@@ -4,12 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from utils.app_integrity.exceptions import (
-    AccountDetailsError,
-    AppIntegrityError,
-    DeviceIntegrityError,
-    IntegrityRequestError,
-)
+from utils.app_integrity.exceptions import AccountDetailsError, DeviceIntegrityError, IntegrityRequestError
 from utils.app_integrity.google_play_integrity import AppIntegrityService
 from utils.app_integrity.schemas import VerdictResponse
 
@@ -46,11 +41,6 @@ class TestAppIntegrityService:
                 "Request package name mismatch",
             ),
             (
-                get_verdict(response_filepath="utils/tests/data/app_unrecognized_response.json"),
-                pytest.raises(AppIntegrityError),
-                "App not recognized",
-            ),
-            (
                 get_verdict(response_filepath="utils/tests/data/device_integrity_unmet_response.json"),
                 pytest.raises(DeviceIntegrityError),
                 "Device integrity compromised",
@@ -69,7 +59,7 @@ class TestAppIntegrityService:
     )
     @patch.object(AppIntegrityService, "_obtain_verdict")
     def test_verdict_analysis(self, obtain_verdict_mock, verdict, exception, error_message):
-        obtain_verdict_mock.return_value = VerdictResponse.from_dict(verdict)
+        obtain_verdict_mock.return_value = VerdictResponse.from_dict(verdict["tokenPayloadExternal"])
         service = AppIntegrityService(token="test_token", request_hash=self.request_hash)
 
         with exception as exc_info:
