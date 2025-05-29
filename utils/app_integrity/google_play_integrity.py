@@ -21,9 +21,10 @@ class AppIntegrityService:
     Verifies the application integrity of the app using Google Play Integrity API.
     """
 
-    def __init__(self, token: str, request_hash: str):
+    def __init__(self, token: str, request_hash: str, app_package: str | None = None):
         self.token = token
         self.request_hash = request_hash
+        self.package_name = app_package or APP_PACKAGE_NAME
 
     def verify_integrity(self):
         """
@@ -47,7 +48,7 @@ class AppIntegrityService:
         with build(**service_spec) as service:
             body = {"integrityToken": self.token}
             try:
-                response = service.v1().decodeIntegrityToken(packageName=APP_PACKAGE_NAME, body=body).execute()
+                response = service.v1().decodeIntegrityToken(packageName=self.package_name, body=body).execute()
             except HttpError:
                 raise IntegrityRequestError("Invalid token")
 
@@ -75,11 +76,11 @@ class AppIntegrityService:
     def _check_request_details(self, request_details: RequestDetails):
         if request_details.requestHash != self.request_hash:
             raise IntegrityRequestError("Request hash mismatch")
-        if request_details.requestPackageName != APP_PACKAGE_NAME:
+        if request_details.requestPackageName != self.package_name:
             raise IntegrityRequestError("Request package name mismatch")
 
     def _check_app_integrity(self, app_integrity: AppIntegrity):
-        if app_integrity.packageName != APP_PACKAGE_NAME:
+        if app_integrity.packageName != self.package_name:
             raise AppIntegrityError("App package name mismatch")
 
     def _check_device_integrity(self, device_integrity: DeviceIntegrity):

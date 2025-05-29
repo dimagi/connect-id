@@ -22,7 +22,11 @@ def require_app_integrity(view):
         if not (integrity_token and request_hash):
             return JsonResponse({"error_code": ErrorCodes.INTEGRITY_DATA_MISSING}, status=400)
 
-        service = AppIntegrityService(token=integrity_token, request_hash=request_hash)
+        service = AppIntegrityService(
+            token=integrity_token,
+            request_hash=request_hash,
+            app_package=request.data.get("application_id"),
+        )
         try:
             service.verify_integrity()
         except AccountDetailsError:
