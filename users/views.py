@@ -1,7 +1,6 @@
 from datetime import timedelta
 from secrets import token_hex
 from urllib.parse import urlencode, urlparse
-from uuid import uuid4
 
 import requests
 from django.conf import settings
@@ -169,7 +168,7 @@ def complete_profile(request):
         return JsonResponse({"error": ErrorCodes.MISSING_DATA}, status=400)
 
     user = ConnectUser(
-        username=f"{name}_{uuid4().hex[:5]}",
+        username=token_hex()[:20],
         phone_number=request.auth.phone_number,
         name=name,
         phone_validated=True,

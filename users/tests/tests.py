@@ -954,10 +954,8 @@ class TestCompleteProfileView:
         response = client.post(self.url)
         assert response.status_code == 401
 
-    @patch("users.views.token_hex")
     @patch("users.views.upload_photo_to_s3")
-    def test_success(self, mock_upload_photo, mock_token_hex, authed_client_token, valid_token):
-        mock_token_hex.return_value = "test-pass"
+    def test_success(self, mock_upload_photo, authed_client_token, valid_token):
         mock_upload_photo.return_value = None
         valid_token.is_phone_validated = True
         valid_token.save()
@@ -969,11 +967,11 @@ class TestCompleteProfileView:
         assert user.check_recovery_pin(self.post_data["recovery_pin"])
 
         user_key = UserKey.objects.get(user=user)
-        assert response.json() == {
-            "username": user.username,
-            "password": "test-pass",
-            "db_key": user_key.key,
-        }
+        response_json = response.json()
+        assert response_json["username"] == user.username
+        assert len(response_json["username"]) == 20
+        assert user.check_password(response_json["password"])
+        assert response_json["db_key"] == user_key.key
 
     def test_missing_required_fields(self, authed_client_token, valid_token):
         valid_token.is_phone_validated = True
