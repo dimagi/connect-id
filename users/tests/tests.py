@@ -602,14 +602,14 @@ class TestConfirmBackupCodeApi:
         assert response.status_code == 200
 
         valid_token.refresh_from_db()
-        assert valid_token.backup_code_attempts == 1
+        assert valid_token.failed_backup_code_attempts == 1
         assert response.json() == {"attempts_left": 2}
 
     def test_account_orphaned(self, authed_client_token, valid_token, user):
         user.set_recovery_pin("4321")
         user.save()
 
-        valid_token.backup_code_attempts = 2
+        valid_token.failed_backup_code_attempts = 2
         valid_token.save()
 
         response = authed_client_token.post(self.url, data={"pin": "1234"})
@@ -623,7 +623,7 @@ class TestConfirmBackupCodeApi:
         user.set_recovery_pin("1234")
         user.save()
 
-        valid_token.backup_code_attempts = 3
+        valid_token.failed_backup_code_attempts = 3
         valid_token.save()
 
         response = authed_client_token.post(self.url, data={"pin": "1234"})

@@ -454,7 +454,7 @@ def confirm_backup_code(request):
 
     try:
         if not user.check_recovery_pin(data.get("pin")):
-            session.add_backup_code_attempt()
+            session.add_failed_backup_code_attempt()
 
             if session.backup_code_attempts_left == 0:
                 user.is_active = False
