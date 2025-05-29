@@ -453,7 +453,7 @@ def confirm_backup_code(request):
     user = ConnectUser.objects.get(phone_number=session.phone_number, is_active=True)
 
     try:
-        if not user.check_recovery_pin(data.get("pin")):
+        if not user.check_recovery_pin(data.get("recovery_pin")):
             session.add_failed_backup_code_attempt()
 
             if session.backup_code_attempts_left == 0:

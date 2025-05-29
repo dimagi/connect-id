@@ -590,7 +590,7 @@ class TestConfirmBackupCodeApi:
         assert response.json() == {"error_code": ErrorCodes.PHONE_NOT_VALIDATED}
 
     def test_no_pin_set(self, authed_client_token):
-        response = authed_client_token.post(self.url, data={"pin": "4321"})
+        response = authed_client_token.post(self.url, data={"recovery_pin": "4321"})
         assert response.status_code == 400
         assert response.json() == {"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}
 
@@ -598,7 +598,7 @@ class TestConfirmBackupCodeApi:
         user.set_recovery_pin("1234")
         user.save()
 
-        response = authed_client_token.post(self.url, data={"pin": "4321"})
+        response = authed_client_token.post(self.url, data={"recovery_pin": "4321"})
         assert response.status_code == 200
 
         valid_token.refresh_from_db()
@@ -612,7 +612,7 @@ class TestConfirmBackupCodeApi:
         valid_token.failed_backup_code_attempts = 2
         valid_token.save()
 
-        response = authed_client_token.post(self.url, data={"pin": "1234"})
+        response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
         assert response.status_code == 200
         assert response.json() == {"attempts_left": 0}
 
@@ -626,7 +626,7 @@ class TestConfirmBackupCodeApi:
         valid_token.failed_backup_code_attempts = 3
         valid_token.save()
 
-        response = authed_client_token.post(self.url, data={"pin": "1234"})
+        response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
         assert response.status_code == 200
         user.refresh_from_db()
 
