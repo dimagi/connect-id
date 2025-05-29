@@ -82,10 +82,6 @@ class AppIntegrityService:
         if app_integrity.packageName != APP_PACKAGE_NAME:
             raise AppIntegrityError("App package name mismatch")
 
-        # Not sure how important this is, but leaving it commented out for now
-        # if app_integrity.appRecognitionVerdict != "PLAY_RECOGNIZED":
-        #     raise AppIntegrityError("App not recognized")
-
     def _check_device_integrity(self, device_integrity: DeviceIntegrity):
         if device_integrity.deviceRecognitionVerdict[0] != "MEETS_DEVICE_INTEGRITY":
             raise DeviceIntegrityError("Device integrity compromised")
