@@ -1028,9 +1028,9 @@ class TestCompleteProfileView:
 
     @patch("users.views.upload_photo_to_s3")
     def test_success(self, mock_upload_photo, authed_client_token, valid_token):
-        mock_upload_photo.return_value = None
-        valid_token.is_phone_validated = True
+        valid_token.phone_number = "+27729541234"
         valid_token.save()
+        mock_upload_photo.return_value = None
 
         response = authed_client_token.post(self.url, data=self.post_data)
         assert response.status_code == 200
@@ -1063,7 +1063,9 @@ class TestCompleteProfileView:
         assert response.status_code == 500
         assert response.json() == {"error": "test-error"}
 
-    def test_phone_not_validated(self, authed_client_token):
+    def test_phone_not_validated(self, authed_client_token, valid_token):
+        valid_token.is_phone_validated = False
+        valid_token.save()
         response = authed_client_token.post(self.url, data=self.post_data)
         assert response.status_code == 403
         assert response.json() == {"error": ErrorCodes.PHONE_NOT_VALIDATED}
