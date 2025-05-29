@@ -1,38 +1,38 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
 @dataclass
 class RequestDetails:
-    requestPackageName: str
-    requestHash: str
-    timestampMillis: str
+    requestPackageName: str = ""
+    requestHash: str = ""
+    timestampMillis: str = ""
 
 
 @dataclass
 class AppIntegrity:
-    appRecognitionVerdict: str
-    packageName: str
-    certificateSha256Digest: str
-    versionCode: str
+    appRecognitionVerdict: str = ""
+    packageName: str = ""
+    certificateSha256Digest: str = ""
+    versionCode: str = ""
 
 
 @dataclass
 class DeviceIntegrity:
-    deviceRecognitionVerdict: list
-    recentDeviceActivity: dict[str, Any]
-    deviceAttributes: str
+    deviceRecognitionVerdict: list = field(default_factory=list)
+    recentDeviceActivity: dict[str, Any] = field(default_factory=dict)
+    deviceAttributes: str = ""
 
 
 @dataclass
 class AccountDetails:
-    appLicensingVerdict: str
+    appLicensingVerdict: str = ""
 
 
 @dataclass
 class EnvironmentDetails:
-    playProtectVerdict: str
-    appAccessRiskVerdict: dict[str, Any]
+    playProtectVerdict: str = ""
+    appAccessRiskVerdict: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
