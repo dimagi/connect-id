@@ -455,13 +455,12 @@ def confirm_backup_code(request):
     try:
         if not user.check_recovery_pin(data.get("pin")):
             session.add_backup_code_attempt()
-            account_orphaned = False
-            if not session.can_attempt_backup_code:
+
+            if session.backup_code_attempts_left == 0:
                 user.is_active = False
                 user.save()
-                account_orphaned = True
 
-            return JsonResponse({"account_orphaned": account_orphaned}, status=401)
+            return JsonResponse({"attempts_left": session.backup_code_attempts_left}, status=200)
 
     except RecoveryPinNotSetError:
         return JsonResponse({"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}, status=400)

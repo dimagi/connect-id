@@ -214,8 +214,8 @@ class ConfigurationSession(models.Model):
         self.save()
 
     @property
-    def can_attempt_backup_code(self):
-        return self.backup_code_attempts < MAX_BACKUP_CODE_ATTEMPTS
+    def backup_code_attempts_left(self):
+        return max(MAX_BACKUP_CODE_ATTEMPTS - self.backup_code_attempts, 0)
 
 
 class SessionUser(AnonymousUser):

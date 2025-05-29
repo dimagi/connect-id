@@ -599,22 +599,22 @@ class TestConfirmBackupCodeApi:
         user.save()
 
         response = authed_client_token.post(self.url, data={"pin": "4321"})
-        assert response.status_code == 401
-        assert response.json() == {"account_orphaned": False}
+        assert response.status_code == 200
 
         valid_token.refresh_from_db()
         assert valid_token.backup_code_attempts == 1
+        assert response.json() == {"attempts_left": 2}
 
     def test_account_orphaned(self, authed_client_token, valid_token, user):
         user.set_recovery_pin("4321")
         user.save()
 
-        valid_token.backup_code_attempts = 3
+        valid_token.backup_code_attempts = 2
         valid_token.save()
 
         response = authed_client_token.post(self.url, data={"pin": "1234"})
-        assert response.status_code == 401
-        assert response.json() == {"account_orphaned": True}
+        assert response.status_code == 200
+        assert response.json() == {"attempts_left": 0}
 
         user.refresh_from_db()
         assert not user.is_active
