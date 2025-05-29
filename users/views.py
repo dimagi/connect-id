@@ -160,7 +160,7 @@ def confirm_secondary_otp(request):
 @authentication_classes([SessionTokenAuthentication])
 def complete_profile(request):
     if not request.auth.is_phone_validated:
-        return JsonResponse({"error": ErrorCodes.PHONE_NOT_VALIDATED}, status=400)
+        return JsonResponse({"error": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
 
     name = request.POST.get("name")
     recovery_pin = request.POST.get("recovery_pin")

@@ -992,3 +992,8 @@ class TestCompleteProfileView:
         response = authed_client_token.post(self.url, data=self.post_data)
         assert response.status_code == 500
         assert response.json() == {"error": "test-error"}
+
+    def test_phone_not_validated(self, authed_client_token):
+        response = authed_client_token.post(self.url, data=self.post_data)
+        assert response.status_code == 403
+        assert response.json() == {"error": ErrorCodes.PHONE_NOT_VALIDATED}
