@@ -441,6 +441,43 @@ def confirm_recovery_pin(request):
     return JsonResponse(user_data(user))
 
 
+@api_view(["POST"])
+@authentication_classes([SessionTokenAuthentication])
+def confirm_backup_code(request):
+    session = request.auth
+
+    if not session.is_phone_validated:
+        return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
+
+    data = request.data
+    user = ConnectUser.objects.get(phone_number=session.phone_number, is_active=True)
+
+    try:
+        if not user.check_recovery_pin(data.get("recovery_pin")):
+            session.add_failed_backup_code_attempt()
+
+            if session.backup_code_attempts_left == 0:
+                user.is_active = False
+                user.save()
+
+            return JsonResponse({"attempts_left": session.backup_code_attempts_left}, status=200)
+
+    except RecoveryPinNotSetError:
+        return JsonResponse({"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}, status=400)
+
+    password = token_hex(16)
+    user.set_password(password)
+    user.save()
+
+    return JsonResponse(
+        {
+            "username": user.username,
+            "db_key": UserKey.get_or_create_key_for_user(user).key,
+            "password": password,
+        }
+    )
+
+
 @api_view(["GET"])
 def fetch_db_key(request):
     db_key = UserKey.get_or_create_key_for_user(request.user)
@@ -700,7 +737,7 @@ def check_name(request):
         return JsonResponse({"error_code": ErrorCodes.NAME_REQUIRED}, status=400)
 
     if not request.auth.is_phone_validated:
-        return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=400)
+        return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
 
     account_exists = False
     user_photo_base64 = ""

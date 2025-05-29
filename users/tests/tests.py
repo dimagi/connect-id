@@ -21,7 +21,7 @@ from users.factories import (
     UserFactory,
 )
 from users.fcm_utils import create_update_device
-from users.models import ConfigurationSession, ConnectUser, PhoneDevice, RecoveryStatus
+from users.models import ConfigurationSession, ConnectUser, PhoneDevice, RecoveryStatus, UserKey
 from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
 
 
@@ -577,6 +577,66 @@ class TestRecoveryPinConfirmationApi:
         assert recovery_status.step == RecoveryStatus.RecoverySteps.RESET_PASSWORD
 
 
+@pytest.mark.django_db
+class TestConfirmBackupCodeApi:
+    url = reverse("confirm_backup_code")
+
+    def test_phone_not_validated(self, authed_client_token, valid_token):
+        valid_token.is_phone_validated = False
+        valid_token.save()
+
+        response = authed_client_token.post(self.url, data={})
+        assert response.status_code == 403
+        assert response.json() == {"error_code": ErrorCodes.PHONE_NOT_VALIDATED}
+
+    def test_no_pin_set(self, authed_client_token):
+        response = authed_client_token.post(self.url, data={"recovery_pin": "4321"})
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}
+
+    def test_wrong_pin(self, authed_client_token, valid_token, user):
+        user.set_recovery_pin("1234")
+        user.save()
+
+        response = authed_client_token.post(self.url, data={"recovery_pin": "4321"})
+        assert response.status_code == 200
+
+        valid_token.refresh_from_db()
+        assert valid_token.failed_backup_code_attempts == 1
+        assert response.json() == {"attempts_left": 2}
+
+    def test_account_orphaned(self, authed_client_token, valid_token, user):
+        user.set_recovery_pin("4321")
+        user.save()
+
+        valid_token.failed_backup_code_attempts = 2
+        valid_token.save()
+
+        response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
+        assert response.status_code == 200
+        assert response.json() == {"attempts_left": 0}
+
+        user.refresh_from_db()
+        assert not user.is_active
+
+    def test_successful_code_check(self, authed_client_token, valid_token, user):
+        user.set_recovery_pin("1234")
+        user.save()
+
+        valid_token.failed_backup_code_attempts = 3
+        valid_token.save()
+
+        response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
+        assert response.status_code == 200
+        user.refresh_from_db()
+
+        response_data = response.json()
+
+        assert response_data["username"] == user.username
+        assert user.check_password(response_data["password"])
+        assert UserKey.objects.filter(key=response_data.get("db_key")).exists()
+
+
 class TestChangePhone:
     def test_phone_is_validated(self, auth_device, user):
         user.phone_validated = True
@@ -738,7 +798,7 @@ class TestValidateFirebaseIDToken:
 
     @mock.patch("users.views.auth.verify_id_token")
     def test_success(self, mock_verify_token, authed_client_token, valid_token):
-        mock_verify_token.return_value = {"uid": "test-uid", "phone_number": valid_token.phone_number}
+        mock_verify_token.return_value = {"uid": "test-uid", "phone_number": valid_token.phone_number.as_e164}
         response = authed_client_token.post(self.url, data=self.post_data)
         assert response.status_code == 200
         assert isinstance(response, HttpResponse)
@@ -910,11 +970,12 @@ class TestCheckName:
         valid_token.save()
 
         response = authed_client_token.post(reverse("check_name"), data={"name": "NonExistentUser"})
-        assert response.status_code == 400
+        assert response.status_code == 403
         assert response.json() == {"error_code": ErrorCodes.PHONE_NOT_VALIDATED}
 
-    def test_user_with_name_does_not_exist(self, authed_client_token, valid_token):
+    def test_user_does_not_exist(self, authed_client_token, valid_token):
         valid_token.is_phone_validated = True
+        valid_token.phone_number = Faker().phone_number()
         valid_token.save()
 
         response = authed_client_token.post(reverse("check_name"), data={"name": "NonExistentUser"})

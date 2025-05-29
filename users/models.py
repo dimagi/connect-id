@@ -19,7 +19,7 @@ from users.exceptions import RecoveryPinNotSetError
 from users.services import get_user_photo_base64
 from utils import get_sms_sender, send_sms
 
-from .const import TEST_NUMBER_PREFIX
+from .const import MAX_BACKUP_CODE_ATTEMPTS, TEST_NUMBER_PREFIX
 
 
 class ConnectUser(AbstractUser):
@@ -190,6 +190,10 @@ class ConfigurationSession(models.Model):
     expires = models.DateTimeField()
     phone_number = PhoneNumberField()
     is_phone_validated = models.BooleanField(default=False)
+    failed_backup_code_attempts = models.IntegerField(default=0)
+
+    def __str__(self):
+        return self.key
 
     def save(self, *args, **kwargs):
         if not self.key:
@@ -205,8 +209,13 @@ class ConfigurationSession(models.Model):
     def is_valid(self):
         return self.expires > now()
 
-    def __str__(self):
-        return self.key
+    def add_failed_backup_code_attempt(self):
+        self.failed_backup_code_attempts += 1
+        self.save()
+
+    @property
+    def backup_code_attempts_left(self):
+        return max(MAX_BACKUP_CODE_ATTEMPTS - self.failed_backup_code_attempts, 0)
 
 
 class SessionUser(AnonymousUser):

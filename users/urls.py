@@ -27,6 +27,7 @@ urlpatterns = [
     path("heartbeat", views.heartbeat, name="heartbeat"),
     path("demo_users", views.GetDemoUsers.as_view(), name="demo_users"),
     path("recover/confirm_pin", views.confirm_recovery_pin, name="confirm_recovery_pin"),
+    path("recover/confirm_backup_code", views.confirm_backup_code, name="confirm_backup_code"),
     path("set_recovery_pin", views.set_recovery_pin, name="set_recovery_pin"),
     path("filter_users", views.FilterUsers.as_view(), name="filter_users"),
     path("add_credential", views.AddCredential.as_view(), name="add_credential"),
