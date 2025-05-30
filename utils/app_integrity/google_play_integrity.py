@@ -85,11 +85,12 @@ class AppIntegrityService:
             raise AppIntegrityError("App package name mismatch")
 
     def _check_device_integrity(self, device_integrity: DeviceIntegrity):
-        verdict = device_integrity.deviceRecognitionVerdict[0]
-        if self.is_demo_user and verdict == "MEETS_VIRTUAL_INTEGRITY":
+        verdicts = device_integrity.deviceRecognitionVerdict
+
+        if self.is_demo_user and "MEETS_VIRTUAL_INTEGRITY" in verdicts:
             return
 
-        if verdict != "MEETS_DEVICE_INTEGRITY":
+        if "MEETS_DEVICE_INTEGRITY" not in verdicts:
             raise DeviceIntegrityError("Device integrity compromised")
 
     def _check_account_details(self, account_details: AccountDetails):
