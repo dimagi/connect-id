@@ -1,0 +1,34 @@
+{
+  "tokenPayloadExternal": {
+    "requestDetails": {
+      "requestPackageName": "org.commcare.dalvik",
+      "timestampMillis": "1748501650970",
+      "requestHash": "aGVsbG8gd29scmQgdGhlcmU"
+    },
+    "appIntegrity": {
+      "appRecognitionVerdict": "UNRECOGNIZED_VERSION",
+      "packageName": "org.commcare.dalvik",
+      "certificateSha256Digest": ["some_secret_certificate_sha256_digest"],
+      "versionCode": "1"
+    },
+    "deviceIntegrity": {
+      "deviceRecognitionVerdict": [
+        "MEETS_VIRTUAL_INTEGRITY",
+        "MEETS_DEVICE_INTEGRITY"
+      ],
+      "recentDeviceActivity": {
+        "deviceActivityLevel": "UNEVALUATED"
+      },
+      "deviceAttributes": {
+        "sdkVersion": 35
+      }
+    },
+    "accountDetails": {
+      "appLicensingVerdict": "UNEVALUATED"
+    },
+    "environmentDetails": {
+      "playProtectVerdict": "UNEVALUATED",
+      "appAccessRiskVerdict": {}
+    }
+  }
+}
