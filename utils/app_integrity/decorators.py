@@ -1,5 +1,6 @@
 from django.http import JsonResponse
 
+from users.const import TEST_NUMBER_PREFIX
 from utils.app_integrity.const import INTEGRITY_REQUEST_HASH_KEY, INTEGRITY_TOKEN_HEADER_KEY, ErrorCodes
 from utils.app_integrity.exceptions import (
     AccountDetailsError,
@@ -22,10 +23,14 @@ def require_app_integrity(view):
         if not (integrity_token and request_hash):
             return JsonResponse({"error_code": ErrorCodes.INTEGRITY_DATA_MISSING}, status=400)
 
+        data = request.data
+        is_demo_user = data.get("phone_number", "").startswith(TEST_NUMBER_PREFIX)
+
         service = AppIntegrityService(
             token=integrity_token,
             request_hash=request_hash,
-            app_package=request.data.get("application_id"),
+            app_package=data.get("application_id"),
+            is_demo_user=is_demo_user,
         )
         try:
             service.verify_integrity()

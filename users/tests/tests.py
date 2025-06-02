@@ -941,7 +941,22 @@ class TestStartConfigurationView:
             HTTP_CC_INTEGRITY_TOKEN="token",
             HTTP_CC_REQUEST_HASH="hash",
         )
-        integrity_service_mock.assert_called_once_with(token="token", request_hash="hash", app_package="my.fancy.app")
+        integrity_service_mock.assert_called_once_with(
+            token="token", request_hash="hash", app_package="my.fancy.app", is_demo_user=False
+        )
+
+    @patch("utils.app_integrity.decorators.AppIntegrityService")
+    def test_demo_user(self, integrity_service_mock, client):
+        integrity_service_mock.verify_integrity.return_value = True
+        client.post(
+            reverse("start_device_configuration"),
+            data={"application_id": "my.fancy.app", "phone_number": TEST_NUMBER_PREFIX + "1234567"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        integrity_service_mock.assert_called_once_with(
+            token="token", request_hash="hash", app_package="my.fancy.app", is_demo_user=True
+        )
 
 
 @pytest.mark.django_db

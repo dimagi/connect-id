@@ -21,10 +21,11 @@ class AppIntegrityService:
     Verifies the application integrity of the app using Google Play Integrity API.
     """
 
-    def __init__(self, token: str, request_hash: str, app_package: str | None = None):
+    def __init__(self, token: str, request_hash: str, app_package: str | None = None, is_demo_user: bool = False):
         self.token = token
         self.request_hash = request_hash
         self.package_name = app_package or APP_PACKAGE_NAME
+        self.is_demo_user = is_demo_user
 
     def verify_integrity(self):
         """
@@ -84,7 +85,12 @@ class AppIntegrityService:
             raise AppIntegrityError("App package name mismatch")
 
     def _check_device_integrity(self, device_integrity: DeviceIntegrity):
-        if device_integrity.deviceRecognitionVerdict[0] != "MEETS_DEVICE_INTEGRITY":
+        verdicts = device_integrity.deviceRecognitionVerdict
+
+        if self.is_demo_user and "MEETS_VIRTUAL_INTEGRITY" in verdicts:
+            return
+
+        if "MEETS_DEVICE_INTEGRITY" not in verdicts:
             raise DeviceIntegrityError("Device integrity compromised")
 
     def _check_account_details(self, account_details: AccountDetails):
