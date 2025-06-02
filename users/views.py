@@ -768,7 +768,7 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
 @api_view(["POST"])
 @authentication_classes([SessionTokenAuthentication])
 def check_name(request):
-    name = request.POST.get("name")
+    name = request.data.get("name")
     if not name:
         return JsonResponse({"error_code": ErrorCodes.NAME_REQUIRED}, status=400)
 
