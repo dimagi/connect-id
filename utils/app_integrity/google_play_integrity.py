@@ -100,6 +100,9 @@ class AppIntegrityService:
             raise DeviceIntegrityError("Device integrity compromised")
 
     def _check_account_details(self, account_details: AccountDetails):
+        if self.is_demo_user:
+            return
+
         verdict = account_details.appLicensingVerdict
         if verdict != "UNEVALUATED" and verdict != "LICENSED":
             raise AccountDetailsError("Account not licensed")
