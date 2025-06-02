@@ -868,6 +868,7 @@ class TestStartConfigurationView:
         token = response.json().get("token")
         session = ConfigurationSession.objects.get(key=token)
         assert session.phone_number == phone_number
+        assert not session.is_phone_validated
 
     @skip_app_integrity_check
     def test_can_start_multiple_sessions(self, client):
@@ -907,6 +908,10 @@ class TestStartConfigurationView:
         )
         assert response.status_code == 200
         assert response.json().get("demo_user")
+
+        token = response.json().get("token")
+        session = ConfigurationSession.objects.get(key=token)
+        assert session.is_phone_validated
 
     @skip_app_integrity_check
     def test_device_lock_required(self, client):

@@ -66,10 +66,16 @@ def start_device_configuration(request):
     if "phone_number" not in data:
         return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
-    token_session = ConfigurationSession.objects.create(phone_number=data["phone_number"])
+    is_demo_user = data["phone_number"].startswith(TEST_NUMBER_PREFIX)
+
+    token_session = ConfigurationSession.objects.create(
+        phone_number=data["phone_number"],
+        is_phone_validated=is_demo_user,  # demo users are always considered validated
+    )
+
     response_data = {
         "required_lock": ConnectUser.get_device_security_requirement(data["phone_number"]),
-        "demo_user": data["phone_number"].startswith(TEST_NUMBER_PREFIX),
+        "demo_user": is_demo_user,
         "token": token_session.key,
     }
     return JsonResponse(response_data)
