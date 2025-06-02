@@ -1,3 +1,5 @@
+import logging
+
 from django.conf import settings
 from google.oauth2 import service_account
 from google.oauth2.service_account import Credentials
@@ -11,6 +13,8 @@ from utils.app_integrity.exceptions import (
     IntegrityRequestError,
 )
 from utils.app_integrity.schemas import AccountDetails, AppIntegrity, DeviceIntegrity, RequestDetails, VerdictResponse
+
+logger = logging.getLogger(__name__)
 
 APP_PACKAGE_NAME = "org.commcare.dalvik"
 GOOGLE_SERVICE_NAME = "playintegrity"
@@ -32,6 +36,7 @@ class AppIntegrityService:
         Raises an exception if the app integrity is compromised, otherwise does nothing.
         """
         verdict_response = self._obtain_verdict()
+        logger.debug(f"Integrity token verdict for app({self.package_name}): {verdict_response}")
         self._analyze_verdict(verdict_response)
 
     def _obtain_verdict(self) -> VerdictResponse:
@@ -50,7 +55,8 @@ class AppIntegrityService:
             body = {"integrityToken": self.token}
             try:
                 response = service.v1().decodeIntegrityToken(packageName=self.package_name, body=body).execute()
-            except HttpError:
+            except HttpError as e:
+                logger.exception(f"Error decoding integrity token for app ({self.package_name}): {str(e)}")
                 raise IntegrityRequestError("Invalid token")
 
         return VerdictResponse.from_dict(response["tokenPayloadExternal"])
