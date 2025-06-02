@@ -167,9 +167,9 @@ def complete_profile(request):
     if not request.auth.is_phone_validated:
         return JsonResponse({"error": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
 
-    name = request.POST.get("name")
-    recovery_pin = request.POST.get("recovery_pin")
-    photo = request.POST.get("photo")
+    name = request.data.get("name")
+    recovery_pin = request.data.get("recovery_pin")
+    photo = request.data.get("photo")
     if not (name and recovery_pin and photo):
         return JsonResponse({"error": ErrorCodes.MISSING_DATA}, status=400)
 
