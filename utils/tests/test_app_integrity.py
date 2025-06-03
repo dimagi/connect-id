@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from utils.app_integrity.exceptions import DeviceIntegrityError, IntegrityRequestError  # AccountDetailsError,
+from utils.app_integrity.exceptions import DeviceIntegrityError, IntegrityRequestError
 from utils.app_integrity.google_play_integrity import AppIntegrityService
 from utils.app_integrity.schemas import VerdictResponse
 

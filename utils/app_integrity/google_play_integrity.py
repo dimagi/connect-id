@@ -78,7 +78,7 @@ class AppIntegrityService:
         self._check_request_details(verdict.requestDetails)
         self._check_app_integrity(verdict.appIntegrity)
         self._check_device_integrity(verdict.deviceIntegrity)
-        # Commented out for now so it's easier to test with mobile
+        # Charl: Commented out for now so it's easier to test with mobile
         # apk instead of downloading the app from Play Store.
         # This should be uncommented once QA is done.
         # self._check_account_details(verdict.accountDetails)
