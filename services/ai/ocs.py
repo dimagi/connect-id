@@ -1,4 +1,5 @@
 import requests
+import sentry_sdk
 from django.conf import settings
 
 OCS_CONFIG = settings.OCS_CONFIG
@@ -13,6 +14,8 @@ class OpenChatStudio:
         bot_id = OCS_CONFIG["bots"]["cultural_name_similarity"]
 
         similarity_verdict = self._prompt_bot(data, bot_id=bot_id)
+        if not similarity_verdict:
+            return None
         return similarity_verdict.strip().upper() == "MATCH"
 
     def _get_user_message(self, content: str) -> dict:
@@ -20,19 +23,24 @@ class OpenChatStudio:
 
     def _prompt_bot(self, data: dict, bot_id: str) -> dict:
         if not bot_id:
-            raise ValueError("Bot ID is required.")
+            return
 
-        response = self._post_request(
-            url=f"{OCS_CONFIG['api_base_url']}/openai/{bot_id}/chat/completions",
-            data=data,
-        )
+        try:
+            response = self._post_request(
+                url=f"{OCS_CONFIG['api_base_url']}/openai/{bot_id}/chat/completions",
+                data=data,
+            )
+        except Exception as e:
+            sentry_sdk.capture_exception(f"OCS request error: {e}")
+            return
+
         return self._extract_bot_message(response)
 
     def _extract_bot_message(self, response: dict) -> str:
         if "choices" not in response or not response["choices"]:
-            raise ValueError("Invalid response from the bot.")
+            return
 
-        return response["choices"][0]["message"]["content"]
+        return response["choices"][0].get("message", {}).get("content")
 
     def _post_request(self, url: str, data: dict) -> dict:
         response = requests.post(url, headers=self._headers(), json=data)
