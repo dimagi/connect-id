@@ -100,7 +100,7 @@ def validate_phone(request):
 @api_view(["POST"])
 @authentication_classes([SessionTokenAuthentication])
 def validate_firebase_id_token(request):
-    id_token = request.data.get("id_token")
+    id_token = request.data.get("token")
     if not id_token:
         return JsonResponse({"error": ErrorCodes.MISSING_TOKEN}, status=400)
     try:

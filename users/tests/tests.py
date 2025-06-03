@@ -788,7 +788,7 @@ class TestValidateFirebaseIDToken:
 
     @property
     def post_data(self):
-        return {"id_token": "123-456"}
+        return {"token": "123-456"}
 
     @mock.patch("users.views.auth.verify_id_token")
     def test_success(self, mock_verify_token, authed_client_token, valid_token):
@@ -796,7 +796,7 @@ class TestValidateFirebaseIDToken:
         response = authed_client_token.post(self.url, data=self.post_data)
         assert response.status_code == 200
         assert isinstance(response, HttpResponse)
-        mock_verify_token.assert_called_once_with(self.post_data["id_token"])
+        mock_verify_token.assert_called_once_with(self.post_data["token"])
 
         config_session = ConfigurationSession.objects.get(key=valid_token.key)
         assert config_session.is_phone_validated is True
