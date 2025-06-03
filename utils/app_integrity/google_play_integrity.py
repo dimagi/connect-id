@@ -78,7 +78,10 @@ class AppIntegrityService:
         self._check_request_details(verdict.requestDetails)
         self._check_app_integrity(verdict.appIntegrity)
         self._check_device_integrity(verdict.deviceIntegrity)
-        self._check_account_details(verdict.accountDetails)
+        # Commented out for now so it's easier to test with mobile
+        # apk instead of downloading the app from Play Store.
+        # This should be uncommented once QA is done.
+        # self._check_account_details(verdict.accountDetails)
 
     def _check_request_details(self, request_details: RequestDetails):
         if request_details.requestHash != self.request_hash:
@@ -104,5 +107,5 @@ class AppIntegrityService:
             return
 
         verdict = account_details.appLicensingVerdict
-        if verdict != "UNEVALUATED" and verdict != "LICENSED":
+        if verdict == "UNLICENSED":
             raise AccountDetailsError("Account not licensed")
