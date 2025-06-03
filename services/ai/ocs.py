@@ -1,0 +1,43 @@
+import requests
+from django.conf import settings
+
+OCS_CONFIG = settings.OCS_CONFIG
+
+
+class OpenChatStudio:
+    def check_name_similarity(self, reference_name: str, candidate_name: str, cultural_context: str) -> bool:
+        message = (
+            f"Reference Name: {reference_name}\nCandidate Name: {candidate_name}\nCultural Context: {cultural_context}"
+        )
+        data = {"messages": [self._get_user_message(message)]}
+        bot_id = OCS_CONFIG["bots"]["cultural_name_similarity"]
+
+        similarity_verdict = self._prompt_bot(data, bot_id=bot_id)
+        return similarity_verdict.strip().upper() == "MATCH"
+
+    def _get_user_message(self, content: str) -> dict:
+        return {"role": "user", "content": content}
+
+    def _prompt_bot(self, data: dict, bot_id: str) -> dict:
+        if not bot_id:
+            raise ValueError("Bot ID is required.")
+
+        response = self._post_request(
+            url=f"{OCS_CONFIG['api_base_url']}/openai/{bot_id}/chat/completions",
+            data=data,
+        )
+        return self._extract_bot_message(response)
+
+    def _extract_bot_message(self, response: dict) -> str:
+        if "choices" not in response or not response["choices"]:
+            raise ValueError("Invalid response from the bot.")
+
+        return response["choices"][0]["message"]["content"]
+
+    def _post_request(self, url: str, data: dict) -> dict:
+        response = requests.post(url, headers=self._headers(), json=data)
+        response.raise_for_status()
+        return response.json()
+
+    def _headers(self):
+        return {"Content-Type": "application/json", "Authorization": f"Bearer {OCS_CONFIG['api_key']}"}
