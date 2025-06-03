@@ -183,7 +183,7 @@ def complete_profile(request):
     password = token_hex()
     user.set_password(password)
 
-    error_code = upload_photo_to_s3(photo, user.id)
+    error_code = upload_photo_to_s3(photo, user.username)
     if error_code:
         return JsonResponse({"error": error_code}, status=500)
 
@@ -403,7 +403,7 @@ def update_profile(request):
         user.recovery_phone = data["secondary_phone"]
         changed = True
     if data.get("photo"):
-        error_code = upload_photo_to_s3(data["photo"], user.id)
+        error_code = upload_photo_to_s3(data["photo"], user.username)
         if error_code:
             return JsonResponse({"error": error_code}, status=500)
     if changed:
