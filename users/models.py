@@ -52,7 +52,7 @@ class ConnectUser(AbstractUser):
     @classmethod
     def get_device_security_requirement(cls, phone_number) -> str:
         try:
-            user = cls.objects.get(phone_number=phone_number)
+            user = cls.objects.get(phone_number=phone_number, is_active=True)
         except ConnectUser.DoesNotExist:
             return ConnectUser.DeviceSecurity.BIOMETRIC.value
         return user.device_security
