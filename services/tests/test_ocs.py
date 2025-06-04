@@ -1,8 +1,6 @@
 import uuid
 from unittest.mock import patch
 
-import pytest
-
 from services.ai.ocs import OpenChatStudio
 
 
@@ -18,7 +16,6 @@ def request_reponse(response_message: str = None):
     }
 
 
-@pytest.mark.django_db
 class TestOCS:
     def test_get_user_message(self):
         content = "Hello, World!"
@@ -38,7 +35,6 @@ class TestOCS:
         assert OpenChatStudio()._extract_bot_message({"choices": []}) is None
 
 
-@pytest.mark.django_db
 class TestOCSNameSimilarity:
     @patch.object(OpenChatStudio, "_post_request")
     def test_name_similarity_bot_message(self, post_request_mock):
