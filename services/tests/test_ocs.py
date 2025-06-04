@@ -37,7 +37,8 @@ class TestOCS:
 
 class TestOCSNameSimilarity:
     @patch.object(OpenChatStudio, "_post_request")
-    def test_name_similarity_bot_message(self, post_request_mock):
+    def test_name_similarity_bot_message(self, post_request_mock, settings):
+        settings.OCS_CONFIG["bots"]["cultural_name_similarity"] = "test_bot_id"
         post_request_mock.return_value = request_reponse(response_message="Match")
 
         OpenChatStudio().check_name_similarity(
@@ -50,7 +51,8 @@ class TestOCSNameSimilarity:
         assert kwargs["data"]["messages"][0]["content"] == expected_message
 
     @patch.object(OpenChatStudio, "_post_request")
-    def test_name_similarity_match(self, post_request_mock):
+    def test_name_similarity_match(self, post_request_mock, settings):
+        settings.OCS_CONFIG["bots"]["cultural_name_similarity"] = "test_bot_id"
         post_request_mock.return_value = request_reponse(response_message="Match")
 
         is_similar = OpenChatStudio().check_name_similarity(
