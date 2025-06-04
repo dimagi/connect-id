@@ -846,7 +846,18 @@ class TestStartConfigurationView:
     def test_no_phone_number(self, client):
         response = client.post(
             reverse("start_device_configuration"),
-            data={},
+            data={"gps_location": "0 0"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.status_code == 400
+        assert response.json().get("error_code") == ErrorCodes.MISSING_DATA
+
+    @skip_app_integrity_check
+    def test_no_gps_location(self, client):
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": Faker().phone_number()},
             HTTP_CC_INTEGRITY_TOKEN="token",
             HTTP_CC_REQUEST_HASH="hash",
         )
@@ -856,10 +867,11 @@ class TestStartConfigurationView:
     @skip_app_integrity_check
     def test_session_started(self, client):
         phone_number = Faker().phone_number()
+        gps_location = "1.2 3.4"
 
         response = client.post(
             reverse("start_device_configuration"),
-            data={"phone_number": phone_number},
+            data={"phone_number": phone_number, "gps_location": gps_location},
             HTTP_CC_INTEGRITY_TOKEN="token",
             HTTP_CC_REQUEST_HASH="hash",
         )
@@ -868,6 +880,7 @@ class TestStartConfigurationView:
         token = response.json().get("token")
         session = ConfigurationSession.objects.get(key=token)
         assert session.phone_number == phone_number
+        assert session.gps_location == gps_location
         assert not session.is_phone_validated
 
     @skip_app_integrity_check
@@ -876,7 +889,7 @@ class TestStartConfigurationView:
 
         response = client.post(
             reverse("start_device_configuration"),
-            data={"phone_number": phone_number},
+            data={"phone_number": phone_number, "gps_location": "0 0"},
             HTTP_CC_INTEGRITY_TOKEN="token",
             HTTP_CC_REQUEST_HASH="hash",
         )
@@ -886,7 +899,7 @@ class TestStartConfigurationView:
 
         response = client.post(
             reverse("start_device_configuration"),
-            data={"phone_number": phone_number},
+            data={"phone_number": phone_number, "gps_location": "0 0"},
             HTTP_CC_INTEGRITY_TOKEN="token",
             HTTP_CC_REQUEST_HASH="hash",
         )
@@ -902,7 +915,7 @@ class TestStartConfigurationView:
         phone_number = (TEST_NUMBER_PREFIX + "1234567",)
         response = client.post(
             reverse("start_device_configuration"),
-            data={"phone_number": phone_number},
+            data={"phone_number": phone_number, "gps_location": "0 0"},
             HTTP_CC_INTEGRITY_TOKEN="token",
             HTTP_CC_REQUEST_HASH="hash",
         )
@@ -917,7 +930,7 @@ class TestStartConfigurationView:
     def test_device_lock_required(self, client):
         response = client.post(
             reverse("start_device_configuration"),
-            data={"phone_number": Faker().phone_number()},
+            data={"phone_number": Faker().phone_number(), "gps_location": "0 0"},
             HTTP_CC_INTEGRITY_TOKEN="token",
             HTTP_CC_REQUEST_HASH="hash",
         )
@@ -931,7 +944,7 @@ class TestStartConfigurationView:
 
         response = client.post(
             reverse("start_device_configuration"),
-            data={"phone_number": pin_user.phone_number},
+            data={"phone_number": pin_user.phone_number, "gps_location": "0 0"},
             HTTP_CC_INTEGRITY_TOKEN="token",
             HTTP_CC_REQUEST_HASH="hash",
         )
@@ -955,7 +968,11 @@ class TestStartConfigurationView:
         integrity_service_mock.verify_integrity.return_value = True
         client.post(
             reverse("start_device_configuration"),
-            data={"application_id": "my.fancy.app", "phone_number": TEST_NUMBER_PREFIX + "1234567"},
+            data={
+                "application_id": "my.fancy.app",
+                "phone_number": TEST_NUMBER_PREFIX + "1234567",
+                "gps_location": "0 0",
+            },
             HTTP_CC_INTEGRITY_TOKEN="token",
             HTTP_CC_REQUEST_HASH="hash",
         )

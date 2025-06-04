@@ -191,6 +191,7 @@ class ConfigurationSession(models.Model):
     phone_number = PhoneNumberField()
     is_phone_validated = models.BooleanField(default=False)
     failed_backup_code_attempts = models.IntegerField(default=0)
+    gps_location = models.CharField(max_length=100, blank=True, null=True)
 
     def __str__(self):
         return self.key
