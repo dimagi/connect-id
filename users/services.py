@@ -16,11 +16,11 @@ def split_base64_string(image_data):
     return file_type, data
 
 
-def upload_photo_to_s3(image_base64, user_id):
+def upload_photo_to_s3(image_base64, username):
     if len(image_base64) > MAX_PHOTO_SIZE:
         return ErrorCodes.FILE_TOO_LARGE
     file_type, image_base64_data = split_base64_string(image_base64)
-    filename = f"{user_id}.{file_type}"
+    filename = f"{username}.{file_type}"
     s3_client = boto3.client("s3")
     try:
         image_data = base64.b64decode(image_base64_data)
@@ -35,10 +35,10 @@ def upload_photo_to_s3(image_base64, user_id):
         return ErrorCodes.FAILED_TO_UPLOAD
 
 
-def get_user_photo_base64(user_id):
+def get_user_photo_base64(username):
     s3_client = boto3.client("s3")
     try:
-        objs = s3_client.list_objects_v2(Bucket=settings.AWS_S3_PHOTO_BUCKET_NAME, Prefix=f"{user_id}.")
+        objs = s3_client.list_objects_v2(Bucket=settings.AWS_S3_PHOTO_BUCKET_NAME, Prefix=f"{username}.")
         if "Contents" in objs:
             obj = objs["Contents"][0]  # There should only be one instance that matches the user_id prefix
             _, file_type = obj["Key"].rsplit(".", 1)
