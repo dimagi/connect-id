@@ -313,3 +313,12 @@ GOOGLE_APPLICATION_CREDENTIALS = {
 
 # Bucket where user photos are stored on S3
 AWS_S3_PHOTO_BUCKET_NAME = env("AWS_S3_PHOTO_BUCKET_NAME", default="personalid-user-photos")
+
+# Open Chat Studio (OCS) configuration
+OCS_CONFIG = {
+    "api_key": env("OCS_API_KEY", default=""),
+    "api_base_url": "https://chatbots.dimagi.com/api",
+    "bots": {
+        "cultural_name_similarity": env("OCS_CULTURAL_NAME_BOT_ID", default=""),
+    },
+}
