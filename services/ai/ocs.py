@@ -37,10 +37,9 @@ class OpenChatStudio:
         return self._extract_bot_message(response)
 
     def _extract_bot_message(self, response: dict) -> str:
-        if "choices" not in response or not response["choices"]:
-            return
-
-        return response["choices"][0].get("message", {}).get("content")
+        if not response.get("choices"):
+            return None
+        return response.get("choices", [{}])[0].get("message", {}).get("content")
 
     def _post_request(self, url: str, data: dict) -> dict:
         response = requests.post(url, headers=self._headers(), json=data)
