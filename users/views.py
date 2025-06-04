@@ -63,7 +63,7 @@ def register(request):
 def start_device_configuration(request):
     data = request.data
 
-    if "phone_number" not in data:
+    if not (data.get("phone_number") and data.get("gps_location")):
         return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
     is_demo_user = data["phone_number"].startswith(TEST_NUMBER_PREFIX)
@@ -71,6 +71,7 @@ def start_device_configuration(request):
     token_session = ConfigurationSession.objects.create(
         phone_number=data["phone_number"],
         is_phone_validated=is_demo_user,  # demo users are always considered validated
+        gps_location=data["gps_location"],
     )
 
     response_data = {
