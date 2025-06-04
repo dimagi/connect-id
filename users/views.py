@@ -18,6 +18,7 @@ from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
 
+from services.ai.ocs import OpenChatStudio
 from utils import get_ip, get_sms_sender, send_sms
 from utils.app_integrity.decorators import require_app_integrity
 from utils.rest_framework import ClientProtectedResourceAuth
@@ -773,7 +774,7 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
 
 @api_view(["POST"])
 @authentication_classes([SessionTokenAuthentication])
-def check_name(request):
+def check_user_similarity(request):
     name = request.data.get("name")
     if not name:
         return JsonResponse({"error_code": ErrorCodes.NAME_REQUIRED}, status=400)
@@ -781,20 +782,28 @@ def check_name(request):
     if not request.auth.is_phone_validated:
         return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
 
-    account_exists = False
-    user_photo_base64 = ""
-
+    existing_user = None
     try:
-        # We won't consider the name yet - fuzzy matching the name is next phase
-        user = ConnectUser.objects.get(phone_number=request.auth.phone_number, is_active=True)
-        user_photo_base64 = user.get_photo()
-        account_exists = True
+        existing_user = ConnectUser.objects.get(phone_number=request.auth.phone_number, is_active=True)
     except ConnectUser.DoesNotExist:
         pass
 
+    is_same_user = False
+
+    if existing_user:
+        is_same_user = True  # assume true until proven otherwise, because user owns this number
+        user_name_is_similar = OpenChatStudio().check_name_similarity(
+            reference_name=existing_user.name,
+            candidate_name=name,
+            cultural_context=request.auth.phone_number.country_code,
+        )
+
+        if user_name_is_similar is not None:
+            is_same_user = user_name_is_similar
+
     return JsonResponse(
         {
-            "account_exists": account_exists,
-            "photo": user_photo_base64,
+            "account_exists": is_same_user,
+            "photo": existing_user.get_photo() if is_same_user else "",
         }
     )
