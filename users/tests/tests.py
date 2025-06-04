@@ -752,7 +752,7 @@ class TestUpdateProfile:
         auth_device.post(self.url, data)
         mock_s3.put_object.assert_called_once()
         _, kwargs = mock_s3.put_object.call_args
-        assert kwargs["Key"] == f"{user.id}.jpg"
+        assert kwargs["Key"] == f"{user.username}.jpg"
 
     def test_update_photo_invalid(self, auth_device):
         data = {"photo": "data:image/png;base64,invalid-base64"}
