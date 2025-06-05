@@ -173,6 +173,9 @@ def complete_profile(request):
     if not (name and recovery_pin and photo):
         return JsonResponse({"error": ErrorCodes.MISSING_DATA}, status=400)
 
+    # Deactivate any existing user with the same phone number
+    ConnectUser.objects.filter(phone_number=request.auth.phone_number, is_active=True).update(is_active=False)
+
     user = ConnectUser(
         username=token_hex()[:20],
         phone_number=request.auth.phone_number,
