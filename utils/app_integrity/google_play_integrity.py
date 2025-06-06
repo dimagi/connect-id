@@ -99,7 +99,7 @@ class AppIntegrityService:
         if self.is_demo_user and "MEETS_VIRTUAL_INTEGRITY" in verdicts:
             return
 
-        if "MEETS_DEVICE_INTEGRITY" not in verdicts:
+        if "MEETS_DEVICE_INTEGRITY" not in verdicts and "MEETS_BASIC_INTEGRITY" not in verdicts:
             raise DeviceIntegrityError("Device integrity compromised")
 
     def _check_account_details(self, account_details: AccountDetails):
