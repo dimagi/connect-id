@@ -65,7 +65,7 @@ def register(request):
 @require_app_integrity
 def start_device_configuration(request):
     data = request.data
-    logger.info(f"Start configuration for phone: {data.get('phone_number', 'unknown')}")
+    logger.info(f"Start configuration for phone: {data}")
     if "phone_number" not in data:
         return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
