@@ -1,4 +1,4 @@
-from django.http import HttpResponseForbidden, JsonResponse
+from django.http import HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 
 from users.const import TEST_NUMBER_PREFIX
 from utils.app_integrity.const import INTEGRITY_REQUEST_HASH_KEY, INTEGRITY_TOKEN_HEADER_KEY, ErrorCodes
@@ -22,7 +22,7 @@ def require_app_integrity(view):
 
         if not (integrity_token and request_hash):
             return JsonResponse(
-                {"error_code": ErrorCodes.INTEGRITY_DATA_MISSING}, status=HttpResponseForbidden.status_code
+                {"error_code": ErrorCodes.INTEGRITY_DATA_MISSING}, status=HttpResponseBadRequest.status_code
             )
 
         data = request.data

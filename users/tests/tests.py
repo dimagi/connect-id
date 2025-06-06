@@ -839,7 +839,7 @@ class TestStartConfigurationView:
             reverse("start_device_configuration"),
             data={},
         )
-        assert response.status_code == 403
+        assert response.status_code == 400
         assert response.json().get("error_code") == AppIntegrityErrorCodes.INTEGRITY_DATA_MISSING
 
     @skip_app_integrity_check
