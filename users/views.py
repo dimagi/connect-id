@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 from secrets import token_hex
 from urllib.parse import urlencode, urlparse
@@ -28,6 +29,8 @@ from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
 from .models import ConfigurationSession, ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
 from .services import upload_photo_to_s3
+
+logger = logging.getLogger(__name__)
 
 
 @api_view(["POST"])
@@ -62,7 +65,7 @@ def register(request):
 @require_app_integrity
 def start_device_configuration(request):
     data = request.data
-
+    logger.info(f"Start configuration for phone: {data.get('phone_number', 'unknown')}")
     if "phone_number" not in data:
         return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
