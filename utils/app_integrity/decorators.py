@@ -1,4 +1,4 @@
-from django.http import JsonResponse
+from django.http import HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 
 from users.const import TEST_NUMBER_PREFIX
 from utils.app_integrity.const import INTEGRITY_REQUEST_HASH_KEY, INTEGRITY_TOKEN_HEADER_KEY, ErrorCodes
@@ -21,7 +21,9 @@ def require_app_integrity(view):
         request_hash = request.headers.get(INTEGRITY_REQUEST_HASH_KEY)
 
         if not (integrity_token and request_hash):
-            return JsonResponse({"error_code": ErrorCodes.INTEGRITY_DATA_MISSING}, status=400)
+            return JsonResponse(
+                {"error_code": ErrorCodes.INTEGRITY_DATA_MISSING}, status=HttpResponseBadRequest.status_code
+            )
 
         data = request.data
         is_demo_user = data.get("phone_number", "").startswith(TEST_NUMBER_PREFIX)
@@ -35,9 +37,9 @@ def require_app_integrity(view):
         try:
             service.verify_integrity()
         except AccountDetailsError:
-            return JsonResponse({"error_code": ErrorCodes.UNLICENSED_APP}, status=400)
+            return JsonResponse({"error_code": ErrorCodes.UNLICENSED_APP}, status=HttpResponseForbidden.status_code)
         except (IntegrityRequestError, AppIntegrityError, DeviceIntegrityError):
-            return JsonResponse({"error_code": ErrorCodes.INTEGRITY_ERROR}, status=400)
+            return JsonResponse({"error_code": ErrorCodes.INTEGRITY_ERROR}, status=HttpResponseForbidden.status_code)
 
         return view(request, *args, **kwargs)
 

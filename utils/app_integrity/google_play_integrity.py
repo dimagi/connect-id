@@ -36,7 +36,7 @@ class AppIntegrityService:
         Raises an exception if the app integrity is compromised, otherwise does nothing.
         """
         verdict_response = self._obtain_verdict()
-        logger.debug(f"Integrity token verdict for app({self.package_name}): {verdict_response}")
+        logger.info(f"Integrity token verdict for app({self.package_name}): {verdict_response}")
         self._analyze_verdict(verdict_response)
 
     def _obtain_verdict(self) -> VerdictResponse:

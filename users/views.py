@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 from secrets import token_hex
 from urllib.parse import urlencode, urlparse
@@ -28,6 +29,8 @@ from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
 from .models import ConfigurationSession, ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
 from .services import upload_photo_to_s3
+
+logger = logging.getLogger(__name__)
 
 
 @api_view(["POST"])
@@ -62,7 +65,7 @@ def register(request):
 @require_app_integrity
 def start_device_configuration(request):
     data = request.data
-
+    logger.info(f"Start configuration for phone: {data}")
     if not (data.get("phone_number") and data.get("gps_location")):
         return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
@@ -173,6 +176,9 @@ def complete_profile(request):
     photo = request.data.get("photo")
     if not (name and recovery_pin and photo):
         return JsonResponse({"error": ErrorCodes.MISSING_DATA}, status=400)
+
+    # Deactivate any existing user with the same phone number
+    ConnectUser.objects.filter(phone_number=request.auth.phone_number, is_active=True).update(is_active=False)
 
     user = ConnectUser(
         username=token_hex()[:20],
