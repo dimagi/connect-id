@@ -861,8 +861,10 @@ class TestStartConfigurationView:
             HTTP_CC_INTEGRITY_TOKEN="token",
             HTTP_CC_REQUEST_HASH="hash",
         )
-        assert response.status_code == 400
-        assert response.json().get("error_code") == ErrorCodes.MISSING_DATA
+        assert response.status_code == 200
+        token = response.json().get("token")
+        session = ConfigurationSession.objects.get(key=token)
+        assert not session.gps_location
 
     @skip_app_integrity_check
     def test_session_started(self, client):
