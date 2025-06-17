@@ -23,12 +23,12 @@ class TestOCS:
         assert message == {"role": "user", "content": content}
 
     def test_prompt_bot_no_bot_id(self):
-        assert OpenChatStudio()._prompt_bot(data={}, bot_id=None) is None
+        assert OpenChatStudio().prompt_bot(data={}, bot_id=None) is None
 
     @patch.object(OpenChatStudio, "_post_request")
     def test_prompt_bot_response(self, post_request_mock):
         post_request_mock.return_value = request_reponse(response_message="Hello, Bot!")
-        response = OpenChatStudio()._prompt_bot(data={}, bot_id="test_bot")
+        response = OpenChatStudio().prompt_bot(data={}, bot_id="test_bot")
         assert response == "Hello, Bot!"
 
     def test_extract_bot_invalid_response(self):

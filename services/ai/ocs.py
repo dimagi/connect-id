@@ -13,7 +13,7 @@ class OpenChatStudio:
         data = {"messages": [self._get_user_message(message)]}
         bot_id = OCS_CONFIG["bots"]["cultural_name_similarity"]
 
-        similarity_verdict = self._prompt_bot(data, bot_id=bot_id)
+        similarity_verdict = self.prompt_bot(data, bot_id=bot_id)
         if not similarity_verdict:
             return None
         return similarity_verdict.strip().upper() == "MATCH"
@@ -21,7 +21,7 @@ class OpenChatStudio:
     def _get_user_message(self, content: str) -> dict:
         return {"role": "user", "content": content}
 
-    def _prompt_bot(self, data: dict, bot_id: str) -> dict:
+    def prompt_bot(self, data: dict, bot_id: str) -> dict:
         if not bot_id:
             return
 
