@@ -11,6 +11,7 @@ from faker import Faker
 from fcm_django.models import FCMDevice
 
 from payments.models import PaymentProfile
+from services.ai.ocs import OpenChatStudio
 from test_utils.decorators import skip_app_integrity_check
 from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from users.factories import CredentialFactory, PhoneDeviceFactory, RecoveryStatusFactory, UserFactory
@@ -984,9 +985,11 @@ class TestStartConfigurationView:
 
 
 @pytest.mark.django_db
-class TestCheckName:
+class TestCheckUserSimilarity:
+    urlname = "check_user_similarity"
+
     def test_no_name_provided(self, authed_client_token):
-        response = authed_client_token.post(reverse("check_name"))
+        response = authed_client_token.post(reverse(self.urlname))
         assert response.status_code == 400
         assert response.json() == {"error_code": ErrorCodes.NAME_REQUIRED}
 
@@ -994,21 +997,24 @@ class TestCheckName:
         valid_token.is_phone_validated = False
         valid_token.save()
 
-        response = authed_client_token.post(reverse("check_name"), data={"name": "NonExistentUser"})
+        response = authed_client_token.post(reverse(self.urlname), data={"name": "NonExistentUser"})
         assert response.status_code == 403
         assert response.json() == {"error_code": ErrorCodes.PHONE_NOT_VALIDATED}
 
-    def test_user_does_not_exist(self, authed_client_token, valid_token):
+    def test_phone_number_does_not_exist(self, authed_client_token, valid_token):
         valid_token.is_phone_validated = True
         valid_token.phone_number = Faker().phone_number()
         valid_token.save()
 
-        response = authed_client_token.post(reverse("check_name"), data={"name": "NonExistentUser"})
+        response = authed_client_token.post(reverse(self.urlname), data={"name": "NonExistentUser"})
         assert response.status_code == 200
         assert not response.json()["account_exists"]
 
     @patch.object(ConnectUser, "get_photo")
-    def test_user_with_name_exists(self, get_photo_mock, authed_client_token, user, valid_token):
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_user_is_similar_user(self, check_similarity_mock, get_photo_mock, authed_client_token, user, valid_token):
+        check_similarity_mock.return_value = True
+
         valid_token.phone_number = user.phone_number
         valid_token.is_phone_validated = True
         valid_token.save()
@@ -1017,40 +1023,30 @@ class TestCheckName:
         user.save()
         get_photo_mock.return_value = "some_base64_photo_data"
 
-        response = authed_client_token.post(reverse("check_name"), data={"name": user.name})
+        response = authed_client_token.post(reverse(self.urlname), data={"name": user.name})
         assert response.status_code == 200
         assert response.json()["account_exists"] is True
         assert response.json()["photo"] == "some_base64_photo_data"
 
     @patch.object(ConnectUser, "get_photo")
-    def test_user_with_name_exists_inactive_user(self, get_photo_mock, authed_client_token, user, valid_token):
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_user_is_not_similar_user(
+        self, check_similarity_mock, get_photo_mock, authed_client_token, user, valid_token
+    ):
+        check_similarity_mock.return_value = False
+
         valid_token.phone_number = user.phone_number
         valid_token.is_phone_validated = True
         valid_token.save()
 
         user.name = "ExistingUser"
-        user.is_active = False
         user.save()
         get_photo_mock.return_value = "some_base64_photo_data"
 
-        response = authed_client_token.post(reverse("check_name"), data={"name": user.name})
+        response = authed_client_token.post(reverse(self.urlname), data={"name": "DifferentUser"})
         assert response.status_code == 200
         assert response.json()["account_exists"] is False
         assert response.json()["photo"] == ""
-
-    @patch.object(ConnectUser, "get_photo")
-    def test_user_with_different_name_exists(self, get_photo_mock, authed_client_token, user, valid_token):
-        valid_token.phone_number = user.phone_number
-        valid_token.is_phone_validated = True
-        valid_token.save()
-
-        user.name = "ExistingUser"
-        user.save()
-        get_photo_mock.return_value = "some_base64_photo_data"
-
-        response = authed_client_token.post(reverse("check_name"), data={"name": "DifferentUser"})
-        assert response.status_code == 200
-        assert response.json()["account_exists"] is True
 
 
 class TestCompleteProfileView:
