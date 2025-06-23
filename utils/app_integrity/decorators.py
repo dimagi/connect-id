@@ -25,7 +25,7 @@ def require_app_integrity(view):
         request_hash = request.headers.get(INTEGRITY_REQUEST_HASH_KEY)
         phone_number = request.data.get("phone_number", "")
 
-        logging_prefix = f"App integrity error for {phone_number}"
+        logging_prefix = f"App integrity error for ...{phone_number[-6:]}"
 
         if not (integrity_token and request_hash):
             logger.exception(f"{logging_prefix}: missing integrity token or request hash in headers")
