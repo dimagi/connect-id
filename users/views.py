@@ -70,12 +70,11 @@ def start_device_configuration(request):
     logger.info(f"Start configuration for phone: {data}")
     if not data.get("phone_number"):
         return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
-    try:
-        user = ConnectUser.objects.get(phone_number=data["phone_number"], is_active=False, is_locked=True)
-        if user:
-            return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=403)
-    except ConnectUser.DoesNotExist:
-        pass
+    locked_user_exists = ConnectUser.objects.filter(
+        phone_number=data["phone_number"], is_active=False, is_locked=True
+    ).exists()
+    if locked_user_exists:
+        return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=403)
 
     is_demo_user = data["phone_number"].startswith(TEST_NUMBER_PREFIX)
 
