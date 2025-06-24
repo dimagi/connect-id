@@ -76,10 +76,11 @@ def start_device_configuration(request):
         phone_number=data["phone_number"],
         is_phone_validated=is_demo_user,  # demo users are always considered validated
         gps_location=data.get("gps_location"),
+        invited_user=request.invited_user,
     )
 
     response_data = {
-        "required_lock": ConnectUser.get_device_security_requirement(data["phone_number"]),
+        "required_lock": ConnectUser.get_device_security_requirement(data["phone_number"], request.invited_user),
         "demo_user": is_demo_user,
         "token": token_session.key,
     }
@@ -181,11 +182,14 @@ def complete_profile(request):
     # Deactivate any existing user with the same phone number
     ConnectUser.objects.filter(phone_number=request.auth.phone_number, is_active=True).update(is_active=False)
 
+    session = request.auth
+    device_security = ConnectUser.DeviceSecurity.PIN if session.invited_user else ConnectUser.DeviceSecurity.BIOMETRIC
     user = ConnectUser(
         username=token_hex()[:20],
         phone_number=request.auth.phone_number,
         name=name,
         phone_validated=True,
+        device_security=device_security,
     )
     user.set_recovery_pin(recovery_pin)
     password = token_hex()
