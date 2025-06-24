@@ -837,6 +837,7 @@ class TestValidateFirebaseIDToken:
 class TestStartConfigurationView:
     @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
     def test_no_integrity_token(self, check_number_mock, client):
+        check_number_mock.return_value = False
         response = client.post(
             reverse("start_device_configuration"),
             data={},
@@ -958,6 +959,7 @@ class TestStartConfigurationView:
     @patch("utils.app_integrity.decorators.AppIntegrityService")
     def test_custom_application_id(self, integrity_service_mock, check_number_mock, client):
         integrity_service_mock.verify_integrity.return_value = True
+        check_number_mock.return_value = False
         client.post(
             reverse("start_device_configuration"),
             data={"application_id": "my.fancy.app"},
@@ -972,6 +974,7 @@ class TestStartConfigurationView:
     @patch("utils.app_integrity.decorators.AppIntegrityService")
     def test_demo_user(self, integrity_service_mock, check_number_mock, client):
         integrity_service_mock.verify_integrity.return_value = True
+        check_number_mock.return_value = False
         client.post(
             reverse("start_device_configuration"),
             data={
