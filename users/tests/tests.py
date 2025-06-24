@@ -1,7 +1,7 @@
 import json
 from datetime import timedelta
 from unittest import mock
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 import factory
 import pytest
@@ -834,9 +834,10 @@ class TestValidateFirebaseIDToken:
 
 
 @pytest.mark.django_db
+@patch("users.models.ConfigurationSession.country_code", new_callable=PropertyMock)
 class TestStartConfigurationView:
     @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
-    def test_no_integrity_token(self, check_number_mock, client):
+    def test_no_integrity_token(self, check_number_mock, mock_country_code, client):
         check_number_mock.return_value = False
         response = client.post(
             reverse("start_device_configuration"),
@@ -846,7 +847,7 @@ class TestStartConfigurationView:
         assert response.json().get("error_code") == AppIntegrityErrorCodes.INTEGRITY_DATA_MISSING
 
     @skip_app_integrity_check
-    def test_no_phone_number(self, client):
+    def test_no_phone_number(self, mock_country_code, client):
         response = client.post(
             reverse("start_device_configuration"),
             data={"gps_location": "0 0"},
@@ -857,7 +858,7 @@ class TestStartConfigurationView:
         assert response.json().get("error_code") == ErrorCodes.MISSING_DATA
 
     @skip_app_integrity_check
-    def test_no_gps_location(self, client):
+    def test_no_gps_location(self, mock_country_code, client):
         response = client.post(
             reverse("start_device_configuration"),
             data={"phone_number": Faker().phone_number()},
@@ -870,7 +871,24 @@ class TestStartConfigurationView:
         assert not session.gps_location
 
     @skip_app_integrity_check
-    def test_session_started(self, client):
+    @patch("users.views.settings.BLACKLISTED_COUNTRY_CODES", ["XX"])
+    def test_unsupported_country(self, mock_country_code, client):
+        mock_country_code.return_value = "XX"
+
+        phone_number = Faker().phone_number()
+        gps_location = "1.2 3.4"
+
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": phone_number, "gps_location": gps_location},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.status_code == 403
+        assert response.json() == {"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}
+
+    @skip_app_integrity_check
+    def test_session_started(self, mock_country_code, client):
         phone_number = Faker().phone_number()
         gps_location = "1.2 3.4"
 
@@ -889,7 +907,7 @@ class TestStartConfigurationView:
         assert not session.is_phone_validated
 
     @skip_app_integrity_check
-    def test_can_start_multiple_sessions(self, client):
+    def test_can_start_multiple_sessions(self, mock_country_code, client):
         phone_number = Faker().phone_number()
 
         response = client.post(
@@ -916,7 +934,7 @@ class TestStartConfigurationView:
         assert session1.phone_number == session2.phone_number
 
     @skip_app_integrity_check
-    def test_is_demo_user(self, client):
+    def test_is_demo_user(self, mock_country_code, client):
         phone_number = (TEST_NUMBER_PREFIX + "1234567",)
         response = client.post(
             reverse("start_device_configuration"),
@@ -932,7 +950,7 @@ class TestStartConfigurationView:
         assert session.is_phone_validated
 
     @skip_app_integrity_check
-    def test_device_lock_required(self, client):
+    def test_device_lock_required(self, mock_country_code, client):
         response = client.post(
             reverse("start_device_configuration"),
             data={"phone_number": Faker().phone_number(), "gps_location": "0 0"},
@@ -942,7 +960,7 @@ class TestStartConfigurationView:
         assert response.json().get("required_lock") == ConnectUser.DeviceSecurity.BIOMETRIC
 
     @skip_app_integrity_check
-    def test_biometric_lock_required(self, client):
+    def test_biometric_lock_required(self, mock_country_code, client):
         pin_user = UserFactory()
         pin_user.device_security = ConnectUser.DeviceSecurity.PIN
         pin_user.save()
@@ -957,7 +975,7 @@ class TestStartConfigurationView:
 
     @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
     @patch("utils.app_integrity.decorators.AppIntegrityService")
-    def test_custom_application_id(self, integrity_service_mock, check_number_mock, client):
+    def test_custom_application_id(self, integrity_service_mock, check_number_mock, mock_country_code, client):
         integrity_service_mock.verify_integrity.return_value = True
         check_number_mock.return_value = False
         client.post(
@@ -972,7 +990,7 @@ class TestStartConfigurationView:
 
     @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
     @patch("utils.app_integrity.decorators.AppIntegrityService")
-    def test_demo_user(self, integrity_service_mock, check_number_mock, client):
+    def test_demo_user(self, integrity_service_mock, check_number_mock, mock_country_code, client):
         integrity_service_mock.verify_integrity.return_value = True
         check_number_mock.return_value = False
         client.post(
