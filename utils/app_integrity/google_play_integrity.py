@@ -56,7 +56,7 @@ class AppIntegrityService:
             try:
                 response = service.v1().decodeIntegrityToken(packageName=self.package_name, body=body).execute()
             except HttpError as e:
-                logger.exception(f"Error decoding integrity token for app ({self.package_name}): {str(e)}")
+                logger.info(f"Error decoding integrity token for app ({self.package_name}): {str(e)}")
                 raise IntegrityRequestError("Invalid token")
 
         return VerdictResponse.from_dict(response["tokenPayloadExternal"])
