@@ -50,11 +50,14 @@ class ConnectUser(AbstractUser):
     REQUIRED_FIELDS = ["phone_number", "name"]
 
     @classmethod
-    def get_device_security_requirement(cls, phone_number) -> str:
+    def get_device_security_requirement(cls, phone_number, invited_user=False) -> str:
         try:
             user = cls.objects.get(phone_number=phone_number, is_active=True)
         except ConnectUser.DoesNotExist:
-            return ConnectUser.DeviceSecurity.BIOMETRIC.value
+            if invited_user:
+                return ConnectUser.DeviceSecurity.PIN.value
+            else:
+                return ConnectUser.DeviceSecurity.BIOMETRIC.value
         return user.device_security
 
     def set_recovery_pin(self, pin):
@@ -192,6 +195,7 @@ class ConfigurationSession(models.Model):
     is_phone_validated = models.BooleanField(default=False)
     failed_backup_code_attempts = models.IntegerField(default=0)
     gps_location = models.CharField(max_length=100, blank=True, null=True)  # GPS coordinates in format "lat lon"
+    invited_user = models.BooleanField(default=False)
 
     def __str__(self):
         return self.key

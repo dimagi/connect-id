@@ -835,7 +835,9 @@ class TestValidateFirebaseIDToken:
 
 @pytest.mark.django_db
 class TestStartConfigurationView:
-    def test_no_integrity_token(self, client):
+    @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
+    def test_no_integrity_token(self, check_number_mock, client):
+        check_number_mock.return_value = False
         response = client.post(
             reverse("start_device_configuration"),
             data={},
@@ -953,9 +955,11 @@ class TestStartConfigurationView:
         )
         assert response.json().get("required_lock") == ConnectUser.DeviceSecurity.PIN
 
+    @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
     @patch("utils.app_integrity.decorators.AppIntegrityService")
-    def test_custom_application_id(self, integrity_service_mock, client):
+    def test_custom_application_id(self, integrity_service_mock, check_number_mock, client):
         integrity_service_mock.verify_integrity.return_value = True
+        check_number_mock.return_value = False
         client.post(
             reverse("start_device_configuration"),
             data={"application_id": "my.fancy.app"},
@@ -966,9 +970,11 @@ class TestStartConfigurationView:
             token="token", request_hash="hash", app_package="my.fancy.app", is_demo_user=False
         )
 
+    @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
     @patch("utils.app_integrity.decorators.AppIntegrityService")
-    def test_demo_user(self, integrity_service_mock, client):
+    def test_demo_user(self, integrity_service_mock, check_number_mock, client):
         integrity_service_mock.verify_integrity.return_value = True
+        check_number_mock.return_value = False
         client.post(
             reverse("start_device_configuration"),
             data={
