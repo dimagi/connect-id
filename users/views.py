@@ -515,7 +515,9 @@ def confirm_backup_code(request):
 
             if session.backup_code_attempts_left == 0:
                 user.is_active = False
+                user.is_locked = True
                 user.save()
+                return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=403)
 
             return JsonResponse({"attempts_left": session.backup_code_attempts_left}, status=200)
 
