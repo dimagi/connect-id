@@ -42,6 +42,7 @@ class ConnectUser(AbstractUser):
     deactivation_token_valid_until = models.DateTimeField(blank=True, null=True)
 
     device_security = models.CharField(choices=DeviceSecurity.choices, default=DeviceSecurity.BIOMETRIC, max_length=15)
+    is_locked = models.BooleanField(default=False)
 
     # removed from base class
     first_name = None
