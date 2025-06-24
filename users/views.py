@@ -812,7 +812,8 @@ def check_user_similarity(request):
             cultural_context=request.auth.phone_number.country_code,
         )
 
-        if user_name_is_similar is not None:
+        # For now we don't do anything with the response for Connect users
+        if not request.auth.invited_user and user_name_is_similar is not None:
             is_same_user = user_name_is_similar
 
     return JsonResponse(
