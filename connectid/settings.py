@@ -326,3 +326,4 @@ OCS_CONFIG = {
 COMMCARE_CONNECT_CLIENT_ID = env("COMMCARE_CONNECT_CLIENT_ID", default="")
 COMMCARE_CONNECT_CLIENT_SECRET = env("COMMCARE_CONNECT_CLIENT_SECRET", default="")
 CONNECT_INVITED_USER_URL = "https://connect.dimagi.com/users/invited_user/"
+CONNECT_RESEND_INVITES_URL = "https://connect.dimagi.com/users/resend_invites/"
