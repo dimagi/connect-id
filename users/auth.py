@@ -16,5 +16,7 @@ class SessionTokenAuthentication(TokenAuthentication):
             raise exceptions.AuthenticationFailed("Invalid token.")
         if not token.is_valid():
             raise exceptions.AuthenticationFailed("Token expired.")
+        if token.backup_code_attempts_left == 0:
+            raise exceptions.AuthenticationFailed("Backup code attempts exceeded.")
         user = SessionUser()
         return (user, token)
