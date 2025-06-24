@@ -608,17 +608,18 @@ class TestConfirmBackupCodeApi:
         valid_token.save()
 
         response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
-        assert response.status_code == 200
-        assert response.json() == {"attempts_left": 0}
+        assert response.status_code == 403
+        assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
 
         user.refresh_from_db()
         assert not user.is_active
+        assert user.is_locked
 
     def test_successful_code_check(self, authed_client_token, valid_token, user):
         user.set_recovery_pin("1234")
         user.save()
 
-        valid_token.failed_backup_code_attempts = 3
+        valid_token.failed_backup_code_attempts = 2
         valid_token.save()
 
         response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
@@ -868,6 +869,18 @@ class TestStartConfigurationView:
         token = response.json().get("token")
         session = ConfigurationSession.objects.get(key=token)
         assert not session.gps_location
+
+    @skip_app_integrity_check
+    def test_account_locked(self, client):
+        user = UserFactory.create(is_locked=True, is_active=False)
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": user.phone_number},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.status_code == 403
+        assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
 
     @skip_app_integrity_check
     def test_session_started(self, client):
