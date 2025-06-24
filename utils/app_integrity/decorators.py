@@ -57,10 +57,9 @@ def require_app_integrity(view):
         invited = check_number_for_existing_invites(phone_number)
         request.invited_user = invited
 
-        if not invited:
-            error_response = _validate_app_integrity(request, integrity_token, request_hash, phone_number)
-            if error_response is not None:
-                return error_response
+        error_response = _validate_app_integrity(request, integrity_token, request_hash, phone_number)
+        if error_response is not None and not invited:
+            return error_response
 
         return view(request, *args, **kwargs)
 
