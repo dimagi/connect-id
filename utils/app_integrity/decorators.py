@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def _validate_app_integrity(request, integrity_token, request_hash, phone_number):
-    logging_prefix = f"App integrity error for ...{phone_number[-6:]}"
+    logging_prefix = f"App integrity error for ...{phone_number[-6:]} (invited: {request.invited_user})"
 
     if not (integrity_token and request_hash):
         logger.exception(f"{logging_prefix}: missing integrity token or request hash in headers")
