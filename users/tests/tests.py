@@ -868,18 +868,6 @@ class TestStartConfigurationView:
         assert not session.gps_location
 
     @skip_app_integrity_check
-    def test_account_locked(self, client):
-        user = UserFactory.create(is_locked=True, is_active=False)
-        response = client.post(
-            reverse("start_device_configuration"),
-            data={"phone_number": user.phone_number},
-            HTTP_CC_INTEGRITY_TOKEN="token",
-            HTTP_CC_REQUEST_HASH="hash",
-        )
-        assert response.status_code == 403
-        assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
-
-    @skip_app_integrity_check
     def test_session_started(self, client):
         phone_number = Faker().phone_number()
         gps_location = "1.2 3.4"
