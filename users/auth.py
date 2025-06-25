@@ -1,7 +1,7 @@
 from rest_framework import exceptions
 from rest_framework.authentication import TokenAuthentication
 
-from users.models import ConfigurationSession, SessionUser
+from users.models import ConfigurationSession, ConnectUser, SessionUser
 
 
 class SessionTokenAuthentication(TokenAuthentication):
@@ -16,7 +16,10 @@ class SessionTokenAuthentication(TokenAuthentication):
             raise exceptions.AuthenticationFailed("Invalid token.")
         if not token.is_valid():
             raise exceptions.AuthenticationFailed("Token expired.")
-        if token.backup_code_attempts_left == 0:
-            raise exceptions.AuthenticationFailed("Backup code attempts exceeded.")
+        locked_user_exists = ConnectUser.objects.filter(
+            phone_number=token.phone_number, is_active=False, is_locked=True
+        ).exists()
+        if locked_user_exists:
+            raise exceptions.AuthenticationFailed("User account is locked.")
         user = SessionUser()
         return (user, token)

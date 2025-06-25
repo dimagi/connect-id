@@ -589,26 +589,24 @@ class TestConfirmBackupCodeApi:
         assert response.status_code == 400
         assert response.json() == {"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}
 
-    def test_wrong_pin(self, authed_client_token, valid_token, user):
+    def test_wrong_pin(self, authed_client_token, user):
         user.set_recovery_pin("1234")
         user.save()
 
         response = authed_client_token.post(self.url, data={"recovery_pin": "4321"})
         assert response.status_code == 200
 
-        valid_token.refresh_from_db()
-        assert valid_token.failed_backup_code_attempts == 1
+        user.refresh_from_db()
+        assert user.failed_backup_code_attempts == 1
         assert response.json() == {"attempts_left": 2}
 
-    def test_account_orphaned(self, authed_client_token, valid_token, user):
+    def test_account_orphaned(self, authed_client_token, user):
         user.set_recovery_pin("4321")
+        user.failed_backup_code_attempts = 2
         user.save()
 
-        valid_token.failed_backup_code_attempts = 2
-        valid_token.save()
-
         response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
-        assert response.status_code == 403
+        assert response.status_code == 200
         assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
 
         user.refresh_from_db()
@@ -617,10 +615,8 @@ class TestConfirmBackupCodeApi:
 
     def test_successful_code_check(self, authed_client_token, valid_token, user):
         user.set_recovery_pin("1234")
+        user.failed_backup_code_attempts = 2
         user.save()
-
-        valid_token.failed_backup_code_attempts = 2
-        valid_token.save()
 
         response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
         assert response.status_code == 200
