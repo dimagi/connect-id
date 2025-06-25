@@ -621,6 +621,7 @@ class TestConfirmBackupCodeApi:
         response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
         assert response.status_code == 200
         user.refresh_from_db()
+        assert user.failed_backup_code_attempts == 0
 
         response_data = response.json()
 

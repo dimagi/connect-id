@@ -531,6 +531,7 @@ def confirm_backup_code(request):
 
     password = token_hex(16)
     user.set_password(password)
+    user.reset_failed_backup_code_attempts()
     user.save()
 
     return JsonResponse(
