@@ -16,22 +16,22 @@ from utils.connect import check_number_for_existing_invites
 logger = logging.getLogger(__name__)
 
 
-def _validate_app_integrity(request, integrity_token, request_hash, phone_number):
+def validate_app_integrity(integrity_token, request_hash, app_package, phone_number):
     logging_prefix = f"App integrity error for ...{phone_number[-6:]}"
 
     if not (integrity_token and request_hash):
         logger.info(f"{logging_prefix}: missing integrity token or request hash in headers")
         return JsonResponse(
-            {"error_code": ErrorCodes.INTEGRITY_DATA_MISSING}, status=HttpResponseBadRequest.status_code
+            {"error_code": ErrorCodes.MISSING_DATA, "sub_code": "INTEGRITY_HEADERS"},
+            status=HttpResponseBadRequest.status_code,
         )
 
-    data = request.data
     is_demo_user = phone_number.startswith(TEST_NUMBER_PREFIX)
 
     service = AppIntegrityService(
         token=integrity_token,
         request_hash=request_hash,
-        app_package=data.get("application_id"),
+        app_package=app_package,
         is_demo_user=is_demo_user,
     )
     try:
@@ -58,7 +58,8 @@ def require_app_integrity(view):
         invited = check_number_for_existing_invites(phone_number)
         request.invited_user = invited
 
-        error_response = _validate_app_integrity(request, integrity_token, request_hash, phone_number)
+        app_package = request.data.get("application_id")
+        error_response = validate_app_integrity(integrity_token, request_hash, app_package, phone_number)
         if error_response is not None and not invited:
             return error_response
 

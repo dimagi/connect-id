@@ -4,7 +4,14 @@ from unittest.mock import patch
 
 import pytest
 
-from utils.app_integrity.exceptions import AccountDetailsError, DeviceIntegrityError, IntegrityRequestError
+from utils.app_integrity.const import ErrorCodes
+from utils.app_integrity.decorators import validate_app_integrity
+from utils.app_integrity.exceptions import (
+    AccountDetailsError,
+    AppIntegrityError,
+    DeviceIntegrityError,
+    IntegrityRequestError,
+)
 from utils.app_integrity.google_play_integrity import AppIntegrityService
 from utils.app_integrity.schemas import VerdictResponse
 
@@ -110,3 +117,58 @@ class TestAppIntegrityService:
             assert str(exc_info.value) == error_message
         else:
             assert exc_info is None
+
+
+class TestValidateAppIntegrity:
+    @pytest.mark.parametrize(
+        "verdict, error_code, error_sub_code",
+        [
+            (
+                get_verdict(response_filepath="utils/tests/data/request_hash_mismatch_response.json"),
+                ErrorCodes.INTEGRITY_ERROR,
+                IntegrityRequestError.code,
+            ),
+            (
+                get_verdict(response_filepath="utils/tests/data/package_mismatch_response.json"),
+                ErrorCodes.INTEGRITY_ERROR,
+                IntegrityRequestError.code,
+            ),
+            (
+                get_verdict(response_filepath="utils/tests/data/device_integrity_unmet_response.json"),
+                ErrorCodes.INTEGRITY_ERROR,
+                DeviceIntegrityError.code,
+            ),
+            (
+                get_verdict(response_filepath="utils/tests/data/unlicensed_response.json"),
+                ErrorCodes.INTEGRITY_ERROR,
+                AccountDetailsError.code,
+            ),
+            (
+                get_verdict(response_filepath="utils/tests/data/app_unrecognized_response.json"),
+                ErrorCodes.INTEGRITY_ERROR,
+                AppIntegrityError.code,
+            ),
+            (
+                get_verdict(response_filepath="utils/tests/data/success_integrity_response.json"),
+                None,
+                None,
+            ),
+        ],
+    )
+    @patch.object(AppIntegrityService, "_obtain_verdict")
+    def test_validate_app_integrity(self, obtain_verdict_mock, verdict, error_code, error_sub_code):
+        obtain_verdict_mock.return_value = VerdictResponse.from_dict(verdict["tokenPayloadExternal"])
+
+        response = validate_app_integrity(
+            "integrity_token",
+            "aGVsbG8gd29scmQgdGhlcmU",
+            "org.commcare.dalvik",
+            "1234567890",
+        )
+        if response is None:
+            assert error_code is None and error_sub_code is None
+        else:
+            response_data = json.loads(response.content)
+
+            assert response_data["error_code"] == error_code
+            assert response_data["sub_code"] == error_sub_code
