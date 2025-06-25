@@ -36,12 +36,13 @@ def _validate_app_integrity(request, integrity_token, request_hash, phone_number
     )
     try:
         service.verify_integrity()
-    except AccountDetailsError as e:
+    except (IntegrityRequestError, AccountDetailsError, AppIntegrityError, DeviceIntegrityError) as e:
         logger.info(f"{logging_prefix}: {str(e)}")
-        return JsonResponse({"error_code": ErrorCodes.UNLICENSED_APP}, status=HttpResponseForbidden.status_code)
-    except (IntegrityRequestError, AppIntegrityError, DeviceIntegrityError) as e:
-        logger.info(f"{logging_prefix}: {str(e)}")
-        return JsonResponse({"error_code": ErrorCodes.INTEGRITY_ERROR}, status=HttpResponseForbidden.status_code)
+        response = {
+            "error_code": ErrorCodes.INTEGRITY_ERROR,
+            "sub_code": e.code,
+        }
+        return JsonResponse(response, status=HttpResponseForbidden.status_code)
 
 
 def require_app_integrity(view):
