@@ -1,6 +1,6 @@
 import secrets
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from users.models import ConnectUser
 
@@ -16,9 +16,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         phone_number = options.get("phone-number")
         inactive_user_id = options.get("inactive-user-id")
-        if not phone_number and not inactive_user_id:
-            print("Please provide either a phone number or an inactive user ID")
-            return
+        if bool(phone_number) == bool(inactive_user_id):
+            raise CommandError("Please only provide either a phone number or an inactive user ID")
 
         disable_current_active_user = options.get("disable-current-active-user", True)
 
