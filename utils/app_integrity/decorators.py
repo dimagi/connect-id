@@ -18,10 +18,10 @@ logger = logging.getLogger(__name__)
 
 
 def _validate_app_integrity(request, integrity_token, request_hash, phone_number):
-    logging_prefix = f"App integrity error for ...{phone_number[-6:]}"
+    logging_prefix = f"App integrity error for ...{phone_number[-6:]} (invited: {request.invited_user})"
 
     if not (integrity_token and request_hash):
-        logger.exception(f"{logging_prefix}: missing integrity token or request hash in headers")
+        logger.info(f"{logging_prefix}: missing integrity token or request hash in headers")
         return JsonResponse(
             {"error_code": ErrorCodes.INTEGRITY_DATA_MISSING}, status=HttpResponseBadRequest.status_code
         )
@@ -43,10 +43,10 @@ def _validate_app_integrity(request, integrity_token, request_hash, phone_number
             {"error_code": ErrorCodes.INTEGRITY_SERVICE_UNAVAILABLE}, status=HttpResponseServerError.status_code
         )
     except AccountDetailsError as e:
-        logger.exception(f"{logging_prefix}: {str(e)}")
+        logger.info(f"{logging_prefix}: {str(e)}")
         return JsonResponse({"error_code": ErrorCodes.UNLICENSED_APP}, status=HttpResponseForbidden.status_code)
     except (IntegrityRequestError, AppIntegrityError, DeviceIntegrityError) as e:
-        logger.exception(f"{logging_prefix}: {str(e)}")
+        logger.info(f"{logging_prefix}: {str(e)}")
         return JsonResponse({"error_code": ErrorCodes.INTEGRITY_ERROR}, status=HttpResponseForbidden.status_code)
 
 
