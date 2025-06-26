@@ -43,15 +43,11 @@ def get_inactive_user(phone_number, inactive_user_id=None):
 
 def unlock_user(inactive_user, disable_current_active_user=True):
     if disable_current_active_user:
-        active_user = ConnectUser.objects.filter(phone_number=inactive_user.phone_number, is_active=True).first()
-        if active_user:
-            active_user.is_active = False
-            active_user.save()
+        ConnectUser.objects.filter(phone_number=inactive_user.phone_number, is_active=True).update(is_active=False)
 
     inactive_user.is_locked = False
     inactive_user.is_active = True
     inactive_user.save()
-    return inactive_user
 
 
 def generate_backup_code(user):
