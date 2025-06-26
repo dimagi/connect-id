@@ -81,6 +81,10 @@ fcm-django==2.2.1
     # via -r requirements/requirements.in
 firebase-admin==6.2.0
     # via fcm-django
+geographiclib==2.0
+    # via geopy
+geopy==2.4.1
+    # via -r requirements/requirements.in
 google-api-core[grpc]==2.12.0
     # via
     #   firebase-admin

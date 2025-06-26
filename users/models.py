@@ -13,6 +13,7 @@ from django.urls import reverse
 from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
 from django_otp.util import random_hex
+from geopy.geocoders import Nominatim
 from phonenumber_field.modelfields import PhoneNumberField
 
 from users.exceptions import RecoveryPinNotSetError
@@ -225,6 +226,16 @@ class ConfigurationSession(models.Model):
 
     def is_valid(self):
         return self.expires > now()
+
+    @property
+    def country_code(self):
+        coords = self.gps_location.split()
+        lat = coords[0]
+        lon = coords[1]
+        geolocator = Nominatim(user_agent="PersonalID")
+        location = geolocator.reverse(f"{lat} {lon}", language="en")
+        address = location.raw.get("address", {})
+        return address.get("country_code")
 
 
 class SessionUser(AnonymousUser):

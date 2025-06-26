@@ -73,13 +73,21 @@ def start_device_configuration(request):
 
     is_demo_user = data["phone_number"].startswith(TEST_NUMBER_PREFIX)
 
-    token_session = ConfigurationSession.objects.create(
+    token_session = ConfigurationSession(
         phone_number=data["phone_number"],
         is_phone_validated=is_demo_user,  # demo users are always considered validated
         gps_location=data.get("gps_location"),
         invited_user=request.invited_user,
     )
 
+    try:
+        if token_session.country_code in settings.BLACKLISTED_COUNTRY_CODES:
+            return JsonResponse({"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}, status=403)
+    except (ValueError, AttributeError, IndexError):
+        # TODO: This should fail with a JSON response instead once mobile starts sending GPS data to this endpoint
+        logger.error(f"Invalid location data for phone number ...{data['phone_number'][-6:]}")
+
+    token_session.save()
     response_data = {
         "required_lock": ConnectUser.get_device_security_requirement(data["phone_number"], request.invited_user),
         "demo_user": is_demo_user,
