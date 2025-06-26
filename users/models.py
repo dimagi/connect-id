@@ -43,6 +43,7 @@ class ConnectUser(AbstractUser):
 
     device_security = models.CharField(choices=DeviceSecurity.choices, default=DeviceSecurity.BIOMETRIC, max_length=15)
     is_locked = models.BooleanField(default=False)
+    failed_backup_code_attempts = models.IntegerField(default=0)
 
     # removed from base class
     first_name = None
@@ -87,6 +88,17 @@ class ConnectUser(AbstractUser):
 
     def get_photo(self):
         return get_user_photo_base64(self.username)
+
+    def add_failed_backup_code_attempt(self):
+        self.failed_backup_code_attempts += 1
+        self.save()
+
+    def reset_failed_backup_code_attempts(self):
+        self.failed_backup_code_attempts = 0
+
+    @property
+    def backup_code_attempts_left(self):
+        return max(MAX_BACKUP_CODE_ATTEMPTS - self.failed_backup_code_attempts, 0)
 
     class Meta:
         constraints = [
@@ -194,7 +206,6 @@ class ConfigurationSession(models.Model):
     expires = models.DateTimeField()
     phone_number = PhoneNumberField()
     is_phone_validated = models.BooleanField(default=False)
-    failed_backup_code_attempts = models.IntegerField(default=0)
     gps_location = models.CharField(max_length=100, blank=True, null=True)  # GPS coordinates in format "lat lon"
     invited_user = models.BooleanField(default=False)
 
@@ -214,14 +225,6 @@ class ConfigurationSession(models.Model):
 
     def is_valid(self):
         return self.expires > now()
-
-    def add_failed_backup_code_attempt(self):
-        self.failed_backup_code_attempts += 1
-        self.save()
-
-    @property
-    def backup_code_attempts_left(self):
-        return max(MAX_BACKUP_CODE_ATTEMPTS - self.failed_backup_code_attempts, 0)
 
 
 class SessionUser(AnonymousUser):

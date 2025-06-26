@@ -70,11 +70,6 @@ def start_device_configuration(request):
     logger.info(f"Start configuration for phone: {data}")
     if not data.get("phone_number"):
         return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
-    locked_user_exists = ConnectUser.objects.filter(
-        phone_number=data["phone_number"], is_active=False, is_locked=True
-    ).exists()
-    if locked_user_exists:
-        return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=403)
 
     is_demo_user = data["phone_number"].startswith(TEST_NUMBER_PREFIX)
 
@@ -516,21 +511,22 @@ def confirm_backup_code(request):
 
     try:
         if not user.check_recovery_pin(data.get("recovery_pin")):
-            session.add_failed_backup_code_attempt()
+            user.add_failed_backup_code_attempt()
 
-            if session.backup_code_attempts_left == 0:
+            if user.backup_code_attempts_left == 0:
                 user.is_active = False
                 user.is_locked = True
                 user.save()
-                return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=403)
+                return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=200)
 
-            return JsonResponse({"attempts_left": session.backup_code_attempts_left}, status=200)
+            return JsonResponse({"attempts_left": user.backup_code_attempts_left}, status=200)
 
     except RecoveryPinNotSetError:
         return JsonResponse({"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}, status=400)
 
     password = token_hex(16)
     user.set_password(password)
+    user.reset_failed_backup_code_attempts()
     user.save()
 
     return JsonResponse(
