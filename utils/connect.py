@@ -18,4 +18,4 @@ def resend_connect_invite(user):
         "username": user.username,
         "name": user.name,
     }
-    requests.post(url, auth, data=data)
+    requests.post(url, auth=auth, data=data)
