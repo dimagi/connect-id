@@ -83,7 +83,7 @@ def start_device_configuration(request):
     try:
         if token_session.country_code in settings.BLACKLISTED_COUNTRY_CODES:
             return JsonResponse({"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}, status=403)
-    except ValueError:
+    except (ValueError, AttributeError, IndexError):
         # TODO: This should fail with a JSON response instead once mobile starts sending GPS data to this endpoint
         logger.error(f"Invalid location data for phone number ...{data['phone_number'][-6:]}")
 
