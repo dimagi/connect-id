@@ -16,6 +16,11 @@ def user(db):
 
 
 @pytest.fixture
+def locked_user(db):
+    return UserFactory(is_active=False, is_locked=True)
+
+
+@pytest.fixture
 def fcm_device(user):
     return FCMDeviceFactory(user=user)
 
