@@ -9,17 +9,17 @@ class Command(BaseCommand):
     help = "Unlock a user and generate a new backup code for them"
 
     def add_arguments(self, parser):
-        parser.add_argument("--phone-number", type=str, required=False)
-        parser.add_argument("--inactive-user-id", type=str, required=False, help="User ID of inactive user to unlock")
-        parser.add_argument("--disable-current-active-user", action="store_true")
+        parser.add_argument("--phone_number", type=str, required=False)
+        parser.add_argument("--inactive_user_id", type=str, required=False, help="User ID of inactive user to unlock")
+        parser.add_argument("--disable_current_active_user", action="store_true")
 
     def handle(self, *args, **options):
-        phone_number = options.get("phone-number")
-        inactive_user_id = options.get("inactive-user-id")
+        phone_number = options.get("phone_number")
+        inactive_user_id = options.get("inactive_user_id")
         if bool(phone_number) == bool(inactive_user_id):
             raise CommandError("Please only provide either a phone number or an inactive user ID")
 
-        disable_current_active_user = options.get("disable-current-active-user", True)
+        disable_current_active_user = options.get("disable_current_active_user", True)
 
         inactive_user = get_inactive_user(phone_number, inactive_user_id)
         unlock_user(inactive_user, disable_current_active_user)
