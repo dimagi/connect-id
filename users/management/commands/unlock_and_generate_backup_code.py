@@ -22,12 +22,9 @@ class Command(BaseCommand):
         disable_current_active_user = options.get("disable-current-active-user", True)
 
         inactive_user = get_inactive_user(phone_number, inactive_user_id)
-        user = unlock_user(inactive_user, disable_current_active_user)
-        if user:
-            backup_code = generate_backup_code(user)
-            print(f"User {phone_number} has been unlocked and a backup code has been generated: {backup_code}")
-        else:
-            print(f"Failed to unlock user with phone number {phone_number}.")
+        unlock_user(inactive_user, disable_current_active_user)
+        backup_code = generate_backup_code(inactive_user)
+        print(f"User {phone_number} has been unlocked and a backup code has been generated: {backup_code}")
 
 
 def get_inactive_user(phone_number, inactive_user_id=None):
@@ -44,9 +41,6 @@ def get_inactive_user(phone_number, inactive_user_id=None):
 
 
 def unlock_user(inactive_user, disable_current_active_user=True):
-    if not inactive_user:
-        return
-
     if disable_current_active_user:
         active_user = ConnectUser.objects.filter(phone_number=inactive_user.phone_number, is_active=True).first()
         if active_user:
