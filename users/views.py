@@ -519,19 +519,22 @@ def confirm_backup_code(request):
 
     try:
         if not user.check_recovery_pin(data.get("recovery_pin")):
-            session.add_failed_backup_code_attempt()
+            user.add_failed_backup_code_attempt()
 
-            if session.backup_code_attempts_left == 0:
+            if user.backup_code_attempts_left == 0:
                 user.is_active = False
+                user.is_locked = True
                 user.save()
+                return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=200)
 
-            return JsonResponse({"attempts_left": session.backup_code_attempts_left}, status=200)
+            return JsonResponse({"attempts_left": user.backup_code_attempts_left}, status=200)
 
     except RecoveryPinNotSetError:
         return JsonResponse({"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}, status=400)
 
     password = token_hex(16)
     user.set_password(password)
+    user.reset_failed_backup_code_attempts()
     user.save()
 
     return JsonResponse(
