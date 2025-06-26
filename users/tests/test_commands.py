@@ -1,4 +1,5 @@
 import pytest
+from django.core.management.base import CommandError
 from faker import Faker
 
 from users.factories import UserFactory
@@ -21,26 +22,27 @@ class TestUnlockAndGenerateBackupCode:
 
     def test_get_inactive_but_not_locked_user(self):
         inactive_user = UserFactory.create(phone_number=Faker().phone_number(), is_active=False)
-        user = get_inactive_user(inactive_user.phone_number)
-        assert user.id == inactive_user.id
+        with pytest.raises(CommandError):
+            get_inactive_user(inactive_user.phone_number)
 
     def test_multiple_inactive_users(self):
         phone_number = Faker().phone_number()
         UserFactory.create_batch(2, phone_number=phone_number, is_active=False, is_locked=True)
-        with pytest.raises(ConnectUser.MultipleObjectsReturned):
+        with pytest.raises(CommandError):
             get_inactive_user(phone_number)
 
     def test_no_inactive_user(self):
         phone_number = Faker().phone_number()
-        with pytest.raises(ConnectUser.DoesNotExist):
+        with pytest.raises(CommandError):
             get_inactive_user(phone_number)
         with pytest.raises(ConnectUser.DoesNotExist):
             get_inactive_user(phone_number=None, inactive_user_id=-1)
 
     def test_unlock_user(self, locked_user):
-        unlocked_user = unlock_user(locked_user)
-        assert unlocked_user.is_locked is False
-        assert unlocked_user.is_active is True
+        unlock_user(locked_user)
+        locked_user.refresh_from_db()
+        assert locked_user.is_locked is False
+        assert locked_user.is_active is True
 
     def test_disable_active_user(self, locked_user):
         active_user = UserFactory.create(phone_number=locked_user.phone_number)
