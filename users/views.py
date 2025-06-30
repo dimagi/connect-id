@@ -70,7 +70,7 @@ def start_device_configuration(request):
     logger.info(f"Start configuration for phone: {data}")
     if not data.get("phone_number"):
         return JsonResponse(
-            {"error_code": ErrorCodes.MISSING_DATA, "sub_code": "PHONE_NUMBER_REQUIRED"},
+            {"error_code": ErrorCodes.MISSING_DATA, "error_sub_code": "PHONE_NUMBER_REQUIRED"},
             status=400,
         )
     locked_user_exists = ConnectUser.objects.filter(

@@ -171,4 +171,4 @@ class TestValidateAppIntegrity:
             response_data = json.loads(response.content)
 
             assert response_data["error_code"] == error_code
-            assert response_data["sub_code"] == error_sub_code
+            assert response_data["error_sub_code"] == error_sub_code

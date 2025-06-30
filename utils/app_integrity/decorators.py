@@ -23,7 +23,7 @@ def validate_app_integrity(integrity_token, request_hash, app_package, phone_num
     if not (integrity_token and request_hash):
         logger.info(f"{logging_prefix}: missing integrity token or request hash in headers")
         return JsonResponse(
-            {"error_code": ErrorCodes.MISSING_DATA, "sub_code": "INTEGRITY_HEADERS"},
+            {"error_code": ErrorCodes.MISSING_DATA, "error_sub_code": "INTEGRITY_HEADERS"},
             status=HttpResponseBadRequest.status_code,
         )
 
@@ -41,7 +41,7 @@ def validate_app_integrity(integrity_token, request_hash, app_package, phone_num
         logger.info(f"{logging_prefix}: {str(e)}")
         response = {
             "error_code": ErrorCodes.INTEGRITY_ERROR,
-            "sub_code": e.code,
+            "error_sub_code": e.code,
         }
         return JsonResponse(response, status=HttpResponseForbidden.status_code)
     except HttpError:
