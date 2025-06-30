@@ -1,6 +1,7 @@
 import logging
 
-from django.http import HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
+from django.http import HttpResponseBadRequest, HttpResponseForbidden, HttpResponseServerError, JsonResponse
+from googleapiclient.errors import HttpError
 
 from users.const import TEST_NUMBER_PREFIX
 from utils.app_integrity.const import INTEGRITY_REQUEST_HASH_KEY, INTEGRITY_TOKEN_HEADER_KEY, ErrorCodes
@@ -43,6 +44,11 @@ def validate_app_integrity(integrity_token, request_hash, app_package, phone_num
             "sub_code": e.code,
         }
         return JsonResponse(response, status=HttpResponseForbidden.status_code)
+    except HttpError:
+        logger.info(f"{logging_prefix}: Google Play Integrity API not available")
+        return JsonResponse(
+            {"error_code": ErrorCodes.INTEGRITY_SERVICE_UNAVAILABLE}, status=HttpResponseServerError.status_code
+        )
 
 
 def require_app_integrity(view):

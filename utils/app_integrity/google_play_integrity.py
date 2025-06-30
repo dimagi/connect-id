@@ -4,7 +4,6 @@ from django.conf import settings
 from google.oauth2 import service_account
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 
 from utils.app_integrity.exceptions import (
     AccountDetailsError,
@@ -53,12 +52,7 @@ class AppIntegrityService:
         }
         with build(**service_spec) as service:
             body = {"integrityToken": self.token}
-            try:
-                response = service.v1().decodeIntegrityToken(packageName=self.package_name, body=body).execute()
-            except HttpError as e:
-                logger.info(f"Error decoding integrity token for app ({self.package_name}): {str(e)}")
-                raise IntegrityRequestError("Invalid token")
-
+            response = service.v1().decodeIntegrityToken(packageName=self.package_name, body=body).execute()
         return VerdictResponse.from_dict(response["tokenPayloadExternal"])
 
     @property

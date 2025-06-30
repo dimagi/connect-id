@@ -81,13 +81,21 @@ def start_device_configuration(request):
 
     is_demo_user = data["phone_number"].startswith(TEST_NUMBER_PREFIX)
 
-    token_session = ConfigurationSession.objects.create(
+    token_session = ConfigurationSession(
         phone_number=data["phone_number"],
         is_phone_validated=is_demo_user,  # demo users are always considered validated
         gps_location=data.get("gps_location"),
         invited_user=request.invited_user,
     )
 
+    try:
+        if token_session.country_code in settings.BLACKLISTED_COUNTRY_CODES:
+            return JsonResponse({"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}, status=403)
+    except (ValueError, AttributeError, IndexError):
+        # TODO: This should fail with a JSON response instead once mobile starts sending GPS data to this endpoint
+        logger.error(f"Invalid location data for phone number ...{data['phone_number'][-6:]}")
+
+    token_session.save()
     response_data = {
         "required_lock": ConnectUser.get_device_security_requirement(data["phone_number"], request.invited_user),
         "demo_user": is_demo_user,
@@ -519,21 +527,22 @@ def confirm_backup_code(request):
 
     try:
         if not user.check_recovery_pin(data.get("recovery_pin")):
-            session.add_failed_backup_code_attempt()
+            user.add_failed_backup_code_attempt()
 
-            if session.backup_code_attempts_left == 0:
+            if user.backup_code_attempts_left == 0:
                 user.is_active = False
                 user.is_locked = True
                 user.save()
-                return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=403)
+                return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=200)
 
-            return JsonResponse({"attempts_left": session.backup_code_attempts_left}, status=200)
+            return JsonResponse({"attempts_left": user.backup_code_attempts_left}, status=200)
 
     except RecoveryPinNotSetError:
         return JsonResponse({"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}, status=400)
 
     password = token_hex(16)
     user.set_password(password)
+    user.reset_failed_backup_code_attempts()
     user.save()
 
     return JsonResponse(

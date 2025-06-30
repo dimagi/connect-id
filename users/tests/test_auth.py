@@ -31,10 +31,11 @@ class TestSessionTokenAuthentication:
         result = token_auth.authenticate(request)
         assert result is None
 
-    def test_no_backup_code_attempts_left(self, token_auth, valid_token):
-        valid_token.failed_backup_code_attempts = 3
-        valid_token.save()
+    def test_no_backup_code_attempts_left(self, token_auth, valid_token, user):
+        user.is_locked = True
+        user.is_active = False
+        user.save()
         request = APIRequestFactory().get("/", HTTP_AUTHORIZATION=f"Bearer {valid_token.key}")
         with pytest.raises(exceptions.AuthenticationFailed) as excinfo:
             token_auth.authenticate(request)
-        assert "Backup code attempts exceeded" in str(excinfo.value)
+        assert "User account is locked." in str(excinfo.value)

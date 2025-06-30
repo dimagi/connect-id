@@ -11,11 +11,11 @@ def check_number_for_existing_invites(phone_number):
 
 
 def resend_connect_invite(user):
-    url = settings.CONNCET_RESEND_INVITES_URL
+    url = settings.CONNECT_RESEND_INVITES_URL
     auth = (settings.COMMCARE_CONNECT_CLIENT_ID, settings.COMMCARE_CONNECT_CLIENT_SECRET)
     data = {
         "phone_number": user.phone_number.as_e164,
         "username": user.username,
         "name": user.name,
     }
-    requests.post(url, auth, data=data)
+    requests.post(url, auth=auth, data=data)

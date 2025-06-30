@@ -13,6 +13,7 @@ from django.urls import reverse
 from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
 from django_otp.util import random_hex
+from geopy.geocoders import Nominatim
 from phonenumber_field.modelfields import PhoneNumberField
 
 from users.exceptions import RecoveryPinNotSetError
@@ -43,6 +44,7 @@ class ConnectUser(AbstractUser):
 
     device_security = models.CharField(choices=DeviceSecurity.choices, default=DeviceSecurity.BIOMETRIC, max_length=15)
     is_locked = models.BooleanField(default=False)
+    failed_backup_code_attempts = models.IntegerField(default=0)
 
     # removed from base class
     first_name = None
@@ -87,6 +89,17 @@ class ConnectUser(AbstractUser):
 
     def get_photo(self):
         return get_user_photo_base64(self.username)
+
+    def add_failed_backup_code_attempt(self):
+        self.failed_backup_code_attempts += 1
+        self.save()
+
+    def reset_failed_backup_code_attempts(self):
+        self.failed_backup_code_attempts = 0
+
+    @property
+    def backup_code_attempts_left(self):
+        return max(MAX_BACKUP_CODE_ATTEMPTS - self.failed_backup_code_attempts, 0)
 
     class Meta:
         constraints = [
@@ -194,7 +207,6 @@ class ConfigurationSession(models.Model):
     expires = models.DateTimeField()
     phone_number = PhoneNumberField()
     is_phone_validated = models.BooleanField(default=False)
-    failed_backup_code_attempts = models.IntegerField(default=0)
     gps_location = models.CharField(max_length=100, blank=True, null=True)  # GPS coordinates in format "lat lon"
     invited_user = models.BooleanField(default=False)
 
@@ -215,13 +227,15 @@ class ConfigurationSession(models.Model):
     def is_valid(self):
         return self.expires > now()
 
-    def add_failed_backup_code_attempt(self):
-        self.failed_backup_code_attempts += 1
-        self.save()
-
     @property
-    def backup_code_attempts_left(self):
-        return max(MAX_BACKUP_CODE_ATTEMPTS - self.failed_backup_code_attempts, 0)
+    def country_code(self):
+        coords = self.gps_location.split()
+        lat = coords[0]
+        lon = coords[1]
+        geolocator = Nominatim(user_agent="PersonalID")
+        location = geolocator.reverse(f"{lat} {lon}", language="en")
+        address = location.raw.get("address", {})
+        return address.get("country_code")
 
 
 class SessionUser(AnonymousUser):
