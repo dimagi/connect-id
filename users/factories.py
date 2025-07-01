@@ -5,7 +5,7 @@ from django.utils.timezone import now
 from factory.django import DjangoModelFactory
 from fcm_django.models import FCMDevice
 
-from users.models import ConfigurationSession, ConnectUser, Credential, PhoneDevice, RecoveryStatus
+from users.models import ConfigurationSession, ConnectUser, Credential, PhoneDevice, RecoveryStatus, SessionPhoneDevice
 
 
 class UserFactory(DjangoModelFactory):
@@ -62,3 +62,12 @@ class ConfigurationSessionFactory(DjangoModelFactory):
 
     key = factory.Faker("uuid4")
     phone_number = "+27738156127"
+
+
+class SessionPhoneDeviceFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = SessionPhoneDevice
+
+    phone_number = factory.Faker("phone_number")
+    user_session = factory.SubFactory(ConfigurationSessionFactory)
+    token = factory.Faker("bothify", text="????##")

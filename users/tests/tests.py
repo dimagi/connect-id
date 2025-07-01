@@ -14,9 +14,9 @@ from payments.models import PaymentProfile
 from services.ai.ocs import OpenChatStudio
 from test_utils.decorators import skip_app_integrity_check
 from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
-from users.factories import CredentialFactory, PhoneDeviceFactory, RecoveryStatusFactory, UserFactory
+from users.factories import CredentialFactory, PhoneDeviceFactory, RecoveryStatusFactory, UserFactory, SessionPhoneDeviceFactory
 from users.fcm_utils import create_update_device
-from users.models import ConfigurationSession, ConnectUser, PhoneDevice, RecoveryStatus, UserKey
+from users.models import ConfigurationSession, ConnectUser, PhoneDevice, RecoveryStatus, UserKey, SessionPhoneDevice
 from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
 
 
@@ -1170,3 +1170,94 @@ class TestCompleteProfileView:
         new_user = ConnectUser.objects.get(phone_number=valid_token.phone_number, is_active=True)
         assert new_user.username != user.username
         assert new_user.name == self.post_data["name"]
+
+
+@pytest.mark.django_db
+class TestSendOtpPersonalId:
+    url = "/users/send_otp_personal_id"
+
+    @patch("users.models.SessionPhoneDevice.generate_challenge")
+    def test_success(self, mock_generate_challenge, authed_client_token, valid_token):
+        SessionPhoneDeviceFactory(user_session=valid_token, phone_number=valid_token.phone_number)
+        response = authed_client_token.post(self.url)
+        assert response.status_code == 200
+        mock_generate_challenge.assert_called_once()
+
+    def test_session_phone_device_creation(self, authed_client_token, valid_token):
+        SessionPhoneDevice.objects.filter(user_session=valid_token).delete()
+
+        with patch("users.models.SessionPhoneDevice.generate_challenge") as mock_generate_challenge:
+            response = authed_client_token.post(self.url)
+            assert response.status_code == 200
+            assert SessionPhoneDevice.objects.filter(user_session=valid_token).exists()
+            mock_generate_challenge.assert_called_once()
+
+
+@pytest.mark.django_db
+class TestConfirmOtpPersonalId:
+    url = "/users/confirm_otp_personal_id"
+
+    @patch("users.models.SessionPhoneDevice.verify_token")
+    def test_invalid_token(self, mock_verify_token, authed_client_token, valid_token):
+        mock_verify_token.return_value = False
+
+        # Set initial state: phone not validated
+        valid_token.is_phone_validated = False
+        valid_token.save()
+
+        SessionPhoneDeviceFactory(
+            user_session=valid_token,
+            phone_number=valid_token.phone_number,
+        )
+
+        response = authed_client_token.post(self.url, data={"otp": "wrong"})
+
+        assert response.status_code == 401
+        assert response.json()["error"] == "OTP token is incorrect"
+        mock_verify_token.assert_called_once_with("wrong")
+
+        valid_token.refresh_from_db()
+        assert not valid_token.is_phone_validated
+
+    @patch("users.models.SessionPhoneDevice.verify_token")
+    def test_success(self, mock_verify_token, authed_client_token, valid_token):
+        mock_verify_token.return_value = True
+
+        # Set initial state: phone not validated
+        valid_token.is_phone_validated = False
+        valid_token.save()
+
+        SessionPhoneDeviceFactory(
+            user_session=valid_token,
+            phone_number=valid_token.phone_number,
+        )
+
+        response = authed_client_token.post(self.url, data={"otp": "123456"})
+
+        assert response.status_code == 200
+        mock_verify_token.assert_called_once_with("123456")
+
+        valid_token.refresh_from_db()
+        assert valid_token.is_phone_validated
+
+    @patch("users.models.SessionPhoneDevice.verify_token")
+    def test_missing_otp(self, mock_verify_token, authed_client_token, valid_token):
+        # Set initial state: phone not validated
+        valid_token.is_phone_validated = False
+        valid_token.save()
+
+        SessionPhoneDeviceFactory(
+            user_session=valid_token,
+            phone_number=valid_token.phone_number,
+        )
+
+        mock_verify_token.return_value = False
+
+        response = authed_client_token.post(self.url, data={})
+
+        assert response.status_code == 401
+        assert response.json()["error"] == "OTP token is incorrect"
+        mock_verify_token.assert_called_once_with(None)
+
+        valid_token.refresh_from_db()
+        assert not valid_token.is_phone_validated
