@@ -1,4 +1,5 @@
 import json
+import uuid
 from datetime import timedelta
 from unittest import mock
 from unittest.mock import PropertyMock, patch
@@ -16,7 +17,7 @@ from test_utils.decorators import skip_app_integrity_check
 from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from users.factories import CredentialFactory, PhoneDeviceFactory, RecoveryStatusFactory, UserFactory
 from users.fcm_utils import create_update_device
-from users.models import ConfigurationSession, ConnectUser, PhoneDevice, RecoveryStatus, UserKey
+from users.models import ConfigurationSession, ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserKey
 from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
 
 
@@ -359,7 +360,10 @@ class TestRecoverSecondaryPhone:
 class TestFetchCredentials:
     def setup_method(self):
         self.url = "/users/fetch_credentials"
-        CredentialFactory.create_batch(3, organization_slug="test_slug")
+        self.opp_id = uuid.uuid4().hex
+        CredentialFactory.create_batch(
+            3, issuing_authority=Credential.IssuingAuthorityTypes.HQ, app_or_opp_id=self.opp_id
+        )
         CredentialFactory.create_batch(10)
 
     def assert_statements(self, response, expected_count):
@@ -368,10 +372,10 @@ class TestFetchCredentials:
         assert "credentials" in response_data
         assert len(response_data["credentials"]) == expected_count
         for credential in response_data["credentials"]:
-            assert set(credential.keys()) == {"name", "slug"}
+            assert set(credential.keys()) == {"title", "level"}
 
     def test_fetch_credential_with_org_slug(self, authed_client):
-        response = authed_client.get(self.url + "?org_slug=test_slug")
+        response = authed_client.get(self.url + "?opportunity_id=" + self.opp_id)
         self.assert_statements(response, expected_count=3)
 
     def test_fetch_credential_without_org_slug(self, authed_client):

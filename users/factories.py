@@ -33,9 +33,9 @@ class CredentialFactory(DjangoModelFactory):
     class Meta:
         model = Credential
 
-    name = factory.Faker("name")
-    slug = factory.Faker("slug")
-    organization_slug = factory.Faker("slug")
+    title = factory.Faker("name")
+    issuing_authority = Credential.IssuingAuthorityTypes.CONNECT
+    type = Credential.CredentialTypes.DELIVER
 
 
 class PhoneDeviceFactory(DjangoModelFactory):
