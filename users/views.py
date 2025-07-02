@@ -639,11 +639,11 @@ class AddCredential(APIView):
 
     def post(self, request, *args, **kwargs):
         phone_numbers = request.data["users"]
-        org_slug = request.data["organization"]
         credential_name = request.data["credential"]
-        slug = f"{credential_name.lower().replace(' ', '_')}_{org_slug}"
         credential, _ = Credential.objects.get_or_create(
-            name=credential_name, organization_slug=org_slug, defaults={"slug": slug}
+            title=credential_name,
+            issuing_authority=Credential.IssuingAuthorityTypes.CONNECT,
+            type=Credential.CredentialTypes.DELIVER,
         )
         users = ConnectUser.objects.filter(phone_number__in=phone_numbers, is_active=True)
         for user in users:
@@ -739,12 +739,12 @@ class FetchCredentials(ClientProtectedResourceMixin, View):
     required_scopes = ["user_fetch"]
 
     def get(self, request):
-        org_slug = request.GET.get("org_slug", None)
+        opp_id = request.GET.get("opportunity_id")
         queryset = Credential.objects.all()
-        if org_slug:
-            queryset = queryset.filter(organization_slug=org_slug)
+        if opp_id:
+            queryset = queryset.filter(app_or_opp_id=opp_id)
 
-        credentials = queryset.values("name", "slug")
+        credentials = queryset.values("title", "level")
         results = {"credentials": list(credentials)}
         return JsonResponse(results)
 
