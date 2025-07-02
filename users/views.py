@@ -29,7 +29,16 @@ from .auth import SessionTokenAuthentication
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
 from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
-from .models import ConfigurationSession, ConnectUser, Credential, PhoneDevice, SessionPhoneDevice, RecoveryStatus, UserCredential, UserKey
+from .models import (
+    ConfigurationSession,
+    ConnectUser,
+    Credential,
+    PhoneDevice,
+    RecoveryStatus,
+    SessionPhoneDevice,
+    UserCredential,
+    UserKey,
+)
 from .services import upload_photo_to_s3
 
 logger = logging.getLogger(__name__)
@@ -839,7 +848,9 @@ def check_user_similarity(request):
 @api_view(["POST"])
 @authentication_classes([SessionTokenAuthentication])
 def send_session_otp(request):
-    otp_device, _ = SessionPhoneDevice.objects.get_or_create(phone_number=request.auth.phone_number, session=request.auth)
+    otp_device, _ = SessionPhoneDevice.objects.get_or_create(
+        phone_number=request.auth.phone_number, session=request.auth
+    )
     otp_device.generate_challenge()
     return HttpResponse()
 
@@ -851,7 +862,7 @@ def confirm_session_otp(request):
     data = request.data
     verified = device.verify_token(data.get("otp"))
     if not verified:
-        return JsonResponse({"error": "OTP token is incorrect"}, status=401)
+        return JsonResponse({"error": ErrorCodes.INCORRECT_OTP}, status=401)
     request.auth.is_phone_validated = True
     request.auth.save()
     return HttpResponse()

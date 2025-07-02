@@ -163,9 +163,7 @@ class PhoneDevice(BasePhoneDevice):
     user = models.ForeignKey(ConnectUser, on_delete=models.CASCADE)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(fields=["phone_number", "user"], name="phone_number_user")
-        ]
+        constraints = [models.UniqueConstraint(fields=["phone_number", "user"], name="phone_number_user")]
 
 
 class RecoveryStatus(models.Model):
@@ -252,9 +250,7 @@ class SessionPhoneDevice(BasePhoneDevice):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(fields=["phone_number", "session"], name="phone_number_session")
-        ]
+        constraints = [models.UniqueConstraint(fields=["phone_number", "session"], name="phone_number_session")]
 
 
 class SessionUser(AnonymousUser):

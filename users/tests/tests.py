@@ -14,9 +14,15 @@ from payments.models import PaymentProfile
 from services.ai.ocs import OpenChatStudio
 from test_utils.decorators import skip_app_integrity_check
 from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
-from users.factories import CredentialFactory, PhoneDeviceFactory, RecoveryStatusFactory, UserFactory, SessionPhoneDeviceFactory
+from users.factories import (
+    CredentialFactory,
+    PhoneDeviceFactory,
+    RecoveryStatusFactory,
+    SessionPhoneDeviceFactory,
+    UserFactory,
+)
 from users.fcm_utils import create_update_device
-from users.models import ConfigurationSession, ConnectUser, PhoneDevice, RecoveryStatus, UserKey, SessionPhoneDevice
+from users.models import ConfigurationSession, ConnectUser, PhoneDevice, RecoveryStatus, SessionPhoneDevice, UserKey
 from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
 
 
@@ -1213,7 +1219,7 @@ class TestConfirmSessionOtp:
         response = authed_client_token.post(self.url, data={"otp": "wrong"})
 
         assert response.status_code == 401
-        assert response.json()["error"] == "OTP token is incorrect"
+        assert response.json()["error"] == ErrorCodes.INCORRECT_OTP
         mock_verify_token.assert_called_once_with("wrong")
 
         valid_token.refresh_from_db()
@@ -1256,7 +1262,7 @@ class TestConfirmSessionOtp:
         response = authed_client_token.post(self.url, data={})
 
         assert response.status_code == 401
-        assert response.json()["error"] == "OTP token is incorrect"
+        assert response.json()["error"] == ErrorCodes.INCORRECT_OTP
         mock_verify_token.assert_called_once_with(None)
 
         valid_token.refresh_from_db()
