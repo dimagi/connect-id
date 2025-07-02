@@ -1173,8 +1173,8 @@ class TestCompleteProfileView:
 
 
 @pytest.mark.django_db
-class TestSendOtpPersonalId:
-    url = "/users/send_otp_personal_id"
+class TestSendSessionOtp:
+    url = "/users/send_session_otp"
 
     @patch("users.models.SessionPhoneDevice.generate_challenge")
     def test_success(self, mock_generate_challenge, authed_client_token, valid_token):
@@ -1194,8 +1194,8 @@ class TestSendOtpPersonalId:
 
 
 @pytest.mark.django_db
-class TestConfirmOtpPersonalId:
-    url = "/users/confirm_otp_personal_id"
+class TestConfirmSessionOtp:
+    url = "/users/confirm_session_otp"
 
     @patch("users.models.SessionPhoneDevice.verify_token")
     def test_invalid_token(self, mock_verify_token, authed_client_token, valid_token):
