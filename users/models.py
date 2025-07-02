@@ -172,9 +172,34 @@ class RecoveryStatus(models.Model):
 
 
 class Credential(models.Model):
-    name = models.CharField(max_length=300)
-    slug = models.CharField(max_length=100)
-    organization_slug = models.CharField(max_length=255)
+    class IssuingAuthorityTypes(models.TextChoices):
+        CONNECT = "CONNECT", "CONNECT"
+        HQ = "HQ", "HQ"
+
+    class CredentialTypes(models.TextChoices):
+        APP_ACTIVITY = "APP_ACTIVITY", "APP_ACTIVITY"
+        LEARN = "LEARN", "LEARN"
+        DELIVER = "DELIVER", "DELIVER"
+
+    uuid = models.UUIDField(default=uuid4)
+    title = models.CharField(max_length=300)
+    issuing_authority = models.CharField(max_length=50, choices=IssuingAuthorityTypes.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+    level = models.CharField(max_length=50, blank=True, null=True)  # credential level/code (e.g. 3_MONTHS_ACTIVE)
+    type = models.CharField(max_length=50, choices=CredentialTypes.choices)
+    app_or_opp_id = models.CharField(max_length=50, blank=True, null=True)
+
+    @property
+    def app_id(self):
+        if self.issuing_authority == self.IssuingAuthorityTypes.HQ:
+            return self.app_or_opp_id
+        return None
+
+    @property
+    def opportunity_id(self):
+        if self.issuing_authority == self.IssuingAuthorityTypes.CONNECT:
+            return self.app_or_opp_id
+        return None
 
 
 class UserCredential(models.Model):
