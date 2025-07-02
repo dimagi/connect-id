@@ -7,7 +7,7 @@
     },
     "appIntegrity": {
       "appRecognitionVerdict": "UNRECOGNIZED_VERSION",
-      "packageName": "org.commcare.dalvik",
+      "packageName": "unrecognized.app",
       "certificateSha256Digest": ["some_secret_certificate_sha256_digest"],
       "versionCode": "1"
     },

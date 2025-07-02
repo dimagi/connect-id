@@ -841,7 +841,7 @@ class TestStartConfigurationView:
             data={},
         )
         assert response.status_code == 400
-        assert response.json().get("error_code") == AppIntegrityErrorCodes.INTEGRITY_DATA_MISSING
+        assert response.json().get("error_code") == AppIntegrityErrorCodes.MISSING_DATA
 
     @skip_app_integrity_check
     def test_no_phone_number(self, client):

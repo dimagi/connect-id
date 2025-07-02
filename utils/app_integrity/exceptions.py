@@ -1,14 +1,14 @@
 class IntegrityRequestError(Exception):
-    pass
+    code = "INTEGRITY_REQUEST_ERROR"
 
 
 class AppIntegrityError(Exception):
-    pass
+    code = "APP_INTEGRITY_ERROR"
 
 
 class DeviceIntegrityError(Exception):
-    pass
+    code = "DEVICE_INTEGRITY_ERROR"
 
 
 class AccountDetailsError(Exception):
-    pass
+    code = "UNLICENSED_APP_ERROR"
