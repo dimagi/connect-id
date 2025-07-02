@@ -1178,18 +1178,18 @@ class TestSendOtpPersonalId:
 
     @patch("users.models.SessionPhoneDevice.generate_challenge")
     def test_success(self, mock_generate_challenge, authed_client_token, valid_token):
-        SessionPhoneDeviceFactory(user_session=valid_token, phone_number=valid_token.phone_number)
+        SessionPhoneDeviceFactory(session=valid_token, phone_number=valid_token.phone_number)
         response = authed_client_token.post(self.url)
         assert response.status_code == 200
         mock_generate_challenge.assert_called_once()
 
     def test_session_phone_device_creation(self, authed_client_token, valid_token):
-        SessionPhoneDevice.objects.filter(user_session=valid_token).delete()
+        SessionPhoneDevice.objects.filter(session=valid_token).delete()
 
         with patch("users.models.SessionPhoneDevice.generate_challenge") as mock_generate_challenge:
             response = authed_client_token.post(self.url)
             assert response.status_code == 200
-            assert SessionPhoneDevice.objects.filter(user_session=valid_token).exists()
+            assert SessionPhoneDevice.objects.filter(session=valid_token).exists()
             mock_generate_challenge.assert_called_once()
 
 
@@ -1206,7 +1206,7 @@ class TestConfirmOtpPersonalId:
         valid_token.save()
 
         SessionPhoneDeviceFactory(
-            user_session=valid_token,
+            session=valid_token,
             phone_number=valid_token.phone_number,
         )
 
@@ -1228,7 +1228,7 @@ class TestConfirmOtpPersonalId:
         valid_token.save()
 
         SessionPhoneDeviceFactory(
-            user_session=valid_token,
+            session=valid_token,
             phone_number=valid_token.phone_number,
         )
 
@@ -1247,7 +1247,7 @@ class TestConfirmOtpPersonalId:
         valid_token.save()
 
         SessionPhoneDeviceFactory(
-            user_session=valid_token,
+            session=valid_token,
             phone_number=valid_token.phone_number,
         )
 

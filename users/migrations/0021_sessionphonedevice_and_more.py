@@ -41,7 +41,7 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 (
-                    "user_session",
+                    "session",
                     models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to="users.configurationsession"),
                 ),
             ],
@@ -49,7 +49,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="sessionphonedevice",
             constraint=models.UniqueConstraint(
-                fields=("phone_number", "user_session"), name="phone_number_user_session"
+                fields=("phone_number", "session"), name="phone_number_session"
             ),
         ),
     ]

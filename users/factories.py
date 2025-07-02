@@ -69,5 +69,5 @@ class SessionPhoneDeviceFactory(factory.django.DjangoModelFactory):
         model = SessionPhoneDevice
 
     phone_number = factory.Faker("phone_number")
-    user_session = factory.SubFactory(ConfigurationSessionFactory)
+    session = factory.SubFactory(ConfigurationSessionFactory)
     token = factory.Faker("bothify", text="????##")

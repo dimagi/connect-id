@@ -247,12 +247,13 @@ class ConfigurationSession(models.Model):
 
 
 class SessionPhoneDevice(BasePhoneDevice):
-    user_session = models.ForeignKey(ConfigurationSession, on_delete=models.CASCADE)
+    session = models.ForeignKey(ConfigurationSession, on_delete=models.CASCADE)
+    # this is non-nullable field on the base SideChannelDevice, so make it nullable
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["phone_number", "user_session"], name="phone_number_user_session")
+            models.UniqueConstraint(fields=["phone_number", "session"], name="phone_number_session")
         ]
 
 

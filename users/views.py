@@ -839,7 +839,7 @@ def check_user_similarity(request):
 @api_view(["POST"])
 @authentication_classes([SessionTokenAuthentication])
 def send_otp_personal_id(request):
-    otp_device, _ = SessionPhoneDevice.objects.get_or_create(phone_number=request.auth.phone_number, user_session=request.auth)
+    otp_device, _ = SessionPhoneDevice.objects.get_or_create(phone_number=request.auth.phone_number, session=request.auth)
     otp_device.generate_challenge()
     return HttpResponse()
 
@@ -847,7 +847,7 @@ def send_otp_personal_id(request):
 @api_view(["POST"])
 @authentication_classes([SessionTokenAuthentication])
 def confirm_otp_personal_id(request):
-    device = SessionPhoneDevice.objects.get(phone_number=request.auth.phone_number, user_session=request.auth)
+    device = SessionPhoneDevice.objects.get(phone_number=request.auth.phone_number, session=request.auth)
     data = request.data
     verified = device.verify_token(data.get("otp"))
     if not verified:
