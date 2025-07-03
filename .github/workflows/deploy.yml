@@ -16,7 +16,7 @@ on:
     inputs:
       environment:
         required: true
-        default: 'staging'
+        default: 'production'
         type: choice
         options:
           - production
