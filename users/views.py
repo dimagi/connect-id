@@ -26,10 +26,19 @@ from utils.connect import resend_connect_invite
 from utils.rest_framework import ClientProtectedResourceAuth
 
 from .auth import SessionTokenAuthentication
-from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
+from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
 from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
-from .models import ConfigurationSession, ConnectUser, Credential, PhoneDevice, RecoveryStatus, UserCredential, UserKey
+from .models import (
+    ConfigurationSession,
+    ConnectUser,
+    Credential,
+    PhoneDevice,
+    RecoveryStatus,
+    SessionPhoneDevice,
+    UserCredential,
+    UserKey,
+)
 from .services import upload_photo_to_s3
 
 logger = logging.getLogger(__name__)
@@ -100,6 +109,7 @@ def start_device_configuration(request):
         "required_lock": ConnectUser.get_device_security_requirement(data["phone_number"], request.invited_user),
         "demo_user": is_demo_user,
         "token": token_session.key,
+        "sms_method": SMSMethods.PERSONAL_ID if request.invited_user else SMSMethods.FIREBASE,
     }
     return JsonResponse(response_data)
 
@@ -841,3 +851,26 @@ def check_user_similarity(request):
             "photo": existing_user.get_photo() if is_same_user else "",
         }
     )
+
+
+@api_view(["POST"])
+@authentication_classes([SessionTokenAuthentication])
+def send_session_otp(request):
+    otp_device, _ = SessionPhoneDevice.objects.get_or_create(
+        phone_number=request.auth.phone_number, session=request.auth
+    )
+    otp_device.generate_challenge()
+    return HttpResponse()
+
+
+@api_view(["POST"])
+@authentication_classes([SessionTokenAuthentication])
+def confirm_session_otp(request):
+    device = SessionPhoneDevice.objects.get(phone_number=request.auth.phone_number, session=request.auth)
+    data = request.data
+    verified = device.verify_token(data.get("otp"))
+    if not verified:
+        return JsonResponse({"error": ErrorCodes.INCORRECT_OTP}, status=401)
+    request.auth.is_phone_validated = True
+    request.auth.save()
+    return HttpResponse()

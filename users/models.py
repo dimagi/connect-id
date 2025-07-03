@@ -128,11 +128,13 @@ class UserKey(models.Model):
         return user_key
 
 
-class PhoneDevice(SideChannelDevice):
+class BasePhoneDevice(SideChannelDevice):
     phone_number = PhoneNumberField()
-    user = models.ForeignKey(ConnectUser, on_delete=models.CASCADE)
     otp_last_sent = models.DateTimeField(null=True, blank=True)
     attempts = models.IntegerField(default=1)
+
+    class Meta:
+        abstract = True
 
     def generate_challenge(self):
         # generate and send new token if the old token is valid for less than 5 minutes
@@ -155,6 +157,10 @@ class PhoneDevice(SideChannelDevice):
             self.save()
 
         return message
+
+
+class PhoneDevice(BasePhoneDevice):
+    user = models.ForeignKey(ConnectUser, on_delete=models.CASCADE)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["phone_number", "user"], name="phone_number_user")]
@@ -236,6 +242,15 @@ class ConfigurationSession(models.Model):
         location = geolocator.reverse(f"{lat} {lon}", language="en")
         address = location.raw.get("address", {})
         return address.get("country_code")
+
+
+class SessionPhoneDevice(BasePhoneDevice):
+    session = models.ForeignKey(ConfigurationSession, on_delete=models.CASCADE)
+    # this is non-nullable field on the base SideChannelDevice, so make it nullable
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["phone_number", "session"], name="phone_number_session")]
 
 
 class SessionUser(AnonymousUser):
