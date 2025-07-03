@@ -1,0 +1,56 @@
+name: Deploy
+
+env:
+  AWS_REGION: 'us-east-1'
+
+permissions:
+  id-token: write
+  contents: read
+
+on:
+  #  workflow_run:
+  #    workflows: [CI]
+  #    types: [completed]
+  #    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - production
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: actions/setup-ruby@v1
+
+      - name: Install Kamal
+        run: gem install kamal -v '~> 1.9.2'
+
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2.5.1
+        with:
+          key: ${{ secrets.SSH_KEY }}
+          known_hosts: ${{ secrets.KNOWN_HOSTS }}
+          config: |
+            Host *
+              StrictHostKeyChecking no
+              UserKnownHostsFile=/dev/null
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v3.0.1
+        with:
+          role-to-assume: arn:aws:iam::037129986032:role/github_deploy
+          role-session-name: GithubDeploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: deploy
+        working-directory: ./deploy
+        run: 'kamal deploy'
