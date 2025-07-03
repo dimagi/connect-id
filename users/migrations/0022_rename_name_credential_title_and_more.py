@@ -8,7 +8,7 @@ import uuid
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("users", "0020_remove_configurationsession_failed_backup_code_attempts_and_more"),
+        ("users", "0021_sessionphonedevice_and_more"),
     ]
 
     operations = [
