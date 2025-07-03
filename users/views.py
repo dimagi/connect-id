@@ -82,14 +82,8 @@ def start_device_configuration(request):
             {"error_code": ErrorCodes.MISSING_DATA, "error_sub_code": "PHONE_NUMBER_REQUIRED"},
             status=400,
         )
-    locked_user_exists = ConnectUser.objects.filter(
-        phone_number=data["phone_number"], is_active=False, is_locked=True
-    ).exists()
-    if locked_user_exists:
-        return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=403)
 
     is_demo_user = data["phone_number"].startswith(TEST_NUMBER_PREFIX)
-
     token_session = ConfigurationSession(
         phone_number=data["phone_number"],
         is_phone_validated=is_demo_user,  # demo users are always considered validated
