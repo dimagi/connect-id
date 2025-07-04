@@ -752,7 +752,7 @@ class FetchCredentials(ClientProtectedResourceMixin, View):
         opp_id = request.GET.get("opportunity_id")
         queryset = Credential.objects.all()
         if opp_id:
-            queryset = queryset.filter(app_or_opp_id=opp_id)
+            queryset = queryset.filter(opportunity_id=opp_id)
 
         credentials = queryset.values("title", "level")
         results = {"credentials": list(credentials)}

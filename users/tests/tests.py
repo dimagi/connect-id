@@ -376,7 +376,7 @@ class TestFetchCredentials:
         self.url = "/users/fetch_credentials"
         self.opp_id = uuid.uuid4().hex
         CredentialFactory.create_batch(
-            3, issuing_authority=Credential.IssuingAuthorityTypes.HQ, app_or_opp_id=self.opp_id
+            3, issuing_authority=Credential.IssuingAuthorityTypes.HQ, opportunity_id=self.opp_id
         )
         CredentialFactory.create_batch(10)
 
