@@ -178,9 +178,23 @@ class RecoveryStatus(models.Model):
 
 
 class Credential(models.Model):
-    name = models.CharField(max_length=300)
-    slug = models.CharField(max_length=100)
-    organization_slug = models.CharField(max_length=255)
+    class IssuingAuthorityTypes(models.TextChoices):
+        CONNECT = "CONNECT", "CONNECT"
+        HQ = "HQ", "HQ"
+
+    class CredentialTypes(models.TextChoices):
+        APP_ACTIVITY = "APP_ACTIVITY", "APP_ACTIVITY"
+        LEARN = "LEARN", "LEARN"
+        DELIVER = "DELIVER", "DELIVER"
+
+    uuid = models.UUIDField(default=uuid4)
+    title = models.CharField(max_length=300)
+    issuing_authority = models.CharField(max_length=50, choices=IssuingAuthorityTypes.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+    level = models.CharField(max_length=50, blank=True, null=True)  # credential level/code (e.g. 3_MONTHS_ACTIVE)
+    type = models.CharField(max_length=50, choices=CredentialTypes.choices)
+    app_id = models.CharField(max_length=50, blank=True, null=True)
+    opportunity_id = models.CharField(max_length=50, blank=True, null=True)
 
 
 class UserCredential(models.Model):
@@ -200,7 +214,7 @@ class UserCredential(models.Model):
             location = reverse("accept_credential", args=(user_credential.invite_id,))
             url = f"https://{domain}{location}"
             message = (
-                f"You have been given credential '{credential.name}'."
+                f"You have been given credential '{credential.title}'."
                 f"Please click the following link to accept {url}"
             )
             sender = get_sms_sender(user.phone_number.country_code)
