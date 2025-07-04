@@ -22,7 +22,6 @@ from rest_framework.views import APIView
 from services.ai.ocs import OpenChatStudio
 from utils import get_ip, get_sms_sender, send_sms
 from utils.app_integrity.decorators import require_app_integrity
-from utils.connect import resend_connect_invite
 from utils.rest_framework import ClientProtectedResourceAuth
 
 from .auth import SessionTokenAuthentication
@@ -222,8 +221,6 @@ def complete_profile(request):
 
     user.save()
     db_key = UserKey.get_or_create_key_for_user(user)
-    if session.invited_user:
-        resend_connect_invite(user)
     return JsonResponse(
         {
             "username": user.username,
