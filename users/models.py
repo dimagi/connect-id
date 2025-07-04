@@ -193,19 +193,8 @@ class Credential(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     level = models.CharField(max_length=50, blank=True, null=True)  # credential level/code (e.g. 3_MONTHS_ACTIVE)
     type = models.CharField(max_length=50, choices=CredentialTypes.choices)
-    app_or_opp_id = models.CharField(max_length=50, blank=True, null=True)
-
-    @property
-    def app_id(self):
-        if self.issuing_authority == self.IssuingAuthorityTypes.HQ:
-            return self.app_or_opp_id
-        return None
-
-    @property
-    def opportunity_id(self):
-        if self.issuing_authority == self.IssuingAuthorityTypes.CONNECT:
-            return self.app_or_opp_id
-        return None
+    app_id = models.CharField(max_length=50, blank=True, null=True)
+    opportunity_id = models.CharField(max_length=50, blank=True, null=True)
 
 
 class UserCredential(models.Model):
