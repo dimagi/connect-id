@@ -23,6 +23,8 @@ local testing, why the change is inherently safe, and/or plans to limit the blas
 In particular consider how existing data may be impacted by this change.
 -->
 
+- [ ] I am confident that this change will not break current and/or previous versions of CommCare apps
+
 ### Automated test coverage
 
 <!-- Identify the related test coverage and the tests it would catch -->
