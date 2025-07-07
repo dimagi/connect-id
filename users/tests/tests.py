@@ -30,6 +30,7 @@ from users.models import (
     PhoneDevice,
     RecoveryStatus,
     SessionPhoneDevice,
+    UserCredential,
     UserKey,
 )
 from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
@@ -395,6 +396,99 @@ class TestFetchCredentials:
     def test_fetch_credential_without_org_slug(self, authed_client):
         response = authed_client.get(self.url)
         self.assert_statements(response, expected_count=13)
+
+
+@pytest.mark.django_db
+class TestAddCredential:
+    endpoint = reverse("add_credential")
+
+    def test_no_auth(self, client):
+        response = client.post(self.endpoint)
+        assert response.status_code == 403
+
+    @patch("users.models.send_sms")
+    def test_success(self, mock_add_credential, authed_client, user):
+        app_id = uuid.uuid4().hex
+        payload = {
+            "credentials": [
+                {
+                    "users": [user.phone_number.raw_input, "1234567890"],
+                    "title": "Test Credential",
+                    "issuer": "HQ",
+                    "app_id": app_id,
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                }
+            ]
+        }
+        response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        assert response.status_code == 200
+        assert UserCredential.objects.all().count() == 1
+        cred = Credential.objects.all().first()
+        assert cred.title == "Test Credential"
+        assert cred.issuing_authority == "HQ"
+        assert cred.level == "ACTIVE_3_MONTHS"
+        assert cred.type == "DELIVER"
+        assert cred.app_id == app_id
+
+    @patch("users.models.send_sms")
+    def test_bulk_add(self, mock_add_credential, authed_client):
+        users = UserFactory.create_batch(2)
+        payload = {
+            "credentials": [
+                {
+                    "users": [users[0].phone_number.raw_input],
+                    "title": "Test Credential",
+                    "issuer": "HQ",
+                    "app_id": uuid.uuid4().hex,
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                },
+                {
+                    "users": [users[1].phone_number.raw_input],
+                    "title": "Test Credential 2",
+                    "issuer": "CONNECT",
+                    "opp_id": uuid.uuid4().hex,
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                },
+            ]
+        }
+        response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        assert response.status_code == 200
+        assert Credential.objects.all().count() == 2
+        assert UserCredential.objects.all().count() == 2
+
+    def test_missing_data(self, authed_client):
+        payload = {
+            "credentials": [
+                {
+                    "issuer": "HQ",
+                    "level": "ACTIVE_3_MONTHS",
+                }
+            ]
+        }
+        response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.INVALID_DATA}
+
+    @patch("users.models.send_sms")
+    def test_no_phone_numbers(self, mock_add_credential, authed_client, user):
+        payload = {
+            "credentials": [
+                {
+                    "title": "Test Credential",
+                    "issuer": "HQ",
+                    "app_id": uuid.uuid4().hex,
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                }
+            ]
+        }
+        response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        assert response.status_code == 200
+        assert Credential.objects.all().count() == 1
+        assert UserCredential.objects.all().count() == 0
 
 
 class BaseTestDeactivation:
