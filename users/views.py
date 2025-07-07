@@ -10,6 +10,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db.models import Count, F
 from django.db.models.functions import TruncMonth
+from django.db.utils import IntegrityError
 from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
 from django.views import View
@@ -648,16 +649,23 @@ class AddCredential(APIView):
     authentication_classes = [ClientProtectedResourceAuth]
 
     def post(self, request, *args, **kwargs):
-        phone_numbers = request.data["users"]
-        credential_name = request.data["credential"]
-        credential, _ = Credential.objects.get_or_create(
-            title=credential_name,
-            issuing_authority=Credential.IssuingAuthorityTypes.CONNECT,
-            type=Credential.CredentialTypes.DELIVER,
-        )
-        users = ConnectUser.objects.filter(phone_number__in=phone_numbers, is_active=True)
-        for user in users:
-            UserCredential.add_credential(user, credential, request)
+        data = request.data
+        for cred in data.get("credentials", []):
+            try:
+                credential, _ = Credential.objects.get_or_create(
+                    title=cred.get("title"),
+                    type=cred.get("type"),
+                    level=cred.get("level"),
+                    issuing_authority=cred.get("issuer"),
+                    app_id=cred.get("app_id"),
+                    opportunity_id=cred.get("opp_id"),
+                )
+            except IntegrityError:
+                return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
+            phone_numbers = cred.get("users", [])
+            users = ConnectUser.objects.filter(phone_number__in=phone_numbers, is_active=True)
+            for user in users:
+                UserCredential.add_credential(user, credential, request)
         return HttpResponse()
 
 
