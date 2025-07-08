@@ -666,19 +666,19 @@ class ListCredentials(APIView):
     authentication_classes = [BasicAuthentication]
 
     def get(self, request, *args, **kwargs):
-        user_creds = UserCredential.objects.filter(user=request.user).select_related("credential")
+        credentials = Credential.objects.filter(usercredential__user=request.user)
         results = [
             {
-                "uuid": uc.credential.uuid,
-                "app_id": uc.credential.app_id,
-                "opp_id": uc.credential.opportunity_id,
-                "date": uc.credential.created_at.isoformat(),
-                "title": uc.credential.title,
-                "issuer": uc.credential.issuing_authority,
-                "level": uc.credential.level,
-                "type": uc.credential.type,
+                "uuid": c.uuid,
+                "app_id": c.app_id,
+                "opp_id": c.opportunity_id,
+                "date": c.created_at.isoformat(),
+                "title": c.title,
+                "issuer": c.issuing_authority,
+                "level": c.level,
+                "type": c.type,
             }
-            for uc in user_creds
+            for c in credentials
         ]
         return JsonResponse({"credentials": results})
 
