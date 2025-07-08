@@ -20,6 +20,7 @@ from users.factories import (
     PhoneDeviceFactory,
     RecoveryStatusFactory,
     SessionPhoneDeviceFactory,
+    UserCredentialFactory,
     UserFactory,
 )
 from users.fcm_utils import create_update_device
@@ -30,6 +31,7 @@ from users.models import (
     PhoneDevice,
     RecoveryStatus,
     SessionPhoneDevice,
+    UserCredential,
     UserKey,
 )
 from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
@@ -395,6 +397,69 @@ class TestFetchCredentials:
     def test_fetch_credential_without_org_slug(self, authed_client):
         response = authed_client.get(self.url)
         self.assert_statements(response, expected_count=13)
+
+
+@pytest.mark.django_db
+class TestListCredentials:
+    url = reverse("list_credentials")
+
+    def test_success(self, auth_device, user):
+        cred = CredentialFactory.create(
+            title="Test Credential",
+            type=Credential.CredentialTypes.DELIVER,
+            level="ACTIVE_3_MONTH",
+            issuing_authority=Credential.IssuingAuthorityTypes.HQ,
+            app_id=uuid.uuid4().hex,
+        )
+        UserCredentialFactory.create(credential=cred, user=user)
+
+        response = auth_device.get(self.url)
+        assert response.status_code == 200
+        assert response.json() == {
+            "credentials": [
+                {
+                    "uuid": str(cred.uuid),
+                    "app_id": cred.app_id,
+                    "opp_id": None,
+                    "date": cred.created_at.isoformat(),
+                    "title": "Test Credential",
+                    "issuer": "HQ",
+                    "level": "ACTIVE_3_MONTH",
+                    "type": "DELIVER",
+                }
+            ]
+        }
+
+    def test_no_credentials(self, auth_device):
+        response = auth_device.get(self.url)
+        assert response.status_code == 200
+        assert response.json() == {"credentials": []}
+
+    def test_multiple_credentials(self, auth_device, user):
+        cred_1 = CredentialFactory.create(title="Credential 1")
+        cred_2 = CredentialFactory.create(title="Credential 2")
+        UserCredentialFactory.create()
+        UserCredential.objects.create(user=user, credential=cred_1)
+        UserCredential.objects.create(user=user, credential=cred_2)
+
+        response = auth_device.get(self.url)
+        data = response.json()
+        assert response.status_code == 200
+        assert len(data["credentials"]) == 2
+
+        titles = [cred["title"] for cred in data["credentials"]]
+        assert "Credential 1" in titles
+        assert "Credential 2" in titles
+
+    def test_no_auth(self, api_client):
+        response = api_client.get(self.url)
+        assert response.status_code == 401
+
+    def test_inactive_connect_user(self, auth_device, user):
+        user.is_active = False
+        user.save()
+        response = auth_device.get(self.url)
+        assert response.status_code == 401
 
 
 class BaseTestDeactivation:

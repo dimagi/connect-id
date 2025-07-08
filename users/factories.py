@@ -5,7 +5,15 @@ from django.utils.timezone import now
 from factory.django import DjangoModelFactory
 from fcm_django.models import FCMDevice
 
-from users.models import ConfigurationSession, ConnectUser, Credential, PhoneDevice, RecoveryStatus, SessionPhoneDevice
+from users.models import (
+    ConfigurationSession,
+    ConnectUser,
+    Credential,
+    PhoneDevice,
+    RecoveryStatus,
+    SessionPhoneDevice,
+    UserCredential,
+)
 
 
 class UserFactory(DjangoModelFactory):
@@ -36,6 +44,14 @@ class CredentialFactory(DjangoModelFactory):
     title = factory.Faker("name")
     issuing_authority = Credential.IssuingAuthorityTypes.CONNECT
     type = Credential.CredentialTypes.DELIVER
+
+
+class UserCredentialFactory(DjangoModelFactory):
+    class Meta:
+        model = UserCredential
+
+    user = factory.SubFactory(UserFactory)
+    credential = factory.SubFactory(CredentialFactory)
 
 
 class PhoneDeviceFactory(DjangoModelFactory):

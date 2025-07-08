@@ -16,6 +16,7 @@ from django.views import View
 from firebase_admin import auth
 from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
+from rest_framework.authentication import BasicAuthentication
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
 
@@ -659,6 +660,27 @@ class AddCredential(APIView):
         for user in users:
             UserCredential.add_credential(user, credential, request)
         return HttpResponse()
+
+
+class ListCredentials(APIView):
+    authentication_classes = [BasicAuthentication]
+
+    def get(self, request, *args, **kwargs):
+        credentials = Credential.objects.filter(usercredential__user=request.user)
+        results = [
+            {
+                "uuid": c.uuid,
+                "app_id": c.app_id,
+                "opp_id": c.opportunity_id,
+                "date": c.created_at.isoformat(),
+                "title": c.title,
+                "issuer": c.issuing_authority,
+                "level": c.level,
+                "type": c.type,
+            }
+            for c in credentials
+        ]
+        return JsonResponse({"credentials": results})
 
 
 class ForwardHQInvite(APIView):
