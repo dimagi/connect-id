@@ -19,3 +19,4 @@ google-auth
 google-api-python-client
 boto3
 geopy
+whitenoise
