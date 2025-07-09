@@ -191,7 +191,7 @@ class Credential(models.Model):
     title = models.CharField(max_length=300)
     issuing_authority = models.CharField(max_length=50, choices=IssuingAuthorityTypes.choices)
     created_at = models.DateTimeField(auto_now_add=True)
-    level = models.CharField(max_length=50, blank=True, null=True)  # credential level/code (e.g. 3_MONTHS_ACTIVE)
+    level = models.CharField(max_length=50)  # credential level/code (e.g. 3_MONTHS_ACTIVE)
     type = models.CharField(max_length=50, choices=CredentialTypes.choices)
     app_id = models.CharField(max_length=50, blank=True, null=True)
     opportunity_id = models.CharField(max_length=50, blank=True, null=True)
