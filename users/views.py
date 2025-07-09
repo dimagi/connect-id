@@ -745,20 +745,6 @@ def accept_credential(request, invite_id):
     )
 
 
-class FetchCredentials(ClientProtectedResourceMixin, View):
-    required_scopes = ["user_fetch"]
-
-    def get(self, request):
-        opp_id = request.GET.get("opportunity_id")
-        queryset = Credential.objects.all()
-        if opp_id:
-            queryset = queryset.filter(opportunity_id=opp_id)
-
-        credentials = queryset.values("title", "level")
-        results = {"credentials": list(credentials)}
-        return JsonResponse(results)
-
-
 @api_view(["POST"])
 @permission_classes([])
 def initiate_deactivation(request):
