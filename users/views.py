@@ -649,8 +649,7 @@ class AddCredential(APIView):
     authentication_classes = [ClientProtectedResourceAuth]
 
     def post(self, request, *args, **kwargs):
-        data = request.data
-        for cred in data.get("credentials", []):
+        for cred in request.data.get("credentials", []):
             try:
                 credential, _ = Credential.objects.get_or_create(
                     title=cred.get("title"),
