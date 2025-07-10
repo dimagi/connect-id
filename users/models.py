@@ -196,6 +196,7 @@ class Credential(models.Model):
     app_id = models.CharField(max_length=50, blank=True, null=True)
     opportunity_id = models.CharField(max_length=50, blank=True, null=True)
     slug = models.CharField(max_length=50)
+    issuer_environment = models.CharField(max_length=50)  # e.g. "production", "staging"
 
     class Meta:
         unique_together = ("issuing_authority", "level", "type", "slug")

@@ -93,6 +93,11 @@ class Migration(migrations.Migration):
             name="credential",
             unique_together={("issuing_authority", "level", "type", "slug")},
         ),
+        migrations.AddField(
+            model_name="credential",
+            name="issuer_environment",
+            field=models.CharField(max_length=50),
+        ),
         migrations.AlterField(
             model_name="sessionphonedevice",
             name="user",
