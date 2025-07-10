@@ -195,6 +195,10 @@ class Credential(models.Model):
     type = models.CharField(max_length=50, choices=CredentialTypes.choices)
     app_id = models.CharField(max_length=50, blank=True, null=True)
     opportunity_id = models.CharField(max_length=50, blank=True, null=True)
+    slug = models.CharField(max_length=50)
+
+    class Meta:
+        unique_together = ("issuing_authority", "level", "type", "slug")
 
 
 class UserCredential(models.Model):

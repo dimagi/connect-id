@@ -84,6 +84,15 @@ class Migration(migrations.Migration):
             name="uuid",
             field=models.UUIDField(default=uuid.uuid4),
         ),
+        migrations.AddField(
+            model_name="credential",
+            name="slug",
+            field=models.CharField(max_length=50),
+        ),
+        migrations.AlterUniqueTogether(
+            name="credential",
+            unique_together={("issuing_authority", "level", "type", "slug")},
+        ),
         migrations.AlterField(
             model_name="sessionphonedevice",
             name="user",
