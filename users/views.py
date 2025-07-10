@@ -652,13 +652,14 @@ class AddCredential(APIView):
         for cred in request.data.get("credentials", []):
             try:
                 credential, _ = Credential.objects.get_or_create(
-                    title=cred.get("title"),
                     type=cred.get("type"),
                     level=cred.get("level"),
                     issuing_authority=cred.get("issuer"),
                     app_id=cred.get("app_id"),
                     opportunity_id=cred.get("opp_id"),
                 )
+                credential.title = cred.get("title")
+                credential.save()
             except IntegrityError:
                 return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
             phone_numbers = cred.get("users", [])
