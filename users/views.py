@@ -16,7 +16,6 @@ from django.views import View
 from firebase_admin import auth
 from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
-from rest_framework.authentication import BasicAuthentication
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
 
@@ -663,8 +662,6 @@ class AddCredential(APIView):
 
 
 class ListCredentials(APIView):
-    authentication_classes = [BasicAuthentication]
-
     def get(self, request, *args, **kwargs):
         credentials = Credential.objects.filter(usercredential__user=request.user)
         results = [
