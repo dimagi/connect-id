@@ -182,6 +182,11 @@ class Credential(models.Model):
         CONNECT = "CONNECT", "CONNECT"
         HQ = "HQ", "HQ"
 
+    class IssuingAuthorityEnvironments(models.TextChoices):
+        PRODUCTION = "production", "production"
+        STAGING = "staging", "staging"
+        INDIA = "india", "india"
+
     class CredentialTypes(models.TextChoices):
         APP_ACTIVITY = "APP_ACTIVITY", "APP_ACTIVITY"
         LEARN = "LEARN", "LEARN"
@@ -196,7 +201,7 @@ class Credential(models.Model):
     app_id = models.CharField(max_length=50, blank=True, null=True)
     opportunity_id = models.CharField(max_length=50, blank=True, null=True)
     slug = models.CharField(max_length=50)
-    issuer_environment = models.CharField(max_length=50)  # e.g. "production", "staging"
+    issuer_environment = models.CharField(max_length=50, choices=IssuingAuthorityEnvironments.choices)
 
     class Meta:
         unique_together = ("issuing_authority", "level", "type", "slug")

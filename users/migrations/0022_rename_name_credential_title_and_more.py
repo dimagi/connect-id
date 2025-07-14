@@ -96,7 +96,10 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="credential",
             name="issuer_environment",
-            field=models.CharField(max_length=50),
+            field=models.CharField(
+                choices=[("production", "production"), ("staging", "staging"), ("india", "india")],
+                max_length=50
+            ),
         ),
         migrations.AlterField(
             model_name="sessionphonedevice",
