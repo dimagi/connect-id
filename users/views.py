@@ -659,10 +659,12 @@ class AddCredential(APIView):
                     type=cred.get("type"),
                     level=cred.get("level"),
                     issuing_authority=cred.get("issuer"),
-                    app_id=cred.get("app_id"),
-                    opportunity_id=cred.get("opp_id"),
+                    slug=cred.get("app_id"),
                 )
+                credential.issuer_environment = cred.get("issuer_environment")
                 credential.title = cred.get("title")
+                credential.app_id = cred.get("app_id")
+                credential.opportunity_id = cred.get("opportunity_id")
                 credential.save()
             except IntegrityError:
                 return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)

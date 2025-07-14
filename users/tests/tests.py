@@ -385,6 +385,8 @@ class TestAddCredential:
                     "app_id": app_id,
                     "type": "DELIVER",
                     "level": "ACTIVE_3_MONTHS",
+                    "issuer_environment": "production",
+                    "slug": app_id,
                 }
             ]
         }
@@ -401,23 +403,29 @@ class TestAddCredential:
     @patch("users.models.send_sms")
     def test_bulk_add(self, mock_add_credential, authed_client):
         users = UserFactory.create_batch(2)
+        app_id = uuid.uuid4().hex
         payload = {
             "credentials": [
                 {
                     "users": [users[0].phone_number.raw_input],
                     "title": "Test Credential",
                     "issuer": "HQ",
-                    "app_id": uuid.uuid4().hex,
+                    "app_id": app_id,
                     "type": "DELIVER",
                     "level": "ACTIVE_3_MONTHS",
+                    "slug": app_id,
+                    "issuer_environment": "production",
                 },
                 {
                     "users": [users[1].phone_number.raw_input],
                     "title": "Test Credential 2",
                     "issuer": "CONNECT",
+                    "app_id": app_id,
                     "opp_id": uuid.uuid4().hex,
                     "type": "DELIVER",
-                    "level": "ACTIVE_3_MONTHS",
+                    "level": "ACTIVE_6_MONTHS",
+                    "slug": app_id,
+                    "issuer_environment": "staging",
                 },
             ]
         }
@@ -439,13 +447,15 @@ class TestAddCredential:
         assert response.status_code == 400
         assert response.json() == {"error_code": ErrorCodes.INVALID_DATA}
 
-    def test_no_phone_numbers(self, authed_client, user):
+    def test_no_phone_numbers(self, authed_client):
         payload = {
             "credentials": [
                 {
                     "title": "Test Credential",
                     "issuer": "HQ",
                     "app_id": uuid.uuid4().hex,
+                    "slug": uuid.uuid4().hex,
+                    "issuer_environment": "production",
                     "type": "DELIVER",
                     "level": "ACTIVE_3_MONTHS",
                 }
@@ -464,6 +474,8 @@ class TestAddCredential:
                     "title": "Test Credential",
                     "issuer": "HQ",
                     "app_id": uuid.uuid4().hex,
+                    "slug": uuid.uuid4().hex,
+                    "issuer_environment": "production",
                     "type": "DELIVER",
                     "level": "ACTIVE_3_MONTHS",
                 }
@@ -483,6 +495,8 @@ class TestAddCredential:
                     "title": "Test Credential",
                     "issuer": "HQ",
                     "app_id": uuid.uuid4().hex,
+                    "slug": uuid.uuid4().hex,
+                    "issuer_environment": "production",
                     "type": "DELIVER",
                     "level": "ACTIVE_3_MONTHS",
                 }
