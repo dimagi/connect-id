@@ -381,7 +381,6 @@ class TestAddCredential:
                 {
                     "users": [user.phone_number.raw_input, "1234567890"],
                     "title": "Test Credential",
-                    "issuer": "HQ",
                     "app_id": app_id,
                     "type": "DELIVER",
                     "level": "ACTIVE_3_MONTHS",
@@ -409,7 +408,6 @@ class TestAddCredential:
                 {
                     "users": [users[0].phone_number.raw_input],
                     "title": "Test Credential",
-                    "issuer": "HQ",
                     "app_id": app_id,
                     "type": "DELIVER",
                     "level": "ACTIVE_3_MONTHS",
@@ -419,7 +417,6 @@ class TestAddCredential:
                 {
                     "users": [users[1].phone_number.raw_input],
                     "title": "Test Credential 2",
-                    "issuer": "CONNECT",
                     "app_id": app_id,
                     "opp_id": uuid.uuid4().hex,
                     "type": "DELIVER",
@@ -438,7 +435,6 @@ class TestAddCredential:
         payload = {
             "credentials": [
                 {
-                    "issuer": "HQ",
                     "level": "ACTIVE_3_MONTHS",
                 }
             ]
@@ -452,7 +448,6 @@ class TestAddCredential:
             "credentials": [
                 {
                     "title": "Test Credential",
-                    "issuer": "HQ",
                     "app_id": uuid.uuid4().hex,
                     "slug": uuid.uuid4().hex,
                     "issuer_environment": "production",
@@ -472,7 +467,6 @@ class TestAddCredential:
                 {
                     "users": ["invalid-phone", "123", ""],
                     "title": "Test Credential",
-                    "issuer": "HQ",
                     "app_id": uuid.uuid4().hex,
                     "slug": uuid.uuid4().hex,
                     "issuer_environment": "production",
@@ -493,7 +487,6 @@ class TestAddCredential:
                 {
                     "users": [user.phone_number.raw_input],
                     "title": "Test Credential",
-                    "issuer": "HQ",
                     "app_id": uuid.uuid4().hex,
                     "slug": uuid.uuid4().hex,
                     "issuer_environment": "production",

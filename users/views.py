@@ -1,3 +1,4 @@
+import base64
 import logging
 from datetime import timedelta
 from secrets import token_hex
@@ -12,10 +13,11 @@ from django.db.models import Count, F
 from django.db.models.functions import TruncMonth
 from django.db.utils import IntegrityError
 from django.http import HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404
 from django.utils.timezone import now
 from django.views import View
 from firebase_admin import auth
-from oauth2_provider.models import AccessToken, RefreshToken
+from oauth2_provider.models import AccessToken, Application, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
@@ -645,6 +647,15 @@ class FilterUsers(APIView):
         return JsonResponse(result)
 
 
+def get_request_server(request):
+    auth_header = request.headers.get("authorization")
+    encoded_credentials = auth_header.split(" ")[1]
+    decoded_credentials = base64.b64decode(encoded_credentials).decode("utf-8")
+    client_id, client_secret = decoded_credentials.split(":")
+    server = get_object_or_404(Application, client_id=client_id)
+    return server
+
+
 class AddCredential(APIView):
     authentication_classes = [ClientProtectedResourceAuth]
 
@@ -653,12 +664,18 @@ class AddCredential(APIView):
         if not creds:
             return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
+        server = get_request_server(request)
+        issuer = None
+        for auth_type_value, auth_type_display in Credential.IssuingAuthorityTypes.choices:
+            if auth_type_value.lower() in server.name.lower():
+                issuer = auth_type_value
+                break
         for cred in creds:
             try:
                 credential, _ = Credential.objects.get_or_create(
                     type=cred.get("type"),
                     level=cred.get("level"),
-                    issuing_authority=cred.get("issuer"),
+                    issuing_authority=issuer,
                     slug=cred.get("app_id"),
                 )
                 credential.issuer_environment = cred.get("issuer_environment")
