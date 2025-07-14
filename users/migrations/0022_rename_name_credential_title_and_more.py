@@ -49,7 +49,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="credential",
             name="app_id",
-            field=models.CharField(blank=True, max_length=50, null=True),
+            field=models.CharField(max_length=50),
         ),
         migrations.AddField(
             model_name="credential",
