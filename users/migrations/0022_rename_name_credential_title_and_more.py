@@ -7,6 +7,24 @@ import django.utils.timezone
 import uuid
 
 
+def delete_existing_credentials(apps, schema_editor):
+    """
+    Delete all existing credential records before schema changes.
+    This is being done so that defaults for required fields to not
+    have to be set, avoiding misleading data.
+    """
+    Credential = apps.get_model("users", "Credential")
+    Credential.objects.all().delete()
+
+def reverse_delete_credentials(apps, schema_editor):
+    """
+    The deleting of existing records operation cannot be reversed,
+    however this function is here to prevent an error from raising
+    when attempting to reverse this migration.
+    """
+    pass
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -14,6 +32,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.RunPython(delete_existing_credentials, reverse_delete_credentials),
         migrations.RenameField(
             model_name="credential",
             old_name="name",
@@ -30,24 +49,22 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="credential",
             name="app_id",
-            field=models.CharField(blank=True, max_length=50, null=True),
+            field=models.CharField(max_length=50),
         ),
         migrations.AddField(
             model_name="credential",
             name="created_at",
-            field=models.DateTimeField(auto_now_add=True, default=django.utils.timezone.now),
-            preserve_default=False,
+            field=models.DateTimeField(auto_now_add=True),
         ),
         migrations.AddField(
             model_name="credential",
             name="issuing_authority",
-            field=models.CharField(choices=[("CONNECT", "CONNECT"), ("HQ", "HQ")], default="CONNECT", max_length=50),
-            preserve_default=False,
+            field=models.CharField(choices=[("CONNECT", "CONNECT"), ("HQ", "HQ")], max_length=50),
         ),
         migrations.AddField(
             model_name="credential",
             name="level",
-            field=models.CharField(blank=True, max_length=50, null=True),
+            field=models.CharField(max_length=50),
         ),
         migrations.AddField(
             model_name="credential",
@@ -59,15 +76,30 @@ class Migration(migrations.Migration):
             name="type",
             field=models.CharField(
                 choices=[("APP_ACTIVITY", "APP_ACTIVITY"), ("LEARN", "LEARN"), ("DELIVER", "DELIVER")],
-                default="DELIVER",
                 max_length=50,
             ),
-            preserve_default=False,
         ),
         migrations.AddField(
             model_name="credential",
             name="uuid",
             field=models.UUIDField(default=uuid.uuid4),
+        ),
+        migrations.AddField(
+            model_name="credential",
+            name="slug",
+            field=models.CharField(max_length=50),
+        ),
+        migrations.AlterUniqueTogether(
+            name="credential",
+            unique_together={("issuing_authority", "level", "type", "slug")},
+        ),
+        migrations.AddField(
+            model_name="credential",
+            name="issuer_environment",
+            field=models.CharField(
+                choices=[("production", "production"), ("staging", "staging"), ("india", "india")],
+                max_length=50
+            ),
         ),
         migrations.AlterField(
             model_name="sessionphonedevice",

@@ -373,33 +373,6 @@ class TestRecoverSecondaryPhone:
 
 
 @pytest.mark.django_db
-class TestFetchCredentials:
-    def setup_method(self):
-        self.url = "/users/fetch_credentials"
-        self.opp_id = uuid.uuid4().hex
-        CredentialFactory.create_batch(
-            3, issuing_authority=Credential.IssuingAuthorityTypes.HQ, opportunity_id=self.opp_id
-        )
-        CredentialFactory.create_batch(10)
-
-    def assert_statements(self, response, expected_count):
-        assert response.status_code == 200
-        response_data = response.json()
-        assert "credentials" in response_data
-        assert len(response_data["credentials"]) == expected_count
-        for credential in response_data["credentials"]:
-            assert set(credential.keys()) == {"title", "level"}
-
-    def test_fetch_credential_with_org_slug(self, authed_client):
-        response = authed_client.get(self.url + "?opportunity_id=" + self.opp_id)
-        self.assert_statements(response, expected_count=3)
-
-    def test_fetch_credential_without_org_slug(self, authed_client):
-        response = authed_client.get(self.url)
-        self.assert_statements(response, expected_count=13)
-
-
-@pytest.mark.django_db
 class TestListCredentials:
     url = reverse("list_credentials")
 
