@@ -383,6 +383,7 @@ class TestListCredentials:
             level="ACTIVE_3_MONTH",
             issuing_authority=Credential.IssuingAuthorityTypes.HQ,
             app_id=uuid.uuid4().hex,
+            issuer_environment=Credential.IssuingAuthorityEnvironments.PRODUCTION,
         )
         UserCredentialFactory.create(credential=cred, user=user)
 
@@ -397,8 +398,10 @@ class TestListCredentials:
                     "date": cred.created_at.isoformat(),
                     "title": "Test Credential",
                     "issuer": "HQ",
+                    "issuer_environment": "production",
                     "level": "ACTIVE_3_MONTH",
                     "type": "DELIVER",
+                    "slug": cred.slug,
                 }
             ]
         }

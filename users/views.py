@@ -672,8 +672,10 @@ class ListCredentials(APIView):
                 "date": c.created_at.isoformat(),
                 "title": c.title,
                 "issuer": c.issuing_authority,
+                "issuer_environment": c.issuer_environment,
                 "level": c.level,
                 "type": c.type,
+                "slug": c.slug,
             }
             for c in credentials
         ]

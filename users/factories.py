@@ -44,6 +44,7 @@ class CredentialFactory(DjangoModelFactory):
     title = factory.Faker("name")
     issuing_authority = Credential.IssuingAuthorityTypes.CONNECT
     type = Credential.CredentialTypes.DELIVER
+    slug = factory.Faker("uuid4")
 
 
 class UserCredentialFactory(DjangoModelFactory):
