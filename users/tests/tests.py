@@ -439,8 +439,7 @@ class TestAddCredential:
         assert response.status_code == 400
         assert response.json() == {"error_code": ErrorCodes.INVALID_DATA}
 
-    @patch("users.models.send_sms")
-    def test_no_phone_numbers(self, mock_add_credential, authed_client, user):
+    def test_no_phone_numbers(self, authed_client, user):
         payload = {
             "credentials": [
                 {
@@ -456,6 +455,62 @@ class TestAddCredential:
         assert response.status_code == 200
         assert Credential.objects.all().count() == 1
         assert UserCredential.objects.all().count() == 0
+
+    def test_invalid_phone_numbers(self, authed_client):
+        payload = {
+            "credentials": [
+                {
+                    "users": ["invalid-phone", "123", ""],
+                    "title": "Test Credential",
+                    "issuer": "HQ",
+                    "app_id": uuid.uuid4().hex,
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                }
+            ]
+        }
+        response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        assert response.status_code == 200
+        assert Credential.objects.all().count() == 1
+        assert UserCredential.objects.all().count() == 0
+
+    @patch("users.models.send_sms")
+    def test_duplicate_request(self, mock_add_credential, authed_client, user):
+        payload = {
+            "credentials": [
+                {
+                    "users": [user.phone_number.raw_input],
+                    "title": "Test Credential",
+                    "issuer": "HQ",
+                    "app_id": uuid.uuid4().hex,
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                }
+            ]
+        }
+
+        response1 = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        assert response1.status_code == 200
+        assert Credential.objects.all().count() == 1
+        assert UserCredential.objects.all().count() == 1
+
+        # Duplicate request should not create new credentials
+        response2 = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        assert response2.status_code == 200
+        assert Credential.objects.all().count() == 1
+        assert UserCredential.objects.all().count() == 1
+
+    def test_malformed_json(self, authed_client):
+        response = authed_client.post(
+            self.endpoint, data='{"credentials": [{"invalid": json}]}', content_type="application/json"
+        )
+        assert response.status_code == 400
+
+    def test_missing_credentials_key(self, authed_client):
+        payload = {"invalid_key": []}
+        response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
 
 
 class BaseTestDeactivation:

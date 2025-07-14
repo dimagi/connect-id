@@ -649,7 +649,11 @@ class AddCredential(APIView):
     authentication_classes = [ClientProtectedResourceAuth]
 
     def post(self, request, *args, **kwargs):
-        for cred in request.data.get("credentials", []):
+        creds = request.data.get("credentials")
+        if not creds:
+            return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+
+        for cred in creds:
             try:
                 credential, _ = Credential.objects.get_or_create(
                     type=cred.get("type"),
