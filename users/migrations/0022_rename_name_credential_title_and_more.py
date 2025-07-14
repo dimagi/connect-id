@@ -49,7 +49,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="credential",
             name="app_id",
-            field=models.CharField(blank=True, max_length=50, null=True),
+            field=models.CharField(max_length=50),
         ),
         migrations.AddField(
             model_name="credential",
@@ -83,6 +83,23 @@ class Migration(migrations.Migration):
             model_name="credential",
             name="uuid",
             field=models.UUIDField(default=uuid.uuid4),
+        ),
+        migrations.AddField(
+            model_name="credential",
+            name="slug",
+            field=models.CharField(max_length=50),
+        ),
+        migrations.AlterUniqueTogether(
+            name="credential",
+            unique_together={("issuing_authority", "level", "type", "slug")},
+        ),
+        migrations.AddField(
+            model_name="credential",
+            name="issuer_environment",
+            field=models.CharField(
+                choices=[("production", "production"), ("staging", "staging"), ("india", "india")],
+                max_length=50
+            ),
         ),
         migrations.AlterField(
             model_name="sessionphonedevice",
