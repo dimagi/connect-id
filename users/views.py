@@ -1,3 +1,4 @@
+import base64
 import logging
 from datetime import timedelta
 from secrets import token_hex
@@ -10,11 +11,13 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db.models import Count, F
 from django.db.models.functions import TruncMonth
+from django.db.utils import IntegrityError
 from django.http import HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404
 from django.utils.timezone import now
 from django.views import View
 from firebase_admin import auth
-from oauth2_provider.models import AccessToken, RefreshToken
+from oauth2_provider.models import AccessToken, Application, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
@@ -644,21 +647,51 @@ class FilterUsers(APIView):
         return JsonResponse(result)
 
 
+def get_request_server(request):
+    auth_header = request.headers.get("authorization")
+    encoded_credentials = auth_header.split(" ")[1]
+    decoded_credentials = base64.b64decode(encoded_credentials).decode("utf-8")
+    client_id, client_secret = decoded_credentials.split(":")
+    server = get_object_or_404(Application, client_id=client_id)
+    return server
+
+
 class AddCredential(APIView):
     authentication_classes = [ClientProtectedResourceAuth]
 
     def post(self, request, *args, **kwargs):
-        phone_numbers = request.data["users"]
-        credential_name = request.data["credential"]
-        credential, _ = Credential.objects.get_or_create(
-            title=credential_name,
-            issuing_authority=Credential.IssuingAuthorityTypes.CONNECT,
-            type=Credential.CredentialTypes.DELIVER,
-        )
-        users = ConnectUser.objects.filter(phone_number__in=phone_numbers, is_active=True)
-        for user in users:
-            UserCredential.add_credential(user, credential, request)
-        return HttpResponse()
+        creds = request.data.get("credentials")
+        if not creds:
+            return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+
+        server = get_request_server(request)
+        issuer = None
+        for auth_type_value, auth_type_display in Credential.IssuingAuthorityTypes.choices:
+            if auth_type_value.lower() in server.name.lower():
+                issuer = auth_type_value
+                break
+        failed_creds = []
+        for index, cred in enumerate(creds):
+            try:
+                credential, _ = Credential.objects.get_or_create(
+                    type=cred.get("type"),
+                    level=cred.get("level"),
+                    issuing_authority=issuer,
+                    slug=cred.get("app_id"),
+                )
+                credential.issuer_environment = cred.get("issuer_environment")
+                credential.title = cred.get("title")
+                credential.app_id = cred.get("app_id")
+                credential.opportunity_id = cred.get("opportunity_id")
+                credential.save()
+            except (IntegrityError, AttributeError):
+                failed_creds.append(index)
+                continue
+            phone_numbers = cred.get("users", [])
+            users = ConnectUser.objects.filter(phone_number__in=phone_numbers, is_active=True)
+            for user in users:
+                UserCredential.add_credential(user, credential, request)
+        return JsonResponse({"failed": failed_creds})
 
 
 class ForwardHQInvite(APIView):
