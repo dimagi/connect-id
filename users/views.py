@@ -29,6 +29,7 @@ from utils.app_integrity.exceptions import (
     IntegrityRequestError,
 )
 from utils.app_integrity.google_play_integrity import AppIntegrityService
+from utils.app_integrity.schemas import VerdictResponse
 from utils.rest_framework import ClientProtectedResourceAuth
 
 from .auth import SessionTokenAuthentication
@@ -890,6 +891,7 @@ def report_integrity(request):
     if not integrity_token or not request_hash:
         return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
+    # This is for testing with demo users or test apps
     app_package = data.get("application_id")
     phone_number = data.get("phone_number", "")
     is_demo_user = phone_number.startswith(TEST_NUMBER_PREFIX)
@@ -907,13 +909,13 @@ def report_integrity(request):
         sample = DeviceIntegritySample.objects.get(
             device_id=device_id,
         )
-        sample.google_verdict = raw_verdict.__dict__
+        sample.google_verdict = raw_verdict
         is_demo_user = is_demo_user
         sample.save()
     except DeviceIntegritySample.DoesNotExist:
         sample = DeviceIntegritySample(
             device_id=device_id,
-            google_verdict=raw_verdict.__dict__,
+            google_verdict=raw_verdict,
             is_demo_user=is_demo_user,
         )
 
@@ -921,7 +923,7 @@ def report_integrity(request):
     processed_response = ""
 
     try:
-        service.analyze_verdict(raw_verdict)
+        service.analyze_verdict(VerdictResponse.from_dict(raw_verdict))
     except (IntegrityRequestError, AccountDetailsError, AppIntegrityError, DeviceIntegrityError) as e:
         processed_verdict = DeviceIntegritySample.ProcessedVerdict.FAILED
         processed_response = str(e)
