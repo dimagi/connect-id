@@ -13,7 +13,6 @@ from utils.app_integrity.exceptions import (
     IntegrityRequestError,
 )
 from utils.app_integrity.google_play_integrity import AppIntegrityService
-from utils.app_integrity.schemas import VerdictResponse
 
 
 def get_verdict(response_filepath):
@@ -63,7 +62,7 @@ class TestAppIntegrityService:
     )
     @patch.object(AppIntegrityService, "obtain_verdict")
     def test_verdict_analysis(self, obtain_verdict_mock, verdict, exception, error_message):
-        obtain_verdict_mock.return_value = VerdictResponse.from_dict(verdict["tokenPayloadExternal"])
+        obtain_verdict_mock.return_value = verdict["tokenPayloadExternal"]
         service = AppIntegrityService(token="test_token", request_hash=self.request_hash)
 
         with exception as exc_info:
@@ -107,7 +106,7 @@ class TestAppIntegrityService:
     def test_verdict_analysis_for_demo_user(
         self, obtain_verdict_mock, verdict, is_demo_user, exception, error_message
     ):
-        obtain_verdict_mock.return_value = VerdictResponse.from_dict(verdict["tokenPayloadExternal"])
+        obtain_verdict_mock.return_value = verdict["tokenPayloadExternal"]
         service = AppIntegrityService(token="test_token", request_hash=self.request_hash, is_demo_user=is_demo_user)
 
         with exception as exc_info:
@@ -157,7 +156,7 @@ class TestValidateAppIntegrity:
     )
     @patch.object(AppIntegrityService, "obtain_verdict")
     def test_validate_app_integrity(self, obtain_verdict_mock, verdict, error_code, error_sub_code):
-        obtain_verdict_mock.return_value = VerdictResponse.from_dict(verdict["tokenPayloadExternal"])
+        obtain_verdict_mock.return_value = verdict["tokenPayloadExternal"]
 
         response = validate_app_integrity(
             "integrity_token",

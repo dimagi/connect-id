@@ -34,9 +34,10 @@ class AppIntegrityService:
         """
         Raises an exception if the app integrity is compromised, otherwise does nothing.
         """
-        verdict_response = self.obtain_verdict()
-        logger.info(f"Integrity token verdict for app({self.package_name}): {verdict_response}")
-        self.analyze_verdict(verdict_response)
+        raw_verdict_response = self.obtain_verdict()
+        logger.info(f"Integrity token verdict for app({self.package_name}): {raw_verdict_response}")
+
+        self.analyze_verdict(VerdictResponse.from_dict(raw_verdict_response))
 
     def obtain_verdict(self) -> VerdictResponse:
         """
@@ -53,7 +54,7 @@ class AppIntegrityService:
         with build(**service_spec) as service:
             body = {"integrityToken": self.token}
             response = service.v1().decodeIntegrityToken(packageName=self.package_name, body=body).execute()
-        return VerdictResponse.from_dict(response["tokenPayloadExternal"])
+        return response["tokenPayloadExternal"]
 
     @property
     def _google_service_account_credentials(self) -> Credentials:
