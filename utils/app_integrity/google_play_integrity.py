@@ -34,11 +34,11 @@ class AppIntegrityService:
         """
         Raises an exception if the app integrity is compromised, otherwise does nothing.
         """
-        verdict_response = self._obtain_verdict()
+        verdict_response = self.obtain_verdict()
         logger.info(f"Integrity token verdict for app({self.package_name}): {verdict_response}")
-        self._analyze_verdict(verdict_response)
+        self.analyze_verdict(verdict_response)
 
-    def _obtain_verdict(self) -> VerdictResponse:
+    def obtain_verdict(self) -> VerdictResponse:
         """
         This method uses the Google Play Integrity API to decode the integrity token
 
@@ -64,7 +64,7 @@ class AppIntegrityService:
             scopes=["https://www.googleapis.com/auth/playintegrity"],
         )
 
-    def _analyze_verdict(self, verdict: VerdictResponse):
+    def analyze_verdict(self, verdict: VerdictResponse):
         """
         Checks the verdict and raises appropriate exceptions if
         the app integrity is compromised.

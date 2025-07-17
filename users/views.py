@@ -901,7 +901,7 @@ def report_integrity(request):
         is_demo_user=is_demo_user,
     )
 
-    raw_verdict = service._obtain_verdict()
+    raw_verdict = service.obtain_verdict()
 
     try:
         sample = DeviceIntegritySample.objects.get(
@@ -921,7 +921,7 @@ def report_integrity(request):
     processed_response = ""
 
     try:
-        service._analyze_verdict(raw_verdict)
+        service.analyze_verdict(raw_verdict)
     except (IntegrityRequestError, AccountDetailsError, AppIntegrityError, DeviceIntegrityError) as e:
         processed_verdict = DeviceIntegritySample.ProcessedVerdict.FAILED
         processed_response = str(e)

@@ -61,7 +61,7 @@ class TestAppIntegrityService:
             ),
         ],
     )
-    @patch.object(AppIntegrityService, "_obtain_verdict")
+    @patch.object(AppIntegrityService, "obtain_verdict")
     def test_verdict_analysis(self, obtain_verdict_mock, verdict, exception, error_message):
         obtain_verdict_mock.return_value = VerdictResponse.from_dict(verdict["tokenPayloadExternal"])
         service = AppIntegrityService(token="test_token", request_hash=self.request_hash)
@@ -103,7 +103,7 @@ class TestAppIntegrityService:
             ),
         ],
     )
-    @patch.object(AppIntegrityService, "_obtain_verdict")
+    @patch.object(AppIntegrityService, "obtain_verdict")
     def test_verdict_analysis_for_demo_user(
         self, obtain_verdict_mock, verdict, is_demo_user, exception, error_message
     ):
@@ -155,7 +155,7 @@ class TestValidateAppIntegrity:
             ),
         ],
     )
-    @patch.object(AppIntegrityService, "_obtain_verdict")
+    @patch.object(AppIntegrityService, "obtain_verdict")
     def test_validate_app_integrity(self, obtain_verdict_mock, verdict, error_code, error_sub_code):
         obtain_verdict_mock.return_value = VerdictResponse.from_dict(verdict["tokenPayloadExternal"])
 
