@@ -391,6 +391,7 @@ class TestAddCredential:
         }
         response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
         assert response.status_code == 200
+        assert response.json() == {"failed": []}
         assert UserCredential.objects.all().count() == 1
         cred = Credential.objects.all().first()
         assert cred.title == "Test Credential"
@@ -431,6 +432,34 @@ class TestAddCredential:
         assert Credential.objects.all().count() == 2
         assert UserCredential.objects.all().count() == 2
 
+    @patch("users.models.send_sms")
+    def test_partial_fail(self, mock_add_credential, authed_client, user):
+        app_id = uuid.uuid4().hex
+        payload = {
+            "credentials": [
+                {
+                    "users": [user.phone_number.raw_input],
+                    "title": "Test Credential",
+                    "app_id": app_id,
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                    "slug": app_id,
+                    "issuer_environment": "production",
+                },
+                {
+                    "title": "Test Credential 2",
+                },
+                {
+                    "level": "ACTIVE_6_MONTHS",
+                },
+            ]
+        }
+        response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        assert response.status_code == 200
+        assert response.json() == {"failed": [1, 2]}
+        assert Credential.objects.all().count() == 1
+        assert UserCredential.objects.all().count() == 1
+
     def test_missing_data(self, authed_client):
         payload = {
             "credentials": [
@@ -440,8 +469,8 @@ class TestAddCredential:
             ]
         }
         response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
-        assert response.status_code == 400
-        assert response.json() == {"error_code": ErrorCodes.INVALID_DATA}
+        assert response.status_code == 200
+        assert response.json() == {"failed": [0]}
 
     def test_no_phone_numbers(self, authed_client):
         payload = {

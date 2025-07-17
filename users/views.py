@@ -670,7 +670,8 @@ class AddCredential(APIView):
             if auth_type_value.lower() in server.name.lower():
                 issuer = auth_type_value
                 break
-        for cred in creds:
+        failed_creds = []
+        for index, cred in enumerate(creds):
             try:
                 credential, _ = Credential.objects.get_or_create(
                     type=cred.get("type"),
@@ -683,13 +684,14 @@ class AddCredential(APIView):
                 credential.app_id = cred.get("app_id")
                 credential.opportunity_id = cred.get("opportunity_id")
                 credential.save()
-            except IntegrityError:
-                return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
+            except (IntegrityError, AttributeError):
+                failed_creds.append(index)
+                continue
             phone_numbers = cred.get("users", [])
             users = ConnectUser.objects.filter(phone_number__in=phone_numbers, is_active=True)
             for user in users:
                 UserCredential.add_credential(user, credential, request)
-        return HttpResponse()
+        return JsonResponse({"failed": failed_creds})
 
 
 class ForwardHQInvite(APIView):
