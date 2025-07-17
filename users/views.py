@@ -22,6 +22,13 @@ from rest_framework.views import APIView
 from services.ai.ocs import OpenChatStudio
 from utils import get_ip, get_sms_sender, send_sms
 from utils.app_integrity.decorators import require_app_integrity
+from utils.app_integrity.exceptions import (
+    AccountDetailsError,
+    AppIntegrityError,
+    DeviceIntegrityError,
+    IntegrityRequestError,
+)
+from utils.app_integrity.google_play_integrity import AppIntegrityService
 from utils.rest_framework import ClientProtectedResourceAuth
 
 from .auth import SessionTokenAuthentication
@@ -32,6 +39,7 @@ from .models import (
     ConfigurationSession,
     ConnectUser,
     Credential,
+    DeviceIntegritySample,
     PhoneDevice,
     RecoveryStatus,
     SessionPhoneDevice,
@@ -865,3 +873,61 @@ def confirm_session_otp(request):
     request.auth.is_phone_validated = True
     request.auth.save()
     return HttpResponse()
+
+
+@api_view(["POST"])
+@permission_classes([])
+def report_integrity(request):
+    data = request.data
+    device_id = data.get("cc_device_id")
+
+    if not device_id:
+        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+
+    integrity_token = request.headers.get("CC-Integrity-Token")
+    request_hash = request.headers.get("CC-Request-Hash")
+
+    if not integrity_token or not request_hash:
+        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+
+    app_package = data.get("application_id")
+    phone_number = data.get("phone_number", "")
+    is_demo_user = phone_number.startswith(TEST_NUMBER_PREFIX)
+
+    service = AppIntegrityService(
+        token=integrity_token,
+        request_hash=request_hash,
+        app_package=app_package,
+        is_demo_user=is_demo_user,
+    )
+
+    raw_verdict = service._obtain_verdict()
+
+    try:
+        sample = DeviceIntegritySample.objects.get(
+            device_id=device_id,
+        )
+        sample.google_verdict = raw_verdict.__dict__
+        is_demo_user = is_demo_user
+        sample.save()
+    except DeviceIntegritySample.DoesNotExist:
+        sample = DeviceIntegritySample(
+            device_id=device_id,
+            google_verdict=raw_verdict.__dict__,
+            is_demo_user=is_demo_user,
+        )
+
+    processed_verdict = DeviceIntegritySample.ProcessedVerdict.PASSED
+    processed_response = ""
+
+    try:
+        service._analyze_verdict(raw_verdict)
+    except (IntegrityRequestError, AccountDetailsError, AppIntegrityError, DeviceIntegrityError) as e:
+        processed_verdict = DeviceIntegritySample.ProcessedVerdict.FAILED
+        processed_response = str(e)
+
+    sample.processed_response = processed_response
+    sample.processed_verdict = processed_verdict
+    sample.save()
+
+    return JsonResponse({"result_code": processed_verdict.value})
