@@ -253,6 +253,27 @@ class SessionPhoneDevice(BasePhoneDevice):
         constraints = [models.UniqueConstraint(fields=["phone_number", "session"], name="phone_number_session")]
 
 
+class DeviceIntegritySample(models.Model):
+    class ProcessedVerdict(models.TextChoices):
+        PASSED = "passed", "passed"
+        FAILED = "failed", "failed"
+
+    device_id = models.CharField(max_length=255)
+    google_verdict = models.JSONField()
+    processed_response = models.CharField(max_length=100, blank=True)
+    processed_verdict = models.CharField(
+        max_length=50,
+        blank=True,
+        choices=ProcessedVerdict.choices,
+        default=ProcessedVerdict.PASSED.value,
+    )
+    created = models.DateTimeField(auto_now_add=True)
+    is_demo_user = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-created"]
+
+
 class SessionUser(AnonymousUser):
     @property
     def is_authenticated(self):
