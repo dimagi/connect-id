@@ -30,16 +30,27 @@ class AppIntegrityService:
         self.package_name = app_package or APP_PACKAGE_NAME
         self.is_demo_user = is_demo_user
 
+    @property
+    def evaluators(self):
+        """
+        Returns a list of functions that evaluate the verdict.
+        The order of evaluation matters, as some checks depend on previous ones.
+        """
+        return [
+            lambda x: self.check_request_details(x.requestDetails),
+            lambda x: self.check_app_integrity(x.appIntegrity),
+            lambda x: self.check_device_integrity(x.deviceIntegrity),
+            lambda x: self.check_account_details(x.accountDetails),
+        ]
+
     def verify_integrity(self):
         """
         Raises an exception if the app integrity is compromised, otherwise does nothing.
         """
-        raw_verdict_response = self.obtain_verdict()
-        logger.info(f"Integrity token verdict for app({self.package_name}): {raw_verdict_response}")
+        raw_verdict = self.obtain_verdict()
+        self.analyze_verdict(self.parse_raw_verdict(raw_verdict))
 
-        self.analyze_verdict(VerdictResponse.from_dict(raw_verdict_response))
-
-    def obtain_verdict(self) -> VerdictResponse:
+    def obtain_verdict(self) -> dict:
         """
         This method uses the Google Play Integrity API to decode the integrity token
 
@@ -56,6 +67,10 @@ class AppIntegrityService:
             response = service.v1().decodeIntegrityToken(packageName=self.package_name, body=body).execute()
         return response["tokenPayloadExternal"]
 
+    def parse_raw_verdict(self, raw_verdict: dict) -> VerdictResponse:
+        logger.info(f"Integrity token verdict for app({self.package_name}): {raw_verdict}")
+        return VerdictResponse.from_dict(raw_verdict)
+
     @property
     def _google_service_account_credentials(self) -> Credentials:
         if not settings.GOOGLE_APPLICATION_CREDENTIALS:
@@ -70,10 +85,7 @@ class AppIntegrityService:
         Checks the verdict and raises appropriate exceptions if
         the app integrity is compromised.
         """
-        self.check_request_details(verdict.requestDetails)
-        self.check_app_integrity(verdict.appIntegrity)
-        self.check_device_integrity(verdict.deviceIntegrity)
-        self.check_account_details(verdict.accountDetails)
+        [evaluator(verdict) for evaluator in self.evaluators]
 
     def check_request_details(self, request_details: RequestDetails):
         if request_details.requestHash != self.request_hash:

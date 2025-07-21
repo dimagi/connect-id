@@ -30,7 +30,6 @@ from utils.app_integrity.exceptions import (
     IntegrityRequestError,
 )
 from utils.app_integrity.google_play_integrity import AppIntegrityService
-from utils.app_integrity.schemas import VerdictResponse
 from utils.rest_framework import ClientProtectedResourceAuth
 
 from .auth import SessionTokenAuthentication
@@ -923,16 +922,9 @@ def report_integrity(request):
         sample.google_verdict = raw_verdict
         sample.is_demo_user = is_demo_user
 
-    verdict = VerdictResponse.from_dict(raw_verdict)
+    verdict = service.parse_raw_verdict(raw_verdict)
 
-    evaluators = [
-        lambda x: service.check_request_details(x.requestDetails),
-        lambda x: service.check_app_integrity(x.appIntegrity),
-        lambda x: service.check_device_integrity(x.deviceIntegrity),
-        lambda x: service.check_account_details(x.accountDetails),
-    ]
-
-    for evaluator in evaluators:
+    for evaluator in service.evaluators:
         try:
             evaluator(verdict)
         except IntegrityRequestError:
