@@ -880,7 +880,7 @@ def confirm_session_otp(request):
 @permission_classes([])
 def report_integrity(request):
     data = request.data
-    external_id = data.get("uuid")
+    external_id = data.get("request_id")
     device_id = data.get("cc_device_id")
 
     if not (external_id and device_id):

@@ -1297,7 +1297,7 @@ class TestReportIntegrityView:
         assert response.status_code == 400
         assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
 
-    def test_missing_uuid(self, client):
+    def test_missing_request_id(self, client):
         response = client.post(
             self.url,
             data={"cc_device_id": "test_device_id"},
@@ -1310,7 +1310,7 @@ class TestReportIntegrityView:
     def test_missing_integrity_token(self, client):
         response = client.post(
             self.url,
-            data={"cc_device_id": "test_device_id", "uuid": "test_uuid"},
+            data={"cc_device_id": "test_device_id", "request_id": "test_uuid"},
             HTTP_CC_REQUEST_HASH="test_hash",
         )
         assert response.status_code == 400
@@ -1319,7 +1319,7 @@ class TestReportIntegrityView:
     def test_missing_request_hash(self, client):
         response = client.post(
             self.url,
-            data={"cc_device_id": "test_device_id", "uuid": "test_uuid"},
+            data={"cc_device_id": "test_device_id", "request_id": "test_uuid"},
             HTTP_CC_INTEGRITY_TOKEN="test_token",
         )
         assert response.status_code == 400
@@ -1335,7 +1335,7 @@ class TestReportIntegrityView:
             self.url,
             data={
                 "cc_device_id": "new_device_id",
-                "uuid": "test_uuid",
+                "request_id": "test_uuid",
             },
             HTTP_CC_INTEGRITY_TOKEN="test_token",
             HTTP_CC_REQUEST_HASH="aGVsbG8gd29scmQgdGhlcmU",
@@ -1370,7 +1370,7 @@ class TestReportIntegrityView:
             self.url,
             data={
                 "cc_device_id": "existing_device_id",
-                "uuid": "test_uuid",
+                "request_id": "test_uuid",
             },
             HTTP_CC_INTEGRITY_TOKEN="test_token",
             HTTP_CC_REQUEST_HASH="aGVsbG8gd29scmQgdGhlcmU",
@@ -1399,7 +1399,7 @@ class TestReportIntegrityView:
             self.url,
             data={
                 "cc_device_id": "demo_device_id",
-                "uuid": "test_uuid",
+                "request_id": "test_uuid",
                 "phone_number": TEST_NUMBER_PREFIX + "1234567",
             },
             HTTP_CC_INTEGRITY_TOKEN="test_token",
@@ -1419,7 +1419,7 @@ class TestReportIntegrityView:
             self.url,
             data={
                 "cc_device_id": "failed_device_id",
-                "uuid": "test_uuid",
+                "request_id": "test_uuid",
             },
             HTTP_CC_INTEGRITY_TOKEN="test_token",
             HTTP_CC_REQUEST_HASH="aGVsbG8gd29scmQgdGhlcmU",
@@ -1444,7 +1444,7 @@ class TestReportIntegrityView:
             self.url,
             data={
                 "cc_device_id": "device_failed_device_id",
-                "uuid": "test_uuid",
+                "request_id": "test_uuid",
             },
             HTTP_CC_INTEGRITY_TOKEN="test_token",
             HTTP_CC_REQUEST_HASH="aGVsbG8gd29scmQgdGhlcmU",
@@ -1469,7 +1469,7 @@ class TestReportIntegrityView:
             self.url,
             data={
                 "cc_device_id": "account_failed_device_id",
-                "uuid": "test_uuid",
+                "request_id": "test_uuid",
             },
             HTTP_CC_INTEGRITY_TOKEN="test_token",
             HTTP_CC_REQUEST_HASH="aGVsbG8gd29scmQgdGhlcmU",
