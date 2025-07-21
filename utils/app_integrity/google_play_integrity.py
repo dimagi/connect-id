@@ -70,22 +70,22 @@ class AppIntegrityService:
         Checks the verdict and raises appropriate exceptions if
         the app integrity is compromised.
         """
-        self._check_request_details(verdict.requestDetails)
-        self._check_app_integrity(verdict.appIntegrity)
-        self._check_device_integrity(verdict.deviceIntegrity)
-        self._check_account_details(verdict.accountDetails)
+        self.check_request_details(verdict.requestDetails)
+        self.check_app_integrity(verdict.appIntegrity)
+        self.check_device_integrity(verdict.deviceIntegrity)
+        self.check_account_details(verdict.accountDetails)
 
-    def _check_request_details(self, request_details: RequestDetails):
+    def check_request_details(self, request_details: RequestDetails):
         if request_details.requestHash != self.request_hash:
             raise IntegrityRequestError("Request hash mismatch")
         if request_details.requestPackageName != self.package_name:
             raise IntegrityRequestError("Request package name mismatch")
 
-    def _check_app_integrity(self, app_integrity: AppIntegrity):
+    def check_app_integrity(self, app_integrity: AppIntegrity):
         if app_integrity.packageName != self.package_name:
             raise AppIntegrityError("App package name mismatch")
 
-    def _check_device_integrity(self, device_integrity: DeviceIntegrity):
+    def check_device_integrity(self, device_integrity: DeviceIntegrity):
         verdicts = device_integrity.deviceRecognitionVerdict
 
         if self.is_demo_user and "MEETS_VIRTUAL_INTEGRITY" in verdicts:
@@ -94,7 +94,7 @@ class AppIntegrityService:
         if "MEETS_DEVICE_INTEGRITY" not in verdicts:
             raise DeviceIntegrityError("Device integrity compromised")
 
-    def _check_account_details(self, account_details: AccountDetails):
+    def check_account_details(self, account_details: AccountDetails):
         if self.is_demo_user:
             return
 

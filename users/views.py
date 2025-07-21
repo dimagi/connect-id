@@ -14,6 +14,7 @@ from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
 from django.views import View
 from firebase_admin import auth
+from googleapiclient.errors import HttpError
 from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
@@ -880,9 +881,10 @@ def confirm_session_otp(request):
 @permission_classes([])
 def report_integrity(request):
     data = request.data
+    external_id = data.get("uuid")
     device_id = data.get("cc_device_id")
 
-    if not device_id:
+    if not (external_id and device_id):
         return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
     integrity_token = request.headers.get("CC-Integrity-Token")
@@ -903,33 +905,51 @@ def report_integrity(request):
         is_demo_user=is_demo_user,
     )
 
-    raw_verdict = service.obtain_verdict()
-
     try:
-        sample = DeviceIntegritySample.objects.get(
-            device_id=device_id,
-        )
+        raw_verdict = service.obtain_verdict()
+    except HttpError:
+        JsonResponse({"result_code": None}, status=500)
+
+    sample, is_created = DeviceIntegritySample.objects.get_or_create(
+        external_id=external_id,
+        defaults={
+            "device_id": device_id,
+            "google_verdict": raw_verdict,
+            "is_demo_user": is_demo_user,
+        },
+    )
+
+    if not is_created:
         sample.google_verdict = raw_verdict
-        is_demo_user = is_demo_user
-        sample.save()
-    except DeviceIntegritySample.DoesNotExist:
-        sample = DeviceIntegritySample(
-            device_id=device_id,
-            google_verdict=raw_verdict,
-            is_demo_user=is_demo_user,
-        )
+        sample.is_demo_user = is_demo_user
 
-    processed_verdict = DeviceIntegritySample.ProcessedVerdict.PASSED
-    processed_response = ""
+    verdict = VerdictResponse.from_dict(raw_verdict)
 
-    try:
-        service.analyze_verdict(VerdictResponse.from_dict(raw_verdict))
-    except (IntegrityRequestError, AccountDetailsError, AppIntegrityError, DeviceIntegrityError) as e:
-        processed_verdict = DeviceIntegritySample.ProcessedVerdict.FAILED
-        processed_response = str(e)
+    evaluators = [
+        lambda x: service.check_request_details(x.requestDetails),
+        lambda x: service.check_app_integrity(x.appIntegrity),
+        lambda x: service.check_device_integrity(x.deviceIntegrity),
+        lambda x: service.check_account_details(x.accountDetails),
+    ]
 
-    sample.processed_response = processed_response
-    sample.processed_verdict = processed_verdict
+    for evaluator in evaluators:
+        try:
+            evaluator(verdict)
+        except IntegrityRequestError:
+            sample.passed_request_check = False
+        except AppIntegrityError:
+            sample.passed_app_integrity_check = False
+        except DeviceIntegrityError:
+            sample.passed_device_integrity_check = False
+        except AccountDetailsError:
+            sample.passed_account_details_check = False
+
+    sample.passed = (
+        sample.passed_request_check
+        and sample.passed_app_integrity_check
+        and sample.passed_device_integrity_check
+        and sample.passed_account_details_check
+    )
     sample.save()
 
-    return JsonResponse({"result_code": processed_verdict.value})
+    return JsonResponse({"result_code": "passed" if sample.passed else "failed"})
