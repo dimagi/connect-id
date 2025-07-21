@@ -254,21 +254,16 @@ class SessionPhoneDevice(BasePhoneDevice):
 
 
 class DeviceIntegritySample(models.Model):
-    class ProcessedVerdict(models.TextChoices):
-        PASSED = "passed", "passed"
-        FAILED = "failed", "failed"
-
+    external_id = models.CharField(max_length=255, unique=True)
     device_id = models.CharField(max_length=255)
-    google_verdict = models.JSONField()
-    processed_response = models.CharField(max_length=100, blank=True)
-    processed_verdict = models.CharField(
-        max_length=50,
-        blank=True,
-        choices=ProcessedVerdict.choices,
-        default=ProcessedVerdict.PASSED.value,
-    )
     created = models.DateTimeField(auto_now_add=True)
     is_demo_user = models.BooleanField(default=False)
+    google_verdict = models.JSONField(null=True, blank=True)
+    passed = models.BooleanField(default=True)
+    passed_request_check = models.BooleanField(default=True)
+    passed_app_integrity_check = models.BooleanField(default=True)
+    passed_device_integrity_check = models.BooleanField(default=True)
+    passed_account_details_check = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["-created"]
