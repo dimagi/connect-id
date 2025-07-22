@@ -880,11 +880,14 @@ def confirm_session_otp(request):
 @permission_classes([])
 def report_integrity(request):
     data = request.data
-    external_id = data.get("request_id")
+    request_id = data.get("request_id")
     device_id = data.get("cc_device_id")
 
-    if not (external_id and device_id):
+    if not (request_id and device_id):
         return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+
+    if DeviceIntegritySample.objects.filter(request_id=request_id).exists():
+        return JsonResponse({"result_code": None}, status=304)
 
     integrity_token = request.headers.get("CC-Integrity-Token")
     request_hash = request.headers.get("CC-Request-Hash")
@@ -909,39 +912,42 @@ def report_integrity(request):
     except HttpError:
         JsonResponse({"result_code": None}, status=500)
 
-    sample, is_created = DeviceIntegritySample.objects.get_or_create(
-        external_id=external_id,
-        defaults={
-            "device_id": device_id,
-            "google_verdict": raw_verdict,
-            "is_demo_user": is_demo_user,
-        },
-    )
-
-    if not is_created:
-        sample.google_verdict = raw_verdict
-        sample.is_demo_user = is_demo_user
-
     verdict = service.parse_raw_verdict(raw_verdict)
+
+    passed_request_check = True
+    passed_app_integrity_check = True
+    passed_device_integrity_check = True
+    passed_account_details_check = True
 
     for evaluator in service.evaluators:
         try:
             evaluator(verdict)
         except IntegrityRequestError:
-            sample.passed_request_check = False
+            passed_request_check = False
         except AppIntegrityError:
-            sample.passed_app_integrity_check = False
+            passed_app_integrity_check = False
         except DeviceIntegrityError:
-            sample.passed_device_integrity_check = False
+            passed_device_integrity_check = False
         except AccountDetailsError:
-            sample.passed_account_details_check = False
+            passed_account_details_check = False
 
-    sample.passed = (
-        sample.passed_request_check
-        and sample.passed_app_integrity_check
-        and sample.passed_device_integrity_check
-        and sample.passed_account_details_check
+    check_passed = (
+        passed_request_check
+        and passed_app_integrity_check
+        and passed_device_integrity_check
+        and passed_account_details_check
     )
-    sample.save()
+
+    sample = DeviceIntegritySample.objects.create(
+        request_id=request_id,
+        device_id=device_id,
+        is_demo_user=is_demo_user,
+        google_verdict=raw_verdict,
+        passed=check_passed,
+        passed_request_check=passed_request_check,
+        passed_app_integrity_check=passed_app_integrity_check,
+        passed_device_integrity_check=passed_device_integrity_check,
+        passed_account_details_check=passed_account_details_check,
+    )
 
     return JsonResponse({"result_code": "passed" if sample.passed else "failed"})

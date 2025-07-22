@@ -1344,7 +1344,7 @@ class TestReportIntegrityView:
         assert response.status_code == 200
         assert response.json() == {"result_code": "passed"}
 
-        sample = DeviceIntegritySample.objects.get(device_id="new_device_id")
+        sample = DeviceIntegritySample.objects.get(request_id="test_uuid")
         assert sample.google_verdict == raw_verdict["tokenPayloadExternal"]
         assert sample.passed
         assert sample.passed_request_check
@@ -1357,9 +1357,15 @@ class TestReportIntegrityView:
     @patch.object(AppIntegrityService, "analyze_verdict")
     def test_successful_integrity_check_existing_device(self, analyze_verdict_mock, obtain_verdict_mock, client):
         existing_sample = DeviceIntegritySample.objects.create(
-            external_id="test_uuid",
+            request_id="test_uuid",
             device_id="existing_device_id",
             google_verdict={"old": "verdict"},
+            passed=False,
+            passed_request_check=False,
+            passed_app_integrity_check=True,
+            passed_device_integrity_check=True,
+            passed_account_details_check=True,
+            is_demo_user=False,
         )
 
         raw_verdict = self._load_verdict_from_file("utils/tests/data/success_integrity_response.json")
@@ -1376,13 +1382,12 @@ class TestReportIntegrityView:
             HTTP_CC_REQUEST_HASH="aGVsbG8gd29scmQgdGhlcmU",
         )
 
-        assert response.status_code == 200
-        assert response.json() == {"result_code": "passed"}
+        assert response.status_code == 304
 
         existing_sample.refresh_from_db()
-        assert existing_sample.google_verdict == raw_verdict["tokenPayloadExternal"]
-        assert existing_sample.passed
-        assert existing_sample.passed_request_check
+        assert existing_sample.google_verdict != raw_verdict["tokenPayloadExternal"]
+        assert not existing_sample.passed
+        assert not existing_sample.passed_request_check
         assert existing_sample.passed_app_integrity_check
         assert existing_sample.passed_device_integrity_check
         assert existing_sample.passed_account_details_check
@@ -1407,7 +1412,7 @@ class TestReportIntegrityView:
         )
         assert response.status_code == 200
 
-        sample = DeviceIntegritySample.objects.get(device_id="demo_device_id")
+        sample = DeviceIntegritySample.objects.get(request_id="test_uuid")
         assert sample.is_demo_user is True
 
     @patch.object(AppIntegrityService, "obtain_verdict")
@@ -1428,7 +1433,7 @@ class TestReportIntegrityView:
         assert response.status_code == 200
         assert response.json() == {"result_code": "failed"}
 
-        sample = DeviceIntegritySample.objects.get(device_id="failed_device_id")
+        sample = DeviceIntegritySample.objects.get(request_id="test_uuid")
         assert not sample.passed
         assert not sample.passed_request_check
         assert sample.passed_app_integrity_check
@@ -1453,7 +1458,7 @@ class TestReportIntegrityView:
         assert response.status_code == 200
         assert response.json() == {"result_code": "failed"}
 
-        sample = DeviceIntegritySample.objects.get(device_id="device_failed_device_id")
+        sample = DeviceIntegritySample.objects.get(request_id="test_uuid")
         assert not sample.passed
         assert sample.passed_request_check
         assert sample.passed_app_integrity_check
@@ -1478,7 +1483,7 @@ class TestReportIntegrityView:
         assert response.status_code == 200
         assert response.json() == {"result_code": "failed"}
 
-        sample = DeviceIntegritySample.objects.get(device_id="account_failed_device_id")
+        sample = DeviceIntegritySample.objects.get(request_id="test_uuid")
         assert not sample.passed
         assert sample.passed_request_check
         assert sample.passed_app_integrity_check
