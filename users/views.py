@@ -23,12 +23,6 @@ from rest_framework.views import APIView
 from services.ai.ocs import OpenChatStudio
 from utils import get_ip, get_sms_sender, send_sms
 from utils.app_integrity.decorators import require_app_integrity
-from utils.app_integrity.exceptions import (
-    AccountDetailsError,
-    AppIntegrityError,
-    DeviceIntegrityError,
-    IntegrityRequestError,
-)
 from utils.app_integrity.google_play_integrity import AppIntegrityService
 from utils.rest_framework import ClientProtectedResourceAuth
 
@@ -908,46 +902,11 @@ def report_integrity(request):
     )
 
     try:
-        raw_verdict = service.obtain_verdict()
+        sample = service.log_sample_request(
+            request_id=request_id,
+            device_id=device_id,
+        )
     except HttpError:
-        JsonResponse({"result_code": None}, status=500)
-
-    verdict = service.parse_raw_verdict(raw_verdict)
-
-    passed_request_check = True
-    passed_app_integrity_check = True
-    passed_device_integrity_check = True
-    passed_account_details_check = True
-
-    for evaluator in service.evaluators:
-        try:
-            evaluator(verdict)
-        except IntegrityRequestError:
-            passed_request_check = False
-        except AppIntegrityError:
-            passed_app_integrity_check = False
-        except DeviceIntegrityError:
-            passed_device_integrity_check = False
-        except AccountDetailsError:
-            passed_account_details_check = False
-
-    check_passed = (
-        passed_request_check
-        and passed_app_integrity_check
-        and passed_device_integrity_check
-        and passed_account_details_check
-    )
-
-    sample = DeviceIntegritySample.objects.create(
-        request_id=request_id,
-        device_id=device_id,
-        is_demo_user=is_demo_user,
-        google_verdict=raw_verdict,
-        passed=check_passed,
-        passed_request_check=passed_request_check,
-        passed_app_integrity_check=passed_app_integrity_check,
-        passed_device_integrity_check=passed_device_integrity_check,
-        passed_account_details_check=passed_account_details_check,
-    )
+        return JsonResponse({"result_code": None}, status=500)
 
     return JsonResponse({"result_code": "passed" if sample.passed else "failed"})

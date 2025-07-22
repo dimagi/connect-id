@@ -5,6 +5,7 @@ from google.oauth2 import service_account
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
+from users.models import DeviceIntegritySample
 from utils.app_integrity.exceptions import (
     AccountDetailsError,
     AppIntegrityError,
@@ -113,3 +114,43 @@ class AppIntegrityService:
         verdict = account_details.appLicensingVerdict
         if verdict == "UNLICENSED":
             raise AccountDetailsError("Account not licensed")
+
+    def log_sample_request(self, request_id: str, device_id: str):
+        raw_verdict = self.obtain_verdict()
+        verdict = self.parse_raw_verdict(raw_verdict)
+
+        passed_request_check = True
+        passed_app_integrity_check = True
+        passed_device_integrity_check = True
+        passed_account_details_check = True
+
+        for evaluator in self.evaluators:
+            try:
+                evaluator(verdict)
+            except IntegrityRequestError:
+                passed_request_check = False
+            except AppIntegrityError:
+                passed_app_integrity_check = False
+            except DeviceIntegrityError:
+                passed_device_integrity_check = False
+            except AccountDetailsError:
+                passed_account_details_check = False
+
+        check_passed = (
+            passed_request_check
+            and passed_app_integrity_check
+            and passed_device_integrity_check
+            and passed_account_details_check
+        )
+
+        return DeviceIntegritySample.objects.create(
+            request_id=request_id,
+            device_id=device_id,
+            is_demo_user=self.is_demo_user,
+            google_verdict=raw_verdict,
+            passed=check_passed,
+            passed_request_check=passed_request_check,
+            passed_app_integrity_check=passed_app_integrity_check,
+            passed_device_integrity_check=passed_device_integrity_check,
+            passed_account_details_check=passed_account_details_check,
+        )
