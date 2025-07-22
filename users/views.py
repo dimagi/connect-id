@@ -23,6 +23,7 @@ from rest_framework.views import APIView
 from services.ai.ocs import OpenChatStudio
 from utils import get_ip, get_sms_sender, send_sms
 from utils.app_integrity.decorators import require_app_integrity
+from utils.app_integrity.exceptions import DuplicateSampleRequestError
 from utils.app_integrity.google_play_integrity import AppIntegrityService
 from utils.rest_framework import ClientProtectedResourceAuth
 
@@ -34,7 +35,6 @@ from .models import (
     ConfigurationSession,
     ConnectUser,
     Credential,
-    DeviceIntegritySample,
     PhoneDevice,
     RecoveryStatus,
     SessionPhoneDevice,
@@ -880,9 +880,6 @@ def report_integrity(request):
     if not (request_id and device_id):
         return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
-    if DeviceIntegritySample.objects.filter(request_id=request_id).exists():
-        return JsonResponse({"result_code": None}, status=304)
-
     integrity_token = request.headers.get("CC-Integrity-Token")
     request_hash = request.headers.get("CC-Request-Hash")
 
@@ -906,6 +903,8 @@ def report_integrity(request):
             request_id=request_id,
             device_id=device_id,
         )
+    except DuplicateSampleRequestError:
+        return JsonResponse({"result_code": None}, status=304)
     except HttpError:
         return JsonResponse({"result_code": None}, status=500)
 

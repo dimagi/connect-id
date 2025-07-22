@@ -10,6 +10,7 @@ from utils.app_integrity.exceptions import (
     AccountDetailsError,
     AppIntegrityError,
     DeviceIntegrityError,
+    DuplicateSampleRequestError,
     IntegrityRequestError,
 )
 from utils.app_integrity.schemas import AccountDetails, AppIntegrity, DeviceIntegrity, RequestDetails, VerdictResponse
@@ -116,6 +117,12 @@ class AppIntegrityService:
             raise AccountDetailsError("Account not licensed")
 
     def log_sample_request(self, request_id: str, device_id: str):
+        """
+        Performs a sampling request to log the integrity check results.
+        """
+        if DeviceIntegritySample.objects.filter(request_id=request_id).exists():
+            raise DuplicateSampleRequestError("Duplicate sample request")
+
         raw_verdict = self.obtain_verdict()
         verdict = self.parse_raw_verdict(raw_verdict)
 
