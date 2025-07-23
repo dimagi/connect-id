@@ -14,6 +14,7 @@ from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
 from django_otp.util import random_hex
 from geopy.geocoders import Nominatim
+from oauth2_provider.models import Application
 from phonenumber_field.modelfields import PhoneNumberField
 
 from users.exceptions import RecoveryPinNotSetError
@@ -177,7 +178,7 @@ class RecoveryStatus(models.Model):
     step = models.TextField(choices=RecoverySteps.choices)
 
 
-class Credential(models.Model):
+class IssuingAuthority(models.Model):
     class IssuingAuthorityTypes(models.TextChoices):
         CONNECT = "CONNECT", "CONNECT"
         HQ = "HQ", "HQ"
@@ -187,6 +188,12 @@ class Credential(models.Model):
         STAGING = "staging", "staging"
         INDIA = "india", "india"
 
+    issuing_authority = models.CharField(max_length=50, choices=IssuingAuthorityTypes.choices)
+    issuer_environment = models.CharField(max_length=50, choices=IssuingAuthorityEnvironments.choices)
+    oauth_application = models.ForeignKey(Application, on_delete=models.PROTECT)
+
+
+class Credential(models.Model):
     class CredentialTypes(models.TextChoices):
         APP_ACTIVITY = "APP_ACTIVITY", "APP_ACTIVITY"
         LEARN = "LEARN", "LEARN"
@@ -194,17 +201,16 @@ class Credential(models.Model):
 
     uuid = models.UUIDField(default=uuid4)
     title = models.CharField(max_length=300)
-    issuing_authority = models.CharField(max_length=50, choices=IssuingAuthorityTypes.choices)
+    issuer = models.ForeignKey(IssuingAuthority, on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
     level = models.CharField(max_length=50)  # credential level/code (e.g. 3_MONTHS_ACTIVE)
     type = models.CharField(max_length=50, choices=CredentialTypes.choices)
-    app_id = models.CharField(max_length=50)
+    app_id = models.CharField(max_length=50, blank=True, null=True)
     opportunity_id = models.CharField(max_length=50, blank=True, null=True)
     slug = models.CharField(max_length=50)
-    issuer_environment = models.CharField(max_length=50, choices=IssuingAuthorityEnvironments.choices)
 
     class Meta:
-        unique_together = ("issuing_authority", "level", "type", "slug")
+        unique_together = ("issuer", "level", "type", "slug")
 
 
 class UserCredential(models.Model):

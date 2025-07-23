@@ -33,6 +33,7 @@ from .models import (
     ConfigurationSession,
     ConnectUser,
     Credential,
+    IssuingAuthority,
     PhoneDevice,
     RecoveryStatus,
     SessionPhoneDevice,
@@ -652,7 +653,7 @@ class AddCredential(APIView):
         credential_name = request.data["credential"]
         credential, _ = Credential.objects.get_or_create(
             title=credential_name,
-            issuing_authority=Credential.IssuingAuthorityTypes.CONNECT,
+            issuing_authority=IssuingAuthority.IssuingAuthorityTypes.CONNECT,
             type=Credential.CredentialTypes.DELIVER,
         )
         users = ConnectUser.objects.filter(phone_number__in=phone_numbers, is_active=True)
