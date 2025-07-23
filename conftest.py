@@ -7,7 +7,13 @@ from oauth2_provider.models import Application
 from rest_framework.test import APIClient
 
 from users.auth import SessionTokenAuthentication
-from users.factories import ConfigurationSessionFactory, FCMDeviceFactory, RecoveryStatusFactory, UserFactory
+from users.factories import (
+    ConfigurationSessionFactory,
+    FCMDeviceFactory,
+    IssuingAuthorityFactory,
+    RecoveryStatusFactory,
+    UserFactory,
+)
 
 
 @pytest.fixture
@@ -62,6 +68,11 @@ def authed_client(api_client, oauth_app):
     credentials = base64.b64encode(auth).decode("utf-8")
     api_client.defaults["HTTP_AUTHORIZATION"] = "Basic " + credentials
     return api_client
+
+
+@pytest.fixture
+def issuing_auth(oauth_app):
+    return IssuingAuthorityFactory(oauth_application=oauth_app)
 
 
 @pytest.fixture

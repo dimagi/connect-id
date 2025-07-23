@@ -376,14 +376,13 @@ class TestRecoverSecondaryPhone:
 class TestListCredentials:
     url = reverse("list_credentials")
 
-    def test_success(self, auth_device, user):
+    def test_success(self, auth_device, oauth_app, user, issuing_auth):
         cred = CredentialFactory.create(
             title="Test Credential",
             type=Credential.CredentialTypes.DELIVER,
             level="ACTIVE_3_MONTH",
-            issuing_authority=Credential.IssuingAuthorityTypes.HQ,
+            issuer=issuing_auth,
             app_id=uuid.uuid4().hex,
-            issuer_environment=Credential.IssuingAuthorityEnvironments.PRODUCTION,
         )
         UserCredentialFactory.create(credential=cred, user=user)
 
@@ -411,10 +410,11 @@ class TestListCredentials:
         assert response.status_code == 200
         assert response.json() == {"credentials": []}
 
-    def test_multiple_credentials(self, auth_device, user):
-        cred_1 = CredentialFactory.create(title="Credential 1")
-        cred_2 = CredentialFactory.create(title="Credential 2")
-        UserCredentialFactory.create()
+    def test_multiple_credentials(self, auth_device, user, issuing_auth):
+        cred_1 = CredentialFactory.create(title="Credential 1", issuer=issuing_auth)
+        cred_2 = CredentialFactory.create(title="Credential 2", issuer=issuing_auth)
+        cred_3 = CredentialFactory.create(title="Credential 3", issuer=issuing_auth)
+        UserCredentialFactory.create(credential=cred_3)
         UserCredential.objects.create(user=user, credential=cred_1)
         UserCredential.objects.create(user=user, credential=cred_2)
 
