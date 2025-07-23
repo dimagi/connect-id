@@ -7,7 +7,13 @@ from oauth2_provider.models import Application
 from rest_framework.test import APIClient
 
 from users.auth import SessionTokenAuthentication
-from users.factories import ConfigurationSessionFactory, FCMDeviceFactory, RecoveryStatusFactory, UserFactory
+from users.factories import (
+    ConfigurationSessionFactory,
+    FCMDeviceFactory,
+    IssuingAuthorityFactory,
+    RecoveryStatusFactory,
+    UserFactory,
+)
 
 
 @pytest.fixture
@@ -54,6 +60,11 @@ def oauth_app(user):
     application.raw_client_secret = application.client_secret
     application.save()
     return application
+
+
+@pytest.fixture
+def issuing_auth(oauth_app):
+    return IssuingAuthorityFactory(oauth_application=oauth_app)
 
 
 @pytest.fixture

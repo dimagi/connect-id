@@ -17,7 +17,7 @@ from django.shortcuts import get_object_or_404
 from django.utils.timezone import now
 from django.views import View
 from firebase_admin import auth
-from oauth2_provider.models import AccessToken, Application, RefreshToken
+from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
@@ -36,6 +36,7 @@ from .models import (
     ConfigurationSession,
     ConnectUser,
     Credential,
+    IssuingAuthority,
     PhoneDevice,
     RecoveryStatus,
     SessionPhoneDevice,
@@ -647,13 +648,13 @@ class FilterUsers(APIView):
         return JsonResponse(result)
 
 
-def get_request_server(request):
+def get_issuing_auth(request):
     auth_header = request.headers.get("authorization")
     encoded_credentials = auth_header.split(" ")[1]
     decoded_credentials = base64.b64decode(encoded_credentials).decode("utf-8")
     client_id, client_secret = decoded_credentials.split(":")
-    server = get_object_or_404(Application, client_id=client_id)
-    return server
+    issuing_auth = get_object_or_404(IssuingAuthority, oauth_application__client_id=client_id)
+    return issuing_auth
 
 
 class AddCredential(APIView):
@@ -664,22 +665,16 @@ class AddCredential(APIView):
         if not creds:
             return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
-        server = get_request_server(request)
-        issuer = None
-        for auth_type_value, auth_type_display in Credential.IssuingAuthorityTypes.choices:
-            if auth_type_value.lower() in server.name.lower():
-                issuer = auth_type_value
-                break
+        issuing_auth = get_issuing_auth(request)
         failed_creds = []
         for index, cred in enumerate(creds):
             try:
                 credential, _ = Credential.objects.get_or_create(
                     type=cred.get("type"),
                     level=cred.get("level"),
-                    issuing_authority=issuer,
+                    issuer=issuing_auth,
                     slug=cred.get("app_id"),
                 )
-                credential.issuer_environment = cred.get("issuer_environment")
                 credential.title = cred.get("title")
                 credential.app_id = cred.get("app_id")
                 credential.opportunity_id = cred.get("opportunity_id")

@@ -374,7 +374,7 @@ class TestAddCredential:
         assert response.status_code == 403
 
     @patch("users.models.send_sms")
-    def test_success(self, mock_add_credential, authed_client, user):
+    def test_success(self, mock_add_credential, authed_client, issuing_auth, user):
         app_id = uuid.uuid4().hex
         payload = {
             "credentials": [
@@ -395,13 +395,13 @@ class TestAddCredential:
         assert UserCredential.objects.all().count() == 1
         cred = Credential.objects.all().first()
         assert cred.title == "Test Credential"
-        assert cred.issuing_authority == "HQ"
+        assert cred.issuer == issuing_auth
         assert cred.level == "ACTIVE_3_MONTHS"
         assert cred.type == "DELIVER"
         assert cred.app_id == app_id
 
     @patch("users.models.send_sms")
-    def test_bulk_add(self, mock_add_credential, authed_client):
+    def test_bulk_add(self, mock_add_credential, authed_client, issuing_auth):
         users = UserFactory.create_batch(2)
         app_id = uuid.uuid4().hex
         payload = {
@@ -433,7 +433,7 @@ class TestAddCredential:
         assert UserCredential.objects.all().count() == 2
 
     @patch("users.models.send_sms")
-    def test_partial_fail(self, mock_add_credential, authed_client, user):
+    def test_partial_fail(self, mock_add_credential, authed_client, user, issuing_auth):
         app_id = uuid.uuid4().hex
         payload = {
             "credentials": [
@@ -460,7 +460,7 @@ class TestAddCredential:
         assert Credential.objects.all().count() == 1
         assert UserCredential.objects.all().count() == 1
 
-    def test_missing_data(self, authed_client):
+    def test_missing_data(self, authed_client, issuing_auth):
         payload = {
             "credentials": [
                 {
@@ -472,7 +472,7 @@ class TestAddCredential:
         assert response.status_code == 200
         assert response.json() == {"failed": [0]}
 
-    def test_no_phone_numbers(self, authed_client):
+    def test_no_phone_numbers(self, authed_client, issuing_auth):
         payload = {
             "credentials": [
                 {
@@ -490,7 +490,7 @@ class TestAddCredential:
         assert Credential.objects.all().count() == 1
         assert UserCredential.objects.all().count() == 0
 
-    def test_invalid_phone_numbers(self, authed_client):
+    def test_invalid_phone_numbers(self, authed_client, issuing_auth):
         payload = {
             "credentials": [
                 {
@@ -510,7 +510,7 @@ class TestAddCredential:
         assert UserCredential.objects.all().count() == 0
 
     @patch("users.models.send_sms")
-    def test_duplicate_request(self, mock_add_credential, authed_client, user):
+    def test_duplicate_request(self, mock_add_credential, authed_client, user, issuing_auth):
         payload = {
             "credentials": [
                 {
