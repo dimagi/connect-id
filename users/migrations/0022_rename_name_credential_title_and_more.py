@@ -28,6 +28,7 @@ def reverse_delete_credentials(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
+        migrations.swappable_dependency(settings.OAUTH2_PROVIDER_APPLICATION_MODEL),
         ("users", "0021_sessionphonedevice_and_more"),
     ]
 
@@ -38,14 +39,6 @@ class Migration(migrations.Migration):
             old_name="name",
             new_name="title",
         ),
-        migrations.RemoveField(
-            model_name="credential",
-            name="organization_slug",
-        ),
-        migrations.RemoveField(
-            model_name="credential",
-            name="slug",
-        ),
         migrations.AddField(
             model_name="credential",
             name="app_id",
@@ -55,11 +48,6 @@ class Migration(migrations.Migration):
             model_name="credential",
             name="created_at",
             field=models.DateTimeField(auto_now_add=True),
-        ),
-        migrations.AddField(
-            model_name="credential",
-            name="issuing_authority",
-            field=models.CharField(choices=[("CONNECT", "CONNECT"), ("HQ", "HQ")], max_length=50),
         ),
         migrations.AddField(
             model_name="credential",
@@ -84,22 +72,10 @@ class Migration(migrations.Migration):
             name="uuid",
             field=models.UUIDField(default=uuid.uuid4),
         ),
-        migrations.AddField(
+        migrations.AlterField(
             model_name="credential",
             name="slug",
             field=models.CharField(max_length=50),
-        ),
-        migrations.AlterUniqueTogether(
-            name="credential",
-            unique_together={("issuing_authority", "level", "type", "slug")},
-        ),
-        migrations.AddField(
-            model_name="credential",
-            name="issuer_environment",
-            field=models.CharField(
-                choices=[("production", "production"), ("staging", "staging"), ("india", "india")],
-                max_length=50
-            ),
         ),
         migrations.AlterField(
             model_name="sessionphonedevice",
@@ -107,5 +83,40 @@ class Migration(migrations.Migration):
             field=models.ForeignKey(
                 blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL
             ),
+        ),
+        migrations.CreateModel(
+            name="IssuingAuthority",
+            fields=[
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("issuing_authority", models.CharField(choices=[("CONNECT", "CONNECT"), ("HQ", "HQ")], max_length=50)),
+                (
+                    "issuer_environment",
+                    models.CharField(
+                        choices=[("production", "production"), ("staging", "staging"), ("india", "india")],
+                        max_length=50,
+                    ),
+                ),
+                (
+                    "oauth_application",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT, to=settings.OAUTH2_PROVIDER_APPLICATION_MODEL
+                    ),
+                ),
+            ],
+        ),
+        migrations.AddField(
+            model_name="credential",
+            name="issuer",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.PROTECT, to="users.issuingauthority"
+            ),
+        ),
+        migrations.AlterUniqueTogether(
+            name="credential",
+            unique_together={("issuer", "level", "type", "slug")},
+        ),
+        migrations.RemoveField(
+            model_name="credential",
+            name="organization_slug",
         ),
     ]
