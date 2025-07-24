@@ -391,7 +391,7 @@ class TestAddCredential:
         }
         response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
         assert response.status_code == 200
-        assert response.json() == {"failed": []}
+        assert response.json() == {"success": [0], "failed": []}
         assert UserCredential.objects.all().count() == 1
         cred = Credential.objects.all().first()
         assert cred.title == "Test Credential"
@@ -456,7 +456,7 @@ class TestAddCredential:
         }
         response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
         assert response.status_code == 200
-        assert response.json() == {"failed": [1, 2]}
+        assert response.json() == {"success": [0], "failed": [1, 2]}
         assert Credential.objects.all().count() == 1
         assert UserCredential.objects.all().count() == 1
 
@@ -470,7 +470,7 @@ class TestAddCredential:
         }
         response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
         assert response.status_code == 200
-        assert response.json() == {"failed": [0]}
+        assert response.json() == {"success": [], "failed": [0]}
 
     def test_no_phone_numbers(self, authed_client, issuing_auth):
         payload = {

@@ -666,6 +666,7 @@ class AddCredential(APIView):
             return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
         issuing_auth = get_issuing_auth(request)
+        success_creds = []
         failed_creds = []
         for index, cred in enumerate(creds):
             try:
@@ -682,11 +683,12 @@ class AddCredential(APIView):
             except (IntegrityError, AttributeError):
                 failed_creds.append(index)
                 continue
+            success_creds.append(index)
             phone_numbers = cred.get("users", [])
             users = ConnectUser.objects.filter(phone_number__in=phone_numbers, is_active=True)
             for user in users:
                 UserCredential.add_credential(user, credential, request)
-        return JsonResponse({"failed": failed_creds})
+        return JsonResponse({"success": success_creds, "failed": failed_creds})
 
 
 class ForwardHQInvite(APIView):
