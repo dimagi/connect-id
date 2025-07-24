@@ -1382,7 +1382,8 @@ class TestReportIntegrityView:
             HTTP_CC_REQUEST_HASH="aGVsbG8gd29scmQgdGhlcmU",
         )
 
-        assert response.status_code == 304
+        assert response.status_code == 200
+        assert response.json() == {"result_code": None}
 
         existing_sample.refresh_from_db()
         assert existing_sample.google_verdict != raw_verdict["tokenPayloadExternal"]

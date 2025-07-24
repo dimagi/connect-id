@@ -904,7 +904,7 @@ def report_integrity(request):
             device_id=device_id,
         )
     except DuplicateSampleRequestError:
-        return JsonResponse({"result_code": None}, status=304)
+        return JsonResponse({"result_code": None}, status=200)
     except HttpError:
         return JsonResponse({"result_code": None}, status=500)
 
