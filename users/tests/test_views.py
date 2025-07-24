@@ -1489,3 +1489,30 @@ class TestReportIntegrityView:
         assert sample.passed_app_integrity_check
         assert sample.passed_device_integrity_check
         assert not sample.passed_account_details_check
+
+    @patch.object(AppIntegrityService, "obtain_verdict")
+    def test_multiple_checks_fails(self, obtain_verdict_mock, client):
+        raw_verdict = self._load_verdict_from_file(
+            "utils/tests/data/unlicensed_and_device_error_integrity_response.json"
+        )
+        obtain_verdict_mock.return_value = raw_verdict["tokenPayloadExternal"]
+
+        response = client.post(
+            self.url,
+            data={
+                "cc_device_id": "account_failed_device_id",
+                "request_id": "test_uuid",
+            },
+            HTTP_CC_INTEGRITY_TOKEN="test_token",
+            HTTP_CC_REQUEST_HASH="aGVsbG8gd29scmQgdGhlcmU",
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"result_code": "failed"}
+
+        sample = DeviceIntegritySample.objects.get(request_id="test_uuid")
+        assert not sample.passed
+        assert sample.passed_request_check
+        assert sample.passed_app_integrity_check
+        assert not sample.passed_device_integrity_check
+        assert not sample.passed_account_details_check
