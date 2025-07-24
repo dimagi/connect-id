@@ -373,6 +373,12 @@ class TestAddCredential:
         response = client.post(self.endpoint)
         assert response.status_code == 403
 
+    def test_invalid_auth(self, authed_client, user):
+        payload = {"credentials": [{"foo": "bar"}]}
+        response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        assert response.status_code == 403
+        assert response.json() == {"error_code": ErrorCodes.INVALID_AUTH}
+
     @patch("users.models.send_sms")
     def test_success(self, mock_add_credential, authed_client, issuing_auth, user):
         app_id = uuid.uuid4().hex

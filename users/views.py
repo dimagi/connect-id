@@ -13,7 +13,6 @@ from django.db.models import Count, F
 from django.db.models.functions import TruncMonth
 from django.db.utils import IntegrityError
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404
 from django.utils.timezone import now
 from django.views import View
 from firebase_admin import auth
@@ -653,7 +652,7 @@ def get_issuing_auth(request):
     encoded_credentials = auth_header.split(" ")[1]
     decoded_credentials = base64.b64decode(encoded_credentials).decode("utf-8")
     client_id, client_secret = decoded_credentials.split(":")
-    issuing_auth = get_object_or_404(IssuingAuthority, oauth_application__client_id=client_id)
+    issuing_auth = IssuingAuthority.objects.get(oauth_application__client_id=client_id)
     return issuing_auth
 
 
@@ -665,7 +664,11 @@ class AddCredential(APIView):
         if not creds:
             return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
-        issuing_auth = get_issuing_auth(request)
+        try:
+            issuing_auth = get_issuing_auth(request)
+        except IssuingAuthority.DoesNotExist:
+            return JsonResponse({"error_code": ErrorCodes.INVALID_AUTH}, status=403)
+
         success_creds = []
         failed_creds = []
         for index, cred in enumerate(creds):
