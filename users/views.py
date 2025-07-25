@@ -29,7 +29,7 @@ from utils.app_integrity.exceptions import DuplicateSampleRequestError
 from utils.app_integrity.google_play_integrity import AppIntegrityService
 from utils.rest_framework import ClientProtectedResourceAuth
 
-from .auth import SessionTokenAuthentication
+from .auth import IssuingCredentialsAuthentication, SessionTokenAuthentication
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
 from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
@@ -646,23 +646,19 @@ def get_issuing_auth(request):
     encoded_credentials = auth_header.split(" ")[1]
     decoded_credentials = base64.b64decode(encoded_credentials).decode("utf-8")
     client_id, client_secret = decoded_credentials.split(":")
-    issuing_auth = IssuingAuthority.objects.get(oauth_application__client_id=client_id)
+    issuing_auth = IssuingAuthority.objects.get(issuer_credentials__client_id=client_id)
     return issuing_auth
 
 
 class AddCredential(APIView):
-    authentication_classes = [ClientProtectedResourceAuth]
+    authentication_classes = [IssuingCredentialsAuthentication]
 
     def post(self, request, *args, **kwargs):
         creds = request.data.get("credentials")
         if not creds:
             return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
-        try:
-            issuing_auth = get_issuing_auth(request)
-        except IssuingAuthority.DoesNotExist:
-            return JsonResponse({"error_code": ErrorCodes.INVALID_AUTH}, status=403)
-
+        issuing_auth = get_issuing_auth(request)
         success_creds = []
         failed_creds = []
         for index, cred in enumerate(creds):
