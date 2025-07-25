@@ -14,7 +14,6 @@ from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
 from django_otp.util import random_hex
 from geopy.geocoders import Nominatim
-from oauth2_provider.models import Application
 from phonenumber_field.modelfields import PhoneNumberField
 
 from users.exceptions import RecoveryPinNotSetError
@@ -178,6 +177,18 @@ class RecoveryStatus(models.Model):
     step = models.TextField(choices=RecoverySteps.choices)
 
 
+class IssuingCredentialsAuth(models.Model):
+    name = models.CharField(max_length=255)
+    client_id = models.CharField(max_length=100, unique=True, db_index=True)
+    secret_key = models.CharField(max_length=255)
+
+    def __str__(self):
+        return self.name
+
+    def set_secret_key(self, secret_key):
+        self.secret_key = make_password(secret_key)
+
+
 class IssuingAuthority(models.Model):
     class IssuingAuthorityTypes(models.TextChoices):
         CONNECT = "CONNECT", "CONNECT"
@@ -190,7 +201,11 @@ class IssuingAuthority(models.Model):
 
     issuing_authority = models.CharField(max_length=50, choices=IssuingAuthorityTypes.choices)
     issuer_environment = models.CharField(max_length=50, choices=IssuingAuthorityEnvironments.choices)
-    oauth_application = models.ForeignKey(Application, on_delete=models.PROTECT)
+    issuer_credentials = models.ForeignKey(IssuingCredentialsAuth, on_delete=models.PROTECT)
+
+    class Meta:
+        verbose_name = "Issuing Authority"
+        verbose_name_plural = "Issuing Authorities"
 
 
 class Credential(models.Model):
