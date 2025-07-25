@@ -1,8 +1,10 @@
+from django.contrib.auth.hashers import check_password
 from rest_framework import exceptions
-from rest_framework.authentication import TokenAuthentication
+from rest_framework.authentication import BasicAuthentication, TokenAuthentication
 
 from users.const import ErrorCodes
-from users.models import ConfigurationSession, ConnectUser, SessionUser
+from users.models import ConfigurationSession, ConnectUser, IssuingAuthority, SessionUser
+from utils.rest_framework import OauthClientUser
 
 
 class SessionTokenAuthentication(TokenAuthentication):
@@ -24,3 +26,14 @@ class SessionTokenAuthentication(TokenAuthentication):
             raise exceptions.AuthenticationFailed({"error_code": ErrorCodes.LOCKED_ACCOUNT})
         user = SessionUser()
         return (user, token)
+
+
+class IssuingCredentialsAuthentication(BasicAuthentication):
+    def authenticate_credentials(self, userid, password, request=None):
+        try:
+            issuing_auth = IssuingAuthority.objects.get(issuer_credentials__client_id=userid)
+        except IssuingAuthority.DoesNotExist:
+            raise exceptions.AuthenticationFailed({"error_code": ErrorCodes.INVALID_CREDENTIALS})
+        valid = check_password(password, issuing_auth.issuer_credentials.secret_key)
+        if valid:
+            return OauthClientUser(), None
