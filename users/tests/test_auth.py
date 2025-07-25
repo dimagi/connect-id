@@ -2,6 +2,7 @@ import pytest
 from rest_framework import exceptions
 from rest_framework.test import APIRequestFactory
 
+from users.const import ErrorCodes
 from users.models import SessionUser
 
 
@@ -18,13 +19,13 @@ class TestSessionTokenAuthentication:
         request = APIRequestFactory().get("/", HTTP_AUTHORIZATION=f"Bearer {expired_token.key}")
         with pytest.raises(exceptions.AuthenticationFailed) as excinfo:
             token_auth.authenticate(request)
-        assert "Token expired" in str(excinfo.value)
+        assert excinfo.value.detail == {"error_code": ErrorCodes.TOKEN_EXPIRED}
 
     def test_authentication_invalid_token(self, token_auth):
         request = APIRequestFactory().get("/", HTTP_AUTHORIZATION="Bearer invalid_token")
         with pytest.raises(exceptions.AuthenticationFailed) as excinfo:
             token_auth.authenticate(request)
-        assert "Invalid token" in str(excinfo.value)
+        assert excinfo.value.detail == {"error_code": ErrorCodes.INVALID_TOKEN}
 
     def test_authentication_missing_auth_header(self, token_auth):
         request = APIRequestFactory().get("/")
@@ -38,4 +39,4 @@ class TestSessionTokenAuthentication:
         request = APIRequestFactory().get("/", HTTP_AUTHORIZATION=f"Bearer {valid_token.key}")
         with pytest.raises(exceptions.AuthenticationFailed) as excinfo:
             token_auth.authenticate(request)
-        assert "User account is locked." in str(excinfo.value)
+        assert excinfo.value.detail == {"error_code": ErrorCodes.LOCKED_ACCOUNT}

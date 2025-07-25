@@ -53,4 +53,5 @@ urlpatterns = [
     path("check_name", views.check_user_similarity, name="check_user_similarity"),
     path("start_configuration", views.start_device_configuration, name="start_device_configuration"),
     path("complete_profile", views.complete_profile, name="complete_profile"),
+    path("report_integrity", views.report_integrity, name="report_integrity"),
 ]
