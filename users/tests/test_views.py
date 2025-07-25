@@ -373,16 +373,16 @@ class TestAddCredential:
 
     def test_no_auth(self, client):
         response = client.post(self.endpoint)
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     def test_invalid_auth(self, authed_client, user):
         payload = {"credentials": [{"foo": "bar"}]}
         response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
-        assert response.status_code == 403
-        assert response.json() == {"error_code": ErrorCodes.INVALID_AUTH}
+        assert response.status_code == 401
+        assert response.json() == {"error_code": ErrorCodes.INVALID_CREDENTIALS}
 
     @patch("users.models.send_sms")
-    def test_success(self, mock_add_credential, authed_client, issuing_auth, user):
+    def test_success(self, mock_add_credential, credential_issuing_client, credential_issuing_authority, user):
         app_id = uuid.uuid4().hex
         payload = {
             "credentials": [
@@ -397,19 +397,21 @@ class TestAddCredential:
                 }
             ]
         }
-        response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
         assert response.status_code == 200
         assert response.json() == {"success": [0], "failed": []}
         assert UserCredential.objects.all().count() == 1
         cred = Credential.objects.all().first()
         assert cred.title == "Test Credential"
-        assert cred.issuer == issuing_auth
+        assert cred.issuer == credential_issuing_authority
         assert cred.level == "ACTIVE_3_MONTHS"
         assert cred.type == "DELIVER"
         assert cred.app_id == app_id
 
     @patch("users.models.send_sms")
-    def test_bulk_add(self, mock_add_credential, authed_client, issuing_auth):
+    def test_bulk_add(self, mock_add_credential, credential_issuing_client):
         users = UserFactory.create_batch(2)
         app_id = uuid.uuid4().hex
         payload = {
@@ -435,13 +437,15 @@ class TestAddCredential:
                 },
             ]
         }
-        response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
         assert response.status_code == 200
         assert Credential.objects.all().count() == 2
         assert UserCredential.objects.all().count() == 2
 
     @patch("users.models.send_sms")
-    def test_partial_fail(self, mock_add_credential, authed_client, user, issuing_auth):
+    def test_partial_fail(self, mock_add_credential, credential_issuing_client, user):
         app_id = uuid.uuid4().hex
         payload = {
             "credentials": [
@@ -462,13 +466,15 @@ class TestAddCredential:
                 },
             ]
         }
-        response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
         assert response.status_code == 200
         assert response.json() == {"success": [0], "failed": [1, 2]}
         assert Credential.objects.all().count() == 1
         assert UserCredential.objects.all().count() == 1
 
-    def test_missing_data(self, authed_client, issuing_auth):
+    def test_missing_data(self, credential_issuing_client):
         payload = {
             "credentials": [
                 {
@@ -476,11 +482,13 @@ class TestAddCredential:
                 }
             ]
         }
-        response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
         assert response.status_code == 200
         assert response.json() == {"success": [], "failed": [0]}
 
-    def test_no_phone_numbers(self, authed_client, issuing_auth):
+    def test_no_phone_numbers(self, credential_issuing_client):
         payload = {
             "credentials": [
                 {
@@ -493,12 +501,14 @@ class TestAddCredential:
                 }
             ]
         }
-        response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
         assert response.status_code == 200
         assert Credential.objects.all().count() == 1
         assert UserCredential.objects.all().count() == 0
 
-    def test_invalid_phone_numbers(self, authed_client, issuing_auth):
+    def test_invalid_phone_numbers(self, credential_issuing_client):
         payload = {
             "credentials": [
                 {
@@ -512,13 +522,15 @@ class TestAddCredential:
                 }
             ]
         }
-        response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
         assert response.status_code == 200
         assert Credential.objects.all().count() == 1
         assert UserCredential.objects.all().count() == 0
 
     @patch("users.models.send_sms")
-    def test_duplicate_request(self, mock_add_credential, authed_client, user, issuing_auth):
+    def test_duplicate_request(self, mock_add_credential, credential_issuing_client, user):
         payload = {
             "credentials": [
                 {
@@ -533,26 +545,32 @@ class TestAddCredential:
             ]
         }
 
-        response1 = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        response1 = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
         assert response1.status_code == 200
         assert Credential.objects.all().count() == 1
         assert UserCredential.objects.all().count() == 1
 
         # Duplicate request should not create new credentials
-        response2 = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        response2 = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
         assert response2.status_code == 200
         assert Credential.objects.all().count() == 1
         assert UserCredential.objects.all().count() == 1
 
-    def test_malformed_json(self, authed_client):
-        response = authed_client.post(
+    def test_malformed_json(self, credential_issuing_client):
+        response = credential_issuing_client.post(
             self.endpoint, data='{"credentials": [{"invalid": json}]}', content_type="application/json"
         )
         assert response.status_code == 400
 
-    def test_missing_credentials_key(self, authed_client):
+    def test_missing_credentials_key(self, credential_issuing_client):
         payload = {"invalid_key": []}
-        response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
         assert response.status_code == 400
         assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
 
