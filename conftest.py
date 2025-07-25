@@ -1,4 +1,5 @@
 import base64
+import uuid
 from datetime import timedelta
 
 import pytest
@@ -7,7 +8,14 @@ from oauth2_provider.models import Application
 from rest_framework.test import APIClient
 
 from users.auth import SessionTokenAuthentication
-from users.factories import ConfigurationSessionFactory, FCMDeviceFactory, RecoveryStatusFactory, UserFactory
+from users.factories import (
+    ConfigurationSessionFactory,
+    FCMDeviceFactory,
+    IssuingAuthorityFactory,
+    IssuingCredentialsAuthFactory,
+    RecoveryStatusFactory,
+    UserFactory,
+)
 
 
 @pytest.fixture
@@ -45,7 +53,7 @@ def auth_device(user, api_client):
 @pytest.fixture
 def oauth_app(user):
     application = Application(
-        name="Test Application",
+        name="Test Application HQ",
         redirect_uris="http://localhost",
         user=user,
         client_type=Application.CLIENT_CONFIDENTIAL,
@@ -59,6 +67,24 @@ def oauth_app(user):
 @pytest.fixture
 def authed_client(api_client, oauth_app):
     auth = f"{oauth_app.client_id}:{oauth_app.raw_client_secret}".encode()
+    credentials = base64.b64encode(auth).decode("utf-8")
+    api_client.defaults["HTTP_AUTHORIZATION"] = "Basic " + credentials
+    return api_client
+
+
+@pytest.fixture
+def credential_issuing_authority():
+    issuing_credentials_auth = IssuingCredentialsAuthFactory()
+    credential_issuing_authority = IssuingAuthorityFactory(issuer_credentials=issuing_credentials_auth)
+    return credential_issuing_authority
+
+
+@pytest.fixture
+def credential_issuing_client(api_client, credential_issuing_authority):
+    secret_key = uuid.uuid4().hex
+    credential_issuing_authority.issuer_credentials.set_secret_key(secret_key)
+    credential_issuing_authority.issuer_credentials.save()
+    auth = f"{credential_issuing_authority.issuer_credentials.client_id}:{secret_key}".encode()
     credentials = base64.b64encode(auth).decode("utf-8")
     api_client.defaults["HTTP_AUTHORIZATION"] = "Basic " + credentials
     return api_client
