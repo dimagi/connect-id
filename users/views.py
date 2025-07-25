@@ -35,6 +35,7 @@ from .models import (
     ConfigurationSession,
     ConnectUser,
     Credential,
+    IssuingAuthority,
     PhoneDevice,
     RecoveryStatus,
     SessionPhoneDevice,
@@ -643,11 +644,11 @@ class AddCredential(APIView):
 
     def post(self, request, *args, **kwargs):
         phone_numbers = request.data["users"]
-        org_slug = request.data["organization"]
         credential_name = request.data["credential"]
-        slug = f"{credential_name.lower().replace(' ', '_')}_{org_slug}"
         credential, _ = Credential.objects.get_or_create(
-            name=credential_name, organization_slug=org_slug, defaults={"slug": slug}
+            title=credential_name,
+            issuing_authority=IssuingAuthority.IssuingAuthorityTypes.CONNECT,
+            type=Credential.CredentialTypes.DELIVER,
         )
         users = ConnectUser.objects.filter(phone_number__in=phone_numbers, is_active=True)
         for user in users:
@@ -737,20 +738,6 @@ def accept_credential(request, invite_id):
         "Thank you for accepting this credential. You will now have access to opportunities open "
         "to holders of this credential."
     )
-
-
-class FetchCredentials(ClientProtectedResourceMixin, View):
-    required_scopes = ["user_fetch"]
-
-    def get(self, request):
-        org_slug = request.GET.get("org_slug", None)
-        queryset = Credential.objects.all()
-        if org_slug:
-            queryset = queryset.filter(organization_slug=org_slug)
-
-        credentials = queryset.values("name", "slug")
-        results = {"credentials": list(credentials)}
-        return JsonResponse(results)
 
 
 @api_view(["POST"])

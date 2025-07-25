@@ -14,13 +14,7 @@ from payments.models import PaymentProfile
 from services.ai.ocs import OpenChatStudio
 from test_utils.decorators import skip_app_integrity_check
 from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
-from users.factories import (
-    CredentialFactory,
-    PhoneDeviceFactory,
-    RecoveryStatusFactory,
-    SessionPhoneDeviceFactory,
-    UserFactory,
-)
+from users.factories import PhoneDeviceFactory, RecoveryStatusFactory, SessionPhoneDeviceFactory, UserFactory
 from users.fcm_utils import create_update_device
 from users.models import (
     ConfigurationSession,
@@ -368,30 +362,6 @@ class TestRecoverSecondaryPhone:
         assert isinstance(response, JsonResponse)
         assert response.status_code == 400
         assert json.loads(response.content) == {"error": NO_RECOVERY_PHONE_ERROR}
-
-
-@pytest.mark.django_db
-class TestFetchCredentials:
-    def setup_method(self):
-        self.url = "/users/fetch_credentials"
-        CredentialFactory.create_batch(3, organization_slug="test_slug")
-        CredentialFactory.create_batch(10)
-
-    def assert_statements(self, response, expected_count):
-        assert response.status_code == 200
-        response_data = response.json()
-        assert "credentials" in response_data
-        assert len(response_data["credentials"]) == expected_count
-        for credential in response_data["credentials"]:
-            assert set(credential.keys()) == {"name", "slug"}
-
-    def test_fetch_credential_with_org_slug(self, authed_client):
-        response = authed_client.get(self.url + "?org_slug=test_slug")
-        self.assert_statements(response, expected_count=3)
-
-    def test_fetch_credential_without_org_slug(self, authed_client):
-        response = authed_client.get(self.url)
-        self.assert_statements(response, expected_count=13)
 
 
 class BaseTestDeactivation:

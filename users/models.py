@@ -177,10 +177,55 @@ class RecoveryStatus(models.Model):
     step = models.TextField(choices=RecoverySteps.choices)
 
 
+class IssuingCredentialsAuth(models.Model):
+    name = models.CharField(max_length=255)
+    client_id = models.CharField(max_length=100, unique=True, db_index=True)
+    secret_key = models.CharField(max_length=255)
+
+    def __str__(self):
+        return self.name
+
+    def set_secret_key(self, secret_key):
+        self.secret_key = make_password(secret_key)
+
+
+class IssuingAuthority(models.Model):
+    class IssuingAuthorityTypes(models.TextChoices):
+        CONNECT = "CONNECT", "CONNECT"
+        HQ = "HQ", "HQ"
+
+    class IssuingAuthorityEnvironments(models.TextChoices):
+        PRODUCTION = "production", "production"
+        STAGING = "staging", "staging"
+        INDIA = "india", "india"
+
+    issuing_authority = models.CharField(max_length=50, choices=IssuingAuthorityTypes.choices)
+    issuer_environment = models.CharField(max_length=50, choices=IssuingAuthorityEnvironments.choices)
+    issuer_credentials = models.ForeignKey(IssuingCredentialsAuth, on_delete=models.PROTECT)
+
+    class Meta:
+        verbose_name = "Issuing Authority"
+        verbose_name_plural = "Issuing Authorities"
+
+
 class Credential(models.Model):
-    name = models.CharField(max_length=300)
-    slug = models.CharField(max_length=100)
-    organization_slug = models.CharField(max_length=255)
+    class CredentialTypes(models.TextChoices):
+        APP_ACTIVITY = "APP_ACTIVITY", "APP_ACTIVITY"
+        LEARN = "LEARN", "LEARN"
+        DELIVER = "DELIVER", "DELIVER"
+
+    uuid = models.UUIDField(default=uuid4)
+    title = models.CharField(max_length=300)
+    issuer = models.ForeignKey(IssuingAuthority, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+    level = models.CharField(max_length=50)  # credential level/code (e.g. 3_MONTHS_ACTIVE)
+    type = models.CharField(max_length=50, choices=CredentialTypes.choices)
+    app_id = models.CharField(max_length=50, blank=True, null=True)
+    opportunity_id = models.CharField(max_length=50, blank=True, null=True)
+    slug = models.CharField(max_length=50)
+
+    class Meta:
+        unique_together = ("issuer", "level", "type", "slug")
 
 
 class UserCredential(models.Model):
@@ -200,7 +245,7 @@ class UserCredential(models.Model):
             location = reverse("accept_credential", args=(user_credential.invite_id,))
             url = f"https://{domain}{location}"
             message = (
-                f"You have been given credential '{credential.name}'."
+                f"You have been given credential '{credential.title}'."
                 f"Please click the following link to accept {url}"
             )
             sender = get_sms_sender(user.phone_number.country_code)
