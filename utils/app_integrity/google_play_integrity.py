@@ -5,10 +5,12 @@ from google.oauth2 import service_account
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
+from users.models import DeviceIntegritySample
 from utils.app_integrity.exceptions import (
     AccountDetailsError,
     AppIntegrityError,
     DeviceIntegrityError,
+    DuplicateSampleRequestError,
     IntegrityRequestError,
 )
 from utils.app_integrity.schemas import AccountDetails, AppIntegrity, DeviceIntegrity, RequestDetails, VerdictResponse
@@ -30,15 +32,27 @@ class AppIntegrityService:
         self.package_name = app_package or APP_PACKAGE_NAME
         self.is_demo_user = is_demo_user
 
+    @property
+    def evaluators(self):
+        """
+        Returns a list of functions that evaluate the verdict.
+        The order of evaluation matters, as some checks depend on previous ones.
+        """
+        return [
+            lambda x: self.check_request_details(x.requestDetails),
+            lambda x: self.check_app_integrity(x.appIntegrity),
+            lambda x: self.check_device_integrity(x.deviceIntegrity),
+            lambda x: self.check_account_details(x.accountDetails),
+        ]
+
     def verify_integrity(self):
         """
         Raises an exception if the app integrity is compromised, otherwise does nothing.
         """
-        verdict_response = self._obtain_verdict()
-        logger.info(f"Integrity token verdict for app({self.package_name}): {verdict_response}")
-        self._analyze_verdict(verdict_response)
+        raw_verdict = self.obtain_verdict()
+        self.analyze_verdict(self.parse_raw_verdict(raw_verdict))
 
-    def _obtain_verdict(self) -> VerdictResponse:
+    def obtain_verdict(self) -> dict:
         """
         This method uses the Google Play Integrity API to decode the integrity token
 
@@ -53,7 +67,11 @@ class AppIntegrityService:
         with build(**service_spec) as service:
             body = {"integrityToken": self.token}
             response = service.v1().decodeIntegrityToken(packageName=self.package_name, body=body).execute()
-        return VerdictResponse.from_dict(response["tokenPayloadExternal"])
+        return response["tokenPayloadExternal"]
+
+    def parse_raw_verdict(self, raw_verdict: dict) -> VerdictResponse:
+        logger.info(f"Integrity token verdict for app({self.package_name}): {raw_verdict}")
+        return VerdictResponse.from_dict(raw_verdict)
 
     @property
     def _google_service_account_credentials(self) -> Credentials:
@@ -64,27 +82,24 @@ class AppIntegrityService:
             scopes=["https://www.googleapis.com/auth/playintegrity"],
         )
 
-    def _analyze_verdict(self, verdict: VerdictResponse):
+    def analyze_verdict(self, verdict: VerdictResponse):
         """
         Checks the verdict and raises appropriate exceptions if
         the app integrity is compromised.
         """
-        self._check_request_details(verdict.requestDetails)
-        self._check_app_integrity(verdict.appIntegrity)
-        self._check_device_integrity(verdict.deviceIntegrity)
-        self._check_account_details(verdict.accountDetails)
+        [evaluator(verdict) for evaluator in self.evaluators]
 
-    def _check_request_details(self, request_details: RequestDetails):
+    def check_request_details(self, request_details: RequestDetails):
         if request_details.requestHash != self.request_hash:
             raise IntegrityRequestError("Request hash mismatch")
         if request_details.requestPackageName != self.package_name:
             raise IntegrityRequestError("Request package name mismatch")
 
-    def _check_app_integrity(self, app_integrity: AppIntegrity):
+    def check_app_integrity(self, app_integrity: AppIntegrity):
         if app_integrity.packageName != self.package_name:
             raise AppIntegrityError("App package name mismatch")
 
-    def _check_device_integrity(self, device_integrity: DeviceIntegrity):
+    def check_device_integrity(self, device_integrity: DeviceIntegrity):
         verdicts = device_integrity.deviceRecognitionVerdict
 
         if self.is_demo_user and "MEETS_VIRTUAL_INTEGRITY" in verdicts:
@@ -93,10 +108,56 @@ class AppIntegrityService:
         if "MEETS_DEVICE_INTEGRITY" not in verdicts:
             raise DeviceIntegrityError("Device integrity compromised")
 
-    def _check_account_details(self, account_details: AccountDetails):
+    def check_account_details(self, account_details: AccountDetails):
         if self.is_demo_user:
             return
 
         verdict = account_details.appLicensingVerdict
         if verdict == "UNLICENSED":
             raise AccountDetailsError("Account not licensed")
+
+    def log_sample_request(self, request_id: str, device_id: str):
+        """
+        Performs a sampling request to log the integrity check results.
+        """
+        if DeviceIntegritySample.objects.filter(request_id=request_id).exists():
+            raise DuplicateSampleRequestError("Duplicate sample request")
+
+        raw_verdict = self.obtain_verdict()
+        verdict = self.parse_raw_verdict(raw_verdict)
+
+        passed_request_check = True
+        passed_app_integrity_check = True
+        passed_device_integrity_check = True
+        passed_account_details_check = True
+
+        for evaluator in self.evaluators:
+            try:
+                evaluator(verdict)
+            except IntegrityRequestError:
+                passed_request_check = False
+            except AppIntegrityError:
+                passed_app_integrity_check = False
+            except DeviceIntegrityError:
+                passed_device_integrity_check = False
+            except AccountDetailsError:
+                passed_account_details_check = False
+
+        check_passed = (
+            passed_request_check
+            and passed_app_integrity_check
+            and passed_device_integrity_check
+            and passed_account_details_check
+        )
+
+        return DeviceIntegritySample.objects.create(
+            request_id=request_id,
+            device_id=device_id,
+            is_demo_user=self.is_demo_user,
+            google_verdict=raw_verdict,
+            passed=check_passed,
+            passed_request_check=passed_request_check,
+            passed_app_integrity_check=passed_app_integrity_check,
+            passed_device_integrity_check=passed_device_integrity_check,
+            passed_account_details_check=passed_account_details_check,
+        )

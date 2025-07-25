@@ -14,6 +14,7 @@ from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
 from django.views import View
 from firebase_admin import auth
+from googleapiclient.errors import HttpError
 from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
@@ -22,6 +23,8 @@ from rest_framework.views import APIView
 from services.ai.ocs import OpenChatStudio
 from utils import get_ip, get_sms_sender, send_sms
 from utils.app_integrity.decorators import require_app_integrity
+from utils.app_integrity.exceptions import DuplicateSampleRequestError
+from utils.app_integrity.google_play_integrity import AppIntegrityService
 from utils.rest_framework import ClientProtectedResourceAuth
 
 from .auth import SessionTokenAuthentication
@@ -865,3 +868,44 @@ def confirm_session_otp(request):
     request.auth.is_phone_validated = True
     request.auth.save()
     return HttpResponse()
+
+
+@api_view(["POST"])
+@permission_classes([])
+def report_integrity(request):
+    data = request.data
+    request_id = data.get("request_id")
+    device_id = data.get("cc_device_id")
+
+    if not (request_id and device_id):
+        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+
+    integrity_token = request.headers.get("CC-Integrity-Token")
+    request_hash = request.headers.get("CC-Request-Hash")
+
+    if not integrity_token or not request_hash:
+        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+
+    # This is for testing with demo users or test apps
+    app_package = data.get("application_id")
+    phone_number = data.get("phone_number", "")
+    is_demo_user = phone_number.startswith(TEST_NUMBER_PREFIX)
+
+    service = AppIntegrityService(
+        token=integrity_token,
+        request_hash=request_hash,
+        app_package=app_package,
+        is_demo_user=is_demo_user,
+    )
+
+    try:
+        sample = service.log_sample_request(
+            request_id=request_id,
+            device_id=device_id,
+        )
+    except DuplicateSampleRequestError:
+        return JsonResponse({"result_code": None}, status=200)
+    except HttpError:
+        return JsonResponse({"result_code": None}, status=500)
+
+    return JsonResponse({"result_code": "passed" if sample.passed else "failed"})
