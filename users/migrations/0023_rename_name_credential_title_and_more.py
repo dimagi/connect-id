@@ -29,7 +29,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         migrations.swappable_dependency(settings.OAUTH2_PROVIDER_APPLICATION_MODEL),
-        ("users", "0021_sessionphonedevice_and_more"),
+        ("users", "0022_add_deviceintegritysample"),
     ]
 
     operations = [
