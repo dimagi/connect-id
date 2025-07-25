@@ -684,6 +684,27 @@ class AddCredential(APIView):
         return JsonResponse({"success": success_creds, "failed": failed_creds})
 
 
+class ListCredentials(APIView):
+    def get(self, request, *args, **kwargs):
+        credentials = Credential.objects.filter(usercredential__user=request.user)
+        results = [
+            {
+                "uuid": c.uuid,
+                "app_id": c.app_id,
+                "opp_id": c.opportunity_id,
+                "date": c.created_at.isoformat(),
+                "title": c.title,
+                "issuer": c.issuer.issuing_authority,
+                "issuer_environment": c.issuer.issuer_environment,
+                "level": c.level,
+                "type": c.type,
+                "slug": c.slug,
+            }
+            for c in credentials
+        ]
+        return JsonResponse({"credentials": results})
+
+
 class ForwardHQInvite(APIView):
     """
     This view gets called by CommCareHQ to invite
