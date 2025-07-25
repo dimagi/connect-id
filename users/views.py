@@ -1,3 +1,4 @@
+import base64
 import logging
 from datetime import timedelta
 from secrets import token_hex
@@ -10,10 +11,12 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db.models import Count, F
 from django.db.models.functions import TruncMonth
+from django.db.utils import IntegrityError
 from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
 from django.views import View
 from firebase_admin import auth
+from googleapiclient.errors import HttpError
 from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
@@ -22,10 +25,11 @@ from rest_framework.views import APIView
 from services.ai.ocs import OpenChatStudio
 from utils import get_ip, get_sms_sender, send_sms
 from utils.app_integrity.decorators import require_app_integrity
-from utils.connect import resend_connect_invite
+from utils.app_integrity.exceptions import DuplicateSampleRequestError
+from utils.app_integrity.google_play_integrity import AppIntegrityService
 from utils.rest_framework import ClientProtectedResourceAuth
 
-from .auth import SessionTokenAuthentication
+from .auth import IssuingCredentialsAuthentication, SessionTokenAuthentication
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
 from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
@@ -83,14 +87,8 @@ def start_device_configuration(request):
             {"error_code": ErrorCodes.MISSING_DATA, "error_sub_code": "PHONE_NUMBER_REQUIRED"},
             status=400,
         )
-    locked_user_exists = ConnectUser.objects.filter(
-        phone_number=data["phone_number"], is_active=False, is_locked=True
-    ).exists()
-    if locked_user_exists:
-        return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=403)
 
     is_demo_user = data["phone_number"].startswith(TEST_NUMBER_PREFIX)
-
     token_session = ConfigurationSession(
         phone_number=data["phone_number"],
         is_phone_validated=is_demo_user,  # demo users are always considered validated
@@ -229,8 +227,6 @@ def complete_profile(request):
 
     user.save()
     db_key = UserKey.get_or_create_key_for_user(user)
-    if session.invited_user:
-        resend_connect_invite(user)
     return JsonResponse(
         {
             "username": user.username,
@@ -645,21 +641,47 @@ class FilterUsers(APIView):
         return JsonResponse(result)
 
 
+def get_issuing_auth(request):
+    auth_header = request.headers.get("authorization")
+    encoded_credentials = auth_header.split(" ")[1]
+    decoded_credentials = base64.b64decode(encoded_credentials).decode("utf-8")
+    client_id, client_secret = decoded_credentials.split(":")
+    issuing_auth = IssuingAuthority.objects.get(issuer_credentials__client_id=client_id)
+    return issuing_auth
+
+
 class AddCredential(APIView):
-    authentication_classes = [ClientProtectedResourceAuth]
+    authentication_classes = [IssuingCredentialsAuthentication]
 
     def post(self, request, *args, **kwargs):
-        phone_numbers = request.data["users"]
-        credential_name = request.data["credential"]
-        credential, _ = Credential.objects.get_or_create(
-            title=credential_name,
-            issuing_authority=IssuingAuthority.IssuingAuthorityTypes.CONNECT,
-            type=Credential.CredentialTypes.DELIVER,
-        )
-        users = ConnectUser.objects.filter(phone_number__in=phone_numbers, is_active=True)
-        for user in users:
-            UserCredential.add_credential(user, credential, request)
-        return HttpResponse()
+        creds = request.data.get("credentials")
+        if not creds:
+            return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+
+        issuing_auth = get_issuing_auth(request)
+        success_creds = []
+        failed_creds = []
+        for index, cred in enumerate(creds):
+            try:
+                credential, _ = Credential.objects.get_or_create(
+                    type=cred.get("type"),
+                    level=cred.get("level"),
+                    issuer=issuing_auth,
+                    slug=cred.get("app_id"),
+                )
+                credential.title = cred.get("title")
+                credential.app_id = cred.get("app_id")
+                credential.opportunity_id = cred.get("opportunity_id")
+                credential.save()
+            except (IntegrityError, AttributeError):
+                failed_creds.append(index)
+                continue
+            success_creds.append(index)
+            phone_numbers = cred.get("users", [])
+            users = ConnectUser.objects.filter(phone_number__in=phone_numbers, is_active=True)
+            for user in users:
+                UserCredential.add_credential(user, credential, request)
+        return JsonResponse({"success": success_creds, "failed": failed_creds})
 
 
 class ListCredentials(APIView):
@@ -882,3 +904,44 @@ def confirm_session_otp(request):
     request.auth.is_phone_validated = True
     request.auth.save()
     return HttpResponse()
+
+
+@api_view(["POST"])
+@permission_classes([])
+def report_integrity(request):
+    data = request.data
+    request_id = data.get("request_id")
+    device_id = data.get("cc_device_id")
+
+    if not (request_id and device_id):
+        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+
+    integrity_token = request.headers.get("CC-Integrity-Token")
+    request_hash = request.headers.get("CC-Request-Hash")
+
+    if not integrity_token or not request_hash:
+        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+
+    # This is for testing with demo users or test apps
+    app_package = data.get("application_id")
+    phone_number = data.get("phone_number", "")
+    is_demo_user = phone_number.startswith(TEST_NUMBER_PREFIX)
+
+    service = AppIntegrityService(
+        token=integrity_token,
+        request_hash=request_hash,
+        app_package=app_package,
+        is_demo_user=is_demo_user,
+    )
+
+    try:
+        sample = service.log_sample_request(
+            request_id=request_id,
+            device_id=device_id,
+        )
+    except DuplicateSampleRequestError:
+        return JsonResponse({"result_code": None}, status=200)
+    except HttpError:
+        return JsonResponse({"result_code": None}, status=500)
+
+    return JsonResponse({"result_code": "passed" if sample.passed else "failed"})

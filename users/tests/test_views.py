@@ -28,6 +28,7 @@ from users.models import (
     ConfigurationSession,
     ConnectUser,
     Credential,
+    DeviceIntegritySample,
     PhoneDevice,
     RecoveryStatus,
     SessionPhoneDevice,
@@ -35,6 +36,7 @@ from users.models import (
     UserKey,
 )
 from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
+from utils.app_integrity.google_play_integrity import AppIntegrityService
 
 
 @pytest.mark.django_db
@@ -370,6 +372,214 @@ class TestRecoverSecondaryPhone:
         assert isinstance(response, JsonResponse)
         assert response.status_code == 400
         assert json.loads(response.content) == {"error": NO_RECOVERY_PHONE_ERROR}
+
+
+@pytest.mark.django_db
+class TestAddCredential:
+    endpoint = reverse("add_credential")
+
+    def test_no_auth(self, client):
+        response = client.post(self.endpoint)
+        assert response.status_code == 401
+
+    def test_invalid_auth(self, authed_client, user):
+        payload = {"credentials": [{"foo": "bar"}]}
+        response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        assert response.status_code == 401
+        assert response.json() == {"error_code": ErrorCodes.INVALID_CREDENTIALS}
+
+    @patch("users.models.send_sms")
+    def test_success(self, mock_add_credential, credential_issuing_client, credential_issuing_authority, user):
+        app_id = uuid.uuid4().hex
+        payload = {
+            "credentials": [
+                {
+                    "users": [user.phone_number.raw_input, "1234567890"],
+                    "title": "Test Credential",
+                    "app_id": app_id,
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                    "issuer_environment": "production",
+                    "slug": app_id,
+                }
+            ]
+        }
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+        assert response.status_code == 200
+        assert response.json() == {"success": [0], "failed": []}
+        assert UserCredential.objects.all().count() == 1
+        cred = Credential.objects.all().first()
+        assert cred.title == "Test Credential"
+        assert cred.issuer == credential_issuing_authority
+        assert cred.level == "ACTIVE_3_MONTHS"
+        assert cred.type == "DELIVER"
+        assert cred.app_id == app_id
+
+    @patch("users.models.send_sms")
+    def test_bulk_add(self, mock_add_credential, credential_issuing_client):
+        users = UserFactory.create_batch(2)
+        app_id = uuid.uuid4().hex
+        payload = {
+            "credentials": [
+                {
+                    "users": [users[0].phone_number.raw_input],
+                    "title": "Test Credential",
+                    "app_id": app_id,
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                    "slug": app_id,
+                    "issuer_environment": "production",
+                },
+                {
+                    "users": [users[1].phone_number.raw_input],
+                    "title": "Test Credential 2",
+                    "app_id": app_id,
+                    "opp_id": uuid.uuid4().hex,
+                    "type": "DELIVER",
+                    "level": "ACTIVE_6_MONTHS",
+                    "slug": app_id,
+                    "issuer_environment": "staging",
+                },
+            ]
+        }
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+        assert response.status_code == 200
+        assert Credential.objects.all().count() == 2
+        assert UserCredential.objects.all().count() == 2
+
+    @patch("users.models.send_sms")
+    def test_partial_fail(self, mock_add_credential, credential_issuing_client, user):
+        app_id = uuid.uuid4().hex
+        payload = {
+            "credentials": [
+                {
+                    "users": [user.phone_number.raw_input],
+                    "title": "Test Credential",
+                    "app_id": app_id,
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                    "slug": app_id,
+                    "issuer_environment": "production",
+                },
+                {
+                    "title": "Test Credential 2",
+                },
+                {
+                    "level": "ACTIVE_6_MONTHS",
+                },
+            ]
+        }
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+        assert response.status_code == 200
+        assert response.json() == {"success": [0], "failed": [1, 2]}
+        assert Credential.objects.all().count() == 1
+        assert UserCredential.objects.all().count() == 1
+
+    def test_missing_data(self, credential_issuing_client):
+        payload = {
+            "credentials": [
+                {
+                    "level": "ACTIVE_3_MONTHS",
+                }
+            ]
+        }
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+        assert response.status_code == 200
+        assert response.json() == {"success": [], "failed": [0]}
+
+    def test_no_phone_numbers(self, credential_issuing_client):
+        payload = {
+            "credentials": [
+                {
+                    "title": "Test Credential",
+                    "app_id": uuid.uuid4().hex,
+                    "slug": uuid.uuid4().hex,
+                    "issuer_environment": "production",
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                }
+            ]
+        }
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+        assert response.status_code == 200
+        assert Credential.objects.all().count() == 1
+        assert UserCredential.objects.all().count() == 0
+
+    def test_invalid_phone_numbers(self, credential_issuing_client):
+        payload = {
+            "credentials": [
+                {
+                    "users": ["invalid-phone", "123", ""],
+                    "title": "Test Credential",
+                    "app_id": uuid.uuid4().hex,
+                    "slug": uuid.uuid4().hex,
+                    "issuer_environment": "production",
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                }
+            ]
+        }
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+        assert response.status_code == 200
+        assert Credential.objects.all().count() == 1
+        assert UserCredential.objects.all().count() == 0
+
+    @patch("users.models.send_sms")
+    def test_duplicate_request(self, mock_add_credential, credential_issuing_client, user):
+        payload = {
+            "credentials": [
+                {
+                    "users": [user.phone_number.raw_input],
+                    "title": "Test Credential",
+                    "app_id": uuid.uuid4().hex,
+                    "slug": uuid.uuid4().hex,
+                    "issuer_environment": "production",
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                }
+            ]
+        }
+
+        response1 = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+        assert response1.status_code == 200
+        assert Credential.objects.all().count() == 1
+        assert UserCredential.objects.all().count() == 1
+
+        # Duplicate request should not create new credentials
+        response2 = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+        assert response2.status_code == 200
+        assert Credential.objects.all().count() == 1
+        assert UserCredential.objects.all().count() == 1
+
+    def test_malformed_json(self, credential_issuing_client):
+        response = credential_issuing_client.post(
+            self.endpoint, data='{"credentials": [{"invalid": json}]}', content_type="application/json"
+        )
+        assert response.status_code == 400
+
+    def test_missing_credentials_key(self, credential_issuing_client):
+        payload = {"invalid_key": []}
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
 
 
 @pytest.mark.django_db
@@ -1320,3 +1530,244 @@ class TestConfirmSessionOtp:
 
         valid_token.refresh_from_db()
         assert not valid_token.is_phone_validated
+
+
+@pytest.mark.django_db
+class TestReportIntegrityView:
+    url = reverse("report_integrity")
+
+    def _load_verdict_from_file(self, response_filepath):
+        with open(response_filepath) as file_data:
+            verdict_response = json.load(file_data)
+        return verdict_response
+
+    def test_missing_device_id(self, client):
+        response = client.post(
+            self.url,
+            data={"application_id": "com.example.app"},
+            HTTP_CC_INTEGRITY_TOKEN="test_token",
+            HTTP_CC_REQUEST_HASH="test_hash",
+        )
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
+
+    def test_missing_request_id(self, client):
+        response = client.post(
+            self.url,
+            data={"cc_device_id": "test_device_id"},
+            HTTP_CC_INTEGRITY_TOKEN="test_token",
+            HTTP_CC_REQUEST_HASH="test_hash",
+        )
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
+
+    def test_missing_integrity_token(self, client):
+        response = client.post(
+            self.url,
+            data={"cc_device_id": "test_device_id", "request_id": "test_uuid"},
+            HTTP_CC_REQUEST_HASH="test_hash",
+        )
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
+
+    def test_missing_request_hash(self, client):
+        response = client.post(
+            self.url,
+            data={"cc_device_id": "test_device_id", "request_id": "test_uuid"},
+            HTTP_CC_INTEGRITY_TOKEN="test_token",
+        )
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
+
+    @patch.object(AppIntegrityService, "obtain_verdict")
+    def test_successful_integrity_check_new_device(self, obtain_verdict_mock, client):
+        raw_verdict = self._load_verdict_from_file("utils/tests/data/success_integrity_response.json")
+
+        obtain_verdict_mock.return_value = raw_verdict["tokenPayloadExternal"]
+
+        response = client.post(
+            self.url,
+            data={
+                "cc_device_id": "new_device_id",
+                "request_id": "test_uuid",
+            },
+            HTTP_CC_INTEGRITY_TOKEN="test_token",
+            HTTP_CC_REQUEST_HASH="aGVsbG8gd29scmQgdGhlcmU",
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"result_code": "passed"}
+
+        sample = DeviceIntegritySample.objects.get(request_id="test_uuid")
+        assert sample.google_verdict == raw_verdict["tokenPayloadExternal"]
+        assert sample.passed
+        assert sample.passed_request_check
+        assert sample.passed_app_integrity_check
+        assert sample.passed_device_integrity_check
+        assert sample.passed_account_details_check
+        assert not sample.is_demo_user
+
+    @patch.object(AppIntegrityService, "obtain_verdict")
+    @patch.object(AppIntegrityService, "analyze_verdict")
+    def test_successful_integrity_check_existing_device(self, analyze_verdict_mock, obtain_verdict_mock, client):
+        existing_sample = DeviceIntegritySample.objects.create(
+            request_id="test_uuid",
+            device_id="existing_device_id",
+            google_verdict={"old": "verdict"},
+            passed=False,
+            passed_request_check=False,
+            passed_app_integrity_check=True,
+            passed_device_integrity_check=True,
+            passed_account_details_check=True,
+            is_demo_user=False,
+        )
+
+        raw_verdict = self._load_verdict_from_file("utils/tests/data/success_integrity_response.json")
+        obtain_verdict_mock.return_value = raw_verdict["tokenPayloadExternal"]
+        analyze_verdict_mock.return_value = None
+
+        response = client.post(
+            self.url,
+            data={
+                "cc_device_id": "existing_device_id",
+                "request_id": "test_uuid",
+            },
+            HTTP_CC_INTEGRITY_TOKEN="test_token",
+            HTTP_CC_REQUEST_HASH="aGVsbG8gd29scmQgdGhlcmU",
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"result_code": None}
+
+        existing_sample.refresh_from_db()
+        assert existing_sample.google_verdict != raw_verdict["tokenPayloadExternal"]
+        assert not existing_sample.passed
+        assert not existing_sample.passed_request_check
+        assert existing_sample.passed_app_integrity_check
+        assert existing_sample.passed_device_integrity_check
+        assert existing_sample.passed_account_details_check
+        assert not existing_sample.is_demo_user
+
+    @patch.object(AppIntegrityService, "obtain_verdict")
+    @patch.object(AppIntegrityService, "analyze_verdict")
+    def test_demo_user_detection(self, analyze_verdict_mock, obtain_verdict_mock, client):
+        raw_verdict = self._load_verdict_from_file("utils/tests/data/success_integrity_response.json")
+        obtain_verdict_mock.return_value = raw_verdict["tokenPayloadExternal"]
+        analyze_verdict_mock.return_value = None
+
+        response = client.post(
+            self.url,
+            data={
+                "cc_device_id": "demo_device_id",
+                "request_id": "test_uuid",
+                "phone_number": TEST_NUMBER_PREFIX + "1234567",
+            },
+            HTTP_CC_INTEGRITY_TOKEN="test_token",
+            HTTP_CC_REQUEST_HASH="aGVsbG8gd29scmQgdGhlcmU",
+        )
+        assert response.status_code == 200
+
+        sample = DeviceIntegritySample.objects.get(request_id="test_uuid")
+        assert sample.is_demo_user is True
+
+    @patch.object(AppIntegrityService, "obtain_verdict")
+    def test_integrity_request_error(self, obtain_verdict_mock, client):
+        raw_verdict = self._load_verdict_from_file("utils/tests/data/request_hash_mismatch_response.json")
+        obtain_verdict_mock.return_value = raw_verdict["tokenPayloadExternal"]
+
+        response = client.post(
+            self.url,
+            data={
+                "cc_device_id": "failed_device_id",
+                "request_id": "test_uuid",
+            },
+            HTTP_CC_INTEGRITY_TOKEN="test_token",
+            HTTP_CC_REQUEST_HASH="aGVsbG8gd29scmQgdGhlcmU",
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"result_code": "failed"}
+
+        sample = DeviceIntegritySample.objects.get(request_id="test_uuid")
+        assert not sample.passed
+        assert not sample.passed_request_check
+        assert sample.passed_app_integrity_check
+        assert sample.passed_device_integrity_check
+        assert sample.passed_account_details_check
+
+    @patch.object(AppIntegrityService, "obtain_verdict")
+    def test_device_integrity_error(self, obtain_verdict_mock, client):
+        raw_verdict = self._load_verdict_from_file("utils/tests/data/device_integrity_unmet_response.json")
+        obtain_verdict_mock.return_value = raw_verdict["tokenPayloadExternal"]
+
+        response = client.post(
+            self.url,
+            data={
+                "cc_device_id": "device_failed_device_id",
+                "request_id": "test_uuid",
+            },
+            HTTP_CC_INTEGRITY_TOKEN="test_token",
+            HTTP_CC_REQUEST_HASH="aGVsbG8gd29scmQgdGhlcmU",
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"result_code": "failed"}
+
+        sample = DeviceIntegritySample.objects.get(request_id="test_uuid")
+        assert not sample.passed
+        assert sample.passed_request_check
+        assert sample.passed_app_integrity_check
+        assert not sample.passed_device_integrity_check
+        assert sample.passed_account_details_check
+
+    @patch.object(AppIntegrityService, "obtain_verdict")
+    def test_account_details_error(self, obtain_verdict_mock, client):
+        raw_verdict = self._load_verdict_from_file("utils/tests/data/unlicensed_response.json")
+        obtain_verdict_mock.return_value = raw_verdict["tokenPayloadExternal"]
+
+        response = client.post(
+            self.url,
+            data={
+                "cc_device_id": "account_failed_device_id",
+                "request_id": "test_uuid",
+            },
+            HTTP_CC_INTEGRITY_TOKEN="test_token",
+            HTTP_CC_REQUEST_HASH="aGVsbG8gd29scmQgdGhlcmU",
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"result_code": "failed"}
+
+        sample = DeviceIntegritySample.objects.get(request_id="test_uuid")
+        assert not sample.passed
+        assert sample.passed_request_check
+        assert sample.passed_app_integrity_check
+        assert sample.passed_device_integrity_check
+        assert not sample.passed_account_details_check
+
+    @patch.object(AppIntegrityService, "obtain_verdict")
+    def test_multiple_checks_fails(self, obtain_verdict_mock, client):
+        raw_verdict = self._load_verdict_from_file(
+            "utils/tests/data/unlicensed_and_device_error_integrity_response.json"
+        )
+        obtain_verdict_mock.return_value = raw_verdict["tokenPayloadExternal"]
+
+        response = client.post(
+            self.url,
+            data={
+                "cc_device_id": "account_failed_device_id",
+                "request_id": "test_uuid",
+            },
+            HTTP_CC_INTEGRITY_TOKEN="test_token",
+            HTTP_CC_REQUEST_HASH="aGVsbG8gd29scmQgdGhlcmU",
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"result_code": "failed"}
+
+        sample = DeviceIntegritySample.objects.get(request_id="test_uuid")
+        assert not sample.passed
+        assert sample.passed_request_check
+        assert sample.passed_app_integrity_check
+        assert not sample.passed_device_integrity_check
+        assert not sample.passed_account_details_check

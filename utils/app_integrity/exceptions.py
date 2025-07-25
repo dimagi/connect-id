@@ -12,3 +12,7 @@ class DeviceIntegrityError(Exception):
 
 class AccountDetailsError(Exception):
     code = "UNLICENSED_APP_ERROR"
+
+
+class DuplicateSampleRequestError(Exception):
+    pass

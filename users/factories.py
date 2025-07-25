@@ -10,6 +10,7 @@ from users.models import (
     ConnectUser,
     Credential,
     IssuingAuthority,
+    IssuingCredentialsAuth,
     PhoneDevice,
     RecoveryStatus,
     SessionPhoneDevice,
@@ -96,3 +97,11 @@ class IssuingAuthorityFactory(DjangoModelFactory):
 
     issuing_authority = IssuingAuthority.IssuingAuthorityTypes.HQ
     issuer_environment = IssuingAuthority.IssuingAuthorityEnvironments.PRODUCTION
+
+
+class IssuingCredentialsAuthFactory(DjangoModelFactory):
+    class Meta:
+        model = IssuingCredentialsAuth
+
+    name = factory.Faker("name")
+    client_id = factory.Faker("uuid4")
