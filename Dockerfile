@@ -12,7 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # install system dependencies
-RUN apt-get update && apt-get -y install libpq-dev
+RUN apt-get update && apt-get -y install libpq-dev gcc
 
 
 RUN addgroup --system django \
