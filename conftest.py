@@ -12,8 +12,8 @@ from users.factories import (
     ConfigurationSessionFactory,
     FCMDeviceFactory,
     IssuingAuthorityFactory,
-    IssuingCredentialsAuthFactory,
     RecoveryStatusFactory,
+    ServerKeysFactory,
     UserFactory,
 )
 
@@ -74,17 +74,17 @@ def authed_client(api_client, oauth_app):
 
 @pytest.fixture
 def credential_issuing_authority():
-    issuing_credentials_auth = IssuingCredentialsAuthFactory()
-    credential_issuing_authority = IssuingAuthorityFactory(issuer_credentials=issuing_credentials_auth)
+    issuing_credentials_auth = ServerKeysFactory()
+    credential_issuing_authority = IssuingAuthorityFactory(server_credentials=issuing_credentials_auth)
     return credential_issuing_authority
 
 
 @pytest.fixture
 def credential_issuing_client(api_client, credential_issuing_authority):
     secret_key = uuid.uuid4().hex
-    credential_issuing_authority.issuer_credentials.set_secret_key(secret_key)
-    credential_issuing_authority.issuer_credentials.save()
-    auth = f"{credential_issuing_authority.issuer_credentials.client_id}:{secret_key}".encode()
+    credential_issuing_authority.server_credentials.set_secret_key(secret_key)
+    credential_issuing_authority.server_credentials.save()
+    auth = f"{credential_issuing_authority.server_credentials.client_id}:{secret_key}".encode()
     credentials = base64.b64encode(auth).decode("utf-8")
     api_client.defaults["HTTP_AUTHORIZATION"] = "Basic " + credentials
     return api_client
