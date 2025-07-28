@@ -10,9 +10,9 @@ from users.models import (
     ConnectUser,
     Credential,
     IssuingAuthority,
-    IssuingCredentialsAuth,
     PhoneDevice,
     RecoveryStatus,
+    ServerKeys,
     SessionPhoneDevice,
     UserCredential,
 )
@@ -99,9 +99,9 @@ class IssuingAuthorityFactory(DjangoModelFactory):
     issuer_environment = IssuingAuthority.IssuingAuthorityEnvironments.PRODUCTION
 
 
-class IssuingCredentialsAuthFactory(DjangoModelFactory):
+class ServerKeysFactory(DjangoModelFactory):
     class Meta:
-        model = IssuingCredentialsAuth
+        model = ServerKeys
 
     name = factory.Faker("name")
     client_id = factory.Faker("uuid4")
