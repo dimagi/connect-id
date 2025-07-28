@@ -28,12 +28,12 @@ class SessionTokenAuthentication(TokenAuthentication):
         return (user, token)
 
 
-class IssuingCredentialsAuthentication(BasicAuthentication):
+class ServerKeysAuthentication(BasicAuthentication):
     def authenticate_credentials(self, userid, password, request=None):
         try:
-            issuing_auth = IssuingAuthority.objects.get(issuer_credentials__client_id=userid)
+            issuing_auth = IssuingAuthority.objects.get(server_credentials__client_id=userid)
         except IssuingAuthority.DoesNotExist:
             raise exceptions.AuthenticationFailed({"error_code": ErrorCodes.INVALID_CREDENTIALS})
-        valid = check_password(password, issuing_auth.issuer_credentials.secret_key)
+        valid = check_password(password, issuing_auth.server_credentials.secret_key)
         if valid:
             return OauthClientUser(), None
