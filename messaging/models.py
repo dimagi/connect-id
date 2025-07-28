@@ -4,7 +4,7 @@ from django.db import models
 from django.utils import timezone
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 
-from users.models import ConnectUser
+from users.models import ConnectUser, ServerKeys
 
 
 class MessageServer(models.Model):
@@ -18,6 +18,7 @@ class MessageServer(models.Model):
         max_length=255,
         default=generate_client_secret,
     )
+    server_credentials = models.ForeignKey(ServerKeys, on_delete=models.PROTECT, null=True)
 
 
 class Channel(models.Model):
