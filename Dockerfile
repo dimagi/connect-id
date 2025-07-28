@@ -1,5 +1,5 @@
 # pull official base image
-FROM python:3.11.4-slim-buster
+FROM python:3.11.4-slim-bookworm
 
 
 # set environment variables
@@ -12,7 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # install system dependencies
-RUN apt-get update && apt-get -y install libpq-dev gcc netcat curl
+RUN apt-get update && apt-get -y install libpq-dev gcc curl
 
 
 RUN addgroup --system django \
