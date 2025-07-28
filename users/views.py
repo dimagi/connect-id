@@ -44,6 +44,7 @@ from .models import (
     UserCredential,
     UserKey,
 )
+from .serializers import CredentialSerializer
 from .services import upload_photo_to_s3
 
 logger = logging.getLogger(__name__)
@@ -687,22 +688,8 @@ class AddCredential(APIView):
 class ListCredentials(APIView):
     def get(self, request, *args, **kwargs):
         credentials = Credential.objects.filter(usercredential__user=request.user)
-        results = [
-            {
-                "uuid": c.uuid,
-                "app_id": c.app_id,
-                "opp_id": c.opportunity_id,
-                "date": c.created_at.isoformat(),
-                "title": c.title,
-                "issuer": c.issuer.issuing_authority,
-                "issuer_environment": c.issuer.issuer_environment,
-                "level": c.level,
-                "type": c.type,
-                "slug": c.slug,
-            }
-            for c in credentials
-        ]
-        return JsonResponse({"credentials": results})
+        serializer = CredentialSerializer(credentials, many=True)
+        return JsonResponse({"credentials": serializer.data})
 
 
 class ForwardHQInvite(APIView):

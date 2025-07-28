@@ -598,6 +598,26 @@ class TestListCredentials:
 
         response = auth_device.get(self.url)
         assert response.status_code == 200
+        print("RECEIVED", response.json())
+        print(
+            "EXPECTED",
+            {
+                "credentials": [
+                    {
+                        "uuid": str(cred.uuid),
+                        "app_id": cred.app_id,
+                        "opp_id": None,
+                        "date": cred.created_at.isoformat(),
+                        "title": "Test Credential",
+                        "issuer": "HQ",
+                        "issuer_environment": "production",
+                        "level": "ACTIVE_3_MONTH",
+                        "type": "DELIVER",
+                        "slug": cred.slug,
+                    }
+                ]
+            },
+        )
         assert response.json() == {
             "credentials": [
                 {
