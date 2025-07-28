@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import gettext_lazy as _
 
-from .models import ConfigurationSession, ConnectUser, IssuingAuthority, IssuingCredentialsAuth
+from .models import ConfigurationSession, ConnectUser, IssuingAuthority, ServerKeys
 
 
 @admin.register(ConnectUser)
@@ -37,11 +37,11 @@ class ConfigurationSessionAdmin(admin.ModelAdmin):
 
 @admin.register(IssuingAuthority)
 class IssuingAuthorityAdmin(admin.ModelAdmin):
-    list_display = ("issuing_authority", "issuer_environment", "issuer_credentials")
+    list_display = ("issuing_authority", "issuer_environment", "server_credentials")
 
 
-@admin.register(IssuingCredentialsAuth)
-class IssuingCredentialsAuthAdmin(admin.ModelAdmin):
+@admin.register(ServerKeys)
+class ServerKeysAdmin(admin.ModelAdmin):
     list_display = ("name", "client_id", "secret_key")
     search_fields = ("name", "client_id")
 

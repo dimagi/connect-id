@@ -177,7 +177,7 @@ class RecoveryStatus(models.Model):
     step = models.TextField(choices=RecoverySteps.choices)
 
 
-class IssuingCredentialsAuth(models.Model):
+class ServerKeys(models.Model):
     name = models.CharField(max_length=255)
     client_id = models.CharField(max_length=100, unique=True, db_index=True)
     secret_key = models.CharField(max_length=255)
@@ -201,7 +201,7 @@ class IssuingAuthority(models.Model):
 
     issuing_authority = models.CharField(max_length=50, choices=IssuingAuthorityTypes.choices)
     issuer_environment = models.CharField(max_length=50, choices=IssuingAuthorityEnvironments.choices)
-    issuer_credentials = models.ForeignKey(IssuingCredentialsAuth, on_delete=models.PROTECT)
+    server_credentials = models.ForeignKey(ServerKeys, on_delete=models.PROTECT)
 
     class Meta:
         verbose_name = "Issuing Authority"

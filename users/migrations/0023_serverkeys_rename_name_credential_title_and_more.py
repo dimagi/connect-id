@@ -33,7 +33,7 @@ class Migration(migrations.Migration):
     operations = [
         migrations.RunPython(delete_existing_credentials, reverse_delete_credentials),
         migrations.CreateModel(
-            name="IssuingCredentialsAuth",
+            name="ServerKeys",
             fields=[
                 ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
                 ("name", models.CharField(max_length=255)),
@@ -104,8 +104,8 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 (
-                    "issuer_credentials",
-                    models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to="users.issuingcredentialsauth"),
+                    "server_credentials",
+                    models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to="users.serverkeys"),
                 ),
             ],
             options={
