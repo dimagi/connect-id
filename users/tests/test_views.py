@@ -1245,6 +1245,7 @@ class TestConfirmSessionOtp:
         SessionPhoneDeviceFactory(
             session=valid_token,
             phone_number=valid_token.phone_number,
+            has_manual_otp=True,
         )
 
         response = authed_client_token.post(self.url, data={"otp": "123456"})
@@ -1254,6 +1255,7 @@ class TestConfirmSessionOtp:
 
         valid_token.refresh_from_db()
         assert valid_token.is_phone_validated
+        assert SessionPhoneDevice.objects.get(session=valid_token).has_manual_otp is False
 
     @patch("users.models.SessionPhoneDevice.verify_token")
     def test_missing_otp(self, mock_verify_token, authed_client_token, valid_token):
