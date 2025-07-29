@@ -29,7 +29,7 @@ from utils.app_integrity.exceptions import DuplicateSampleRequestError
 from utils.app_integrity.google_play_integrity import AppIntegrityService
 from utils.rest_framework import ClientProtectedResourceAuth
 
-from .auth import ServerKeysAuthentication, SessionTokenAuthentication
+from .auth import IssuingCredentialsAuth, SessionTokenAuthentication
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
 from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
@@ -651,7 +651,7 @@ def get_issuing_auth(request):
 
 
 class AddCredential(APIView):
-    authentication_classes = [ServerKeysAuthentication]
+    authentication_classes = [IssuingCredentialsAuth]
 
     def post(self, request, *args, **kwargs):
         creds = request.data.get("credentials")

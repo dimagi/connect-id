@@ -94,4 +94,3 @@ class ServerKeysFactory(DjangoModelFactory):
         model = ServerKeys
 
     name = factory.Faker("name")
-    client_id = factory.Faker("uuid4")

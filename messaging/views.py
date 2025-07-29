@@ -34,7 +34,7 @@ def get_current_message_server(request):
     encoded_credentials = auth_header.split(" ")[1]
     decoded_credentials = base64.b64decode(encoded_credentials).decode("utf-8")
     client_id, client_secret = decoded_credentials.split(":")
-    server = get_object_or_404(MessageServer, server_id=client_id)
+    server = get_object_or_404(MessageServer, server_credentials__client_id=client_id)
     return server
 
 
@@ -372,7 +372,9 @@ class UpdateConsentView(APIView):
             "consent": channel.user_consent,
         }
 
-        response = make_request(url=channel.server.consent_url, json_data=json_data, secret=channel.server.secret_key)
+        response = make_request(
+            url=channel.server.consent_url, json_data=json_data, secret=channel.server.server_credentials.secret_key
+        )
 
         if response.status_code != status.HTTP_200_OK:
             return JsonResponse(
