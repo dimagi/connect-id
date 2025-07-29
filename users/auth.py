@@ -1,4 +1,3 @@
-from django.contrib.auth.hashers import check_password
 from rest_framework import exceptions
 from rest_framework.authentication import BasicAuthentication, TokenAuthentication
 
@@ -34,6 +33,6 @@ class ServerKeysAuthentication(BasicAuthentication):
             issuing_auth = IssuingAuthority.objects.get(server_credentials__client_id=userid)
         except IssuingAuthority.DoesNotExist:
             raise exceptions.AuthenticationFailed({"error_code": ErrorCodes.INVALID_CREDENTIALS})
-        valid = check_password(password, issuing_auth.server_credentials.secret_key)
+        valid = password == issuing_auth.server_credentials.secret_key
         if valid:
             return OauthClientUser(), None

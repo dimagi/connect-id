@@ -14,6 +14,7 @@ from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
 from django_otp.util import random_hex
 from geopy.geocoders import Nominatim
+from oauth2_provider.generators import generate_client_id, generate_client_secret
 from phonenumber_field.modelfields import PhoneNumberField
 
 from users.exceptions import RecoveryPinNotSetError
@@ -179,14 +180,11 @@ class RecoveryStatus(models.Model):
 
 class ServerKeys(models.Model):
     name = models.CharField(max_length=255)
-    client_id = models.CharField(max_length=100, unique=True, db_index=True)
-    secret_key = models.CharField(max_length=255)
+    client_id = models.CharField(max_length=100, unique=True, db_index=True, default=generate_client_id)
+    secret_key = models.CharField(max_length=255, default=generate_client_secret)
 
     def __str__(self):
         return self.name
-
-    def set_secret_key(self, secret_key):
-        self.secret_key = make_password(secret_key)
 
 
 class IssuingAuthority(models.Model):
