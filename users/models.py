@@ -136,10 +136,14 @@ class BasePhoneDevice(SideChannelDevice):
     class Meta:
         abstract = True
 
+    @property
+    def is_otp_close_to_expiry(self):
+        return self.valid_until - now() <= timedelta(minutes=5)
+
     def generate_challenge(self):
         # generate and send new token if the old token is valid for less than 5 minutes
         # set he otp_last_sent to None to send the new OTP immediately
-        if self.valid_until - now() <= timedelta(minutes=5):
+        if self.is_otp_close_to_expiry:
             self.otp_last_sent = None
             self.generate_token(valid_secs=1800)
             self.attempts = 0
