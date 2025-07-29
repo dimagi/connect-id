@@ -27,7 +27,7 @@ class SessionTokenAuthentication(TokenAuthentication):
         return (user, token)
 
 
-class ServerKeysAuthentication(BasicAuthentication):
+class IssuingCredentialsAuth(BasicAuthentication):
     def authenticate_credentials(self, userid, password, request=None):
         try:
             issuing_auth = IssuingAuthority.objects.get(server_credentials__client_id=userid)
