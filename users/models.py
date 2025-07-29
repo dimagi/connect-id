@@ -257,6 +257,13 @@ class SessionPhoneDevice(BasePhoneDevice):
     class Meta:
         constraints = [models.UniqueConstraint(fields=["phone_number", "session"], name="phone_number_session")]
 
+    def generate_challenge(self):
+        if self.is_otp_close_to_expiry:
+            self.has_manual_otp = False
+            self.save()
+        if not self.has_manual_otp:
+            return super().generate_challenge()
+
 
 class DeviceIntegritySample(models.Model):
     request_id = models.CharField(max_length=255, unique=True)
