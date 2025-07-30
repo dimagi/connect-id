@@ -4,6 +4,33 @@ from django.db import migrations, models
 import django.db.models.deletion
 
 
+def create_server_credentials_for_message_servers(apps, schema_editor):
+    """
+    Create a ServerKeys instance for every MessageServer instance and link them
+    through the server_credentials field.
+    """
+    MessageServer = apps.get_model("messaging", "MessageServer")
+    ServerKeys = apps.get_model("users", "ServerKeys")
+    
+    for message_server in MessageServer.objects.all():
+        server_keys, _ = ServerKeys.objects.get_or_create(
+            name=message_server.name,
+            client_id=message_server.server_id,
+            secret_key=message_server.secret_key
+        )
+
+        message_server.server_credentials = server_keys
+        message_server.save()
+
+
+def reverse_create_server_credentials(apps, schema_editor):
+    MessageServer = apps.get_model("messaging", "MessageServer")
+    for message_server in MessageServer.objects.all():
+        if message_server.server_credentials:
+            message_server.server_credentials = None
+            message_server.save()
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -16,5 +43,9 @@ class Migration(migrations.Migration):
             model_name="messageserver",
             name="server_credentials",
             field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to="users.serverkeys"),
+        ),
+        migrations.RunPython(
+            create_server_credentials_for_message_servers,
+            reverse_create_server_credentials,
         ),
     ]
