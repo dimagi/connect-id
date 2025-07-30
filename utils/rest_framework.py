@@ -2,7 +2,7 @@ from django.contrib.auth.models import AnonymousUser
 from oauth2_provider.views.mixins import OAuthLibMixin
 from rest_framework.authentication import BaseAuthentication, BasicAuthentication
 
-from users.models import ServerKeys
+from messaging.models import MessageServer
 
 
 class ClientProtectedResourceAuth(OAuthLibMixin, BaseAuthentication):
@@ -30,10 +30,10 @@ class MessagingServerAuth(BasicAuthentication):
 
     def authenticate_credentials(self, userid, password, request=None):
         try:
-            server_keys = ServerKeys.objects.get(client_id=userid)
-        except ServerKeys.DoesNotExist:
+            message_server = MessageServer.objects.get(server_credentials__client_id=userid)
+        except MessageServer.DoesNotExist:
             return None
-        valid = password == server_keys.secret_key
+        valid = password == message_server.server_credentials.secret_key
         if valid:
             return MessagingServerUser(), None
 
