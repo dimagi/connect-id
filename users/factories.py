@@ -9,6 +9,7 @@ from users.models import (
     ConfigurationSession,
     ConnectUser,
     Credential,
+    IssuingAuthority,
     PhoneDevice,
     RecoveryStatus,
     ServerKeys,
@@ -78,6 +79,14 @@ class SessionPhoneDeviceFactory(factory.django.DjangoModelFactory):
     phone_number = factory.Faker("phone_number")
     session = factory.SubFactory(ConfigurationSessionFactory)
     token = factory.Faker("bothify", text="????##")
+
+
+class IssuingAuthorityFactory(DjangoModelFactory):
+    class Meta:
+        model = IssuingAuthority
+
+    issuing_authority = IssuingAuthority.IssuingAuthorityTypes.HQ
+    issuer_environment = IssuingAuthority.IssuingAuthorityEnvironments.PRODUCTION
 
 
 class ServerKeysFactory(DjangoModelFactory):
