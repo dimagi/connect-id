@@ -15,7 +15,14 @@ from payments.models import PaymentProfile
 from services.ai.ocs import OpenChatStudio
 from test_utils.decorators import skip_app_integrity_check
 from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
-from users.factories import PhoneDeviceFactory, RecoveryStatusFactory, SessionPhoneDeviceFactory, UserFactory
+from users.factories import (
+    CredentialFactory,
+    PhoneDeviceFactory,
+    RecoveryStatusFactory,
+    SessionPhoneDeviceFactory,
+    UserCredentialFactory,
+    UserFactory,
+)
 from users.fcm_utils import create_update_device
 from users.models import (
     ConfigurationSession,
@@ -573,6 +580,92 @@ class TestAddCredential:
         )
         assert response.status_code == 400
         assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
+
+
+@pytest.mark.django_db
+class TestListCredentials:
+    url = reverse("list_credentials")
+
+    def test_success(self, auth_device, oauth_app, user, credential_issuing_authority):
+        cred = CredentialFactory.create(
+            title="Test Credential",
+            type=Credential.CredentialTypes.DELIVER,
+            level="ACTIVE_3_MONTH",
+            issuer=credential_issuing_authority,
+            app_id=uuid.uuid4().hex,
+        )
+        UserCredentialFactory.create(credential=cred, user=user)
+
+        response = auth_device.get(self.url)
+        assert response.status_code == 200
+        print("RECEIVED", response.json())
+        print(
+            "EXPECTED",
+            {
+                "credentials": [
+                    {
+                        "uuid": str(cred.uuid),
+                        "app_id": cred.app_id,
+                        "opp_id": None,
+                        "date": cred.created_at.isoformat(),
+                        "title": "Test Credential",
+                        "issuer": "HQ",
+                        "issuer_environment": "production",
+                        "level": "ACTIVE_3_MONTH",
+                        "type": "DELIVER",
+                        "slug": cred.slug,
+                    }
+                ]
+            },
+        )
+        assert response.json() == {
+            "credentials": [
+                {
+                    "uuid": str(cred.uuid),
+                    "app_id": cred.app_id,
+                    "opp_id": None,
+                    "date": cred.created_at.isoformat(),
+                    "title": "Test Credential",
+                    "issuer": "HQ",
+                    "issuer_environment": "production",
+                    "level": "ACTIVE_3_MONTH",
+                    "type": "DELIVER",
+                    "slug": cred.slug,
+                }
+            ]
+        }
+
+    def test_no_credentials(self, auth_device):
+        response = auth_device.get(self.url)
+        assert response.status_code == 200
+        assert response.json() == {"credentials": []}
+
+    def test_multiple_credentials(self, auth_device, user, credential_issuing_authority):
+        cred_1 = CredentialFactory.create(title="Credential 1", issuer=credential_issuing_authority)
+        cred_2 = CredentialFactory.create(title="Credential 2", issuer=credential_issuing_authority)
+        cred_3 = CredentialFactory.create(title="Credential 3", issuer=credential_issuing_authority)
+        UserCredentialFactory.create(credential=cred_3)
+        UserCredential.objects.create(user=user, credential=cred_1)
+        UserCredential.objects.create(user=user, credential=cred_2)
+
+        response = auth_device.get(self.url)
+        data = response.json()
+        assert response.status_code == 200
+        assert len(data["credentials"]) == 2
+
+        titles = [cred["title"] for cred in data["credentials"]]
+        assert "Credential 1" in titles
+        assert "Credential 2" in titles
+
+    def test_no_auth(self, api_client):
+        response = api_client.get(self.url)
+        assert response.status_code == 401
+
+    def test_inactive_connect_user(self, auth_device, user):
+        user.is_active = False
+        user.save()
+        response = auth_device.get(self.url)
+        assert response.status_code == 401
 
 
 class BaseTestDeactivation:

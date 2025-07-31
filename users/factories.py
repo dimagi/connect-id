@@ -14,6 +14,7 @@ from users.models import (
     RecoveryStatus,
     ServerKeys,
     SessionPhoneDevice,
+    UserCredential,
 )
 
 
@@ -44,6 +45,15 @@ class CredentialFactory(DjangoModelFactory):
 
     title = factory.Faker("name")
     type = Credential.CredentialTypes.DELIVER
+    slug = factory.Faker("uuid4")
+
+
+class UserCredentialFactory(DjangoModelFactory):
+    class Meta:
+        model = UserCredential
+
+    user = factory.SubFactory(UserFactory)
+    credential = factory.SubFactory(CredentialFactory)
 
 
 class PhoneDeviceFactory(DjangoModelFactory):
