@@ -4,25 +4,6 @@ from django.conf import settings
 from django.db import migrations, models
 import django.db.models.deletion
 import uuid
-import oauth2_provider.generators
-
-
-def delete_existing_credentials(apps, schema_editor):
-    """
-    Delete all existing credential records before schema changes.
-    This is being done so that defaults for required fields to not
-    have to be set, avoiding misleading data.
-    """
-    Credential = apps.get_model("users", "Credential")
-    Credential.objects.all().delete()
-
-def reverse_delete_credentials(apps, schema_editor):
-    """
-    The deleting of existing records operation cannot be reversed,
-    however this function is here to prevent an error from raising
-    when attempting to reverse this migration.
-    """
-    pass
 
 
 class Migration(migrations.Migration):
@@ -32,18 +13,6 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(delete_existing_credentials, reverse_delete_credentials),
-        migrations.CreateModel(
-            name="ServerKeys",
-            fields=[
-                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
-                ("name", models.CharField(max_length=255)),
-                ("client_id", models.CharField(
-                    db_index=True, max_length=100, unique=True, default=oauth2_provider.generators.generate_client_id
-                )),
-                ("secret_key", models.CharField(max_length=255, default=oauth2_provider.generators.generate_client_secret)),
-            ],
-        ),
         migrations.RenameField(
             model_name="credential",
             old_name="name",
@@ -93,28 +62,6 @@ class Migration(migrations.Migration):
             field=models.ForeignKey(
                 blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL
             ),
-        ),
-        migrations.CreateModel(
-            name="IssuingAuthority",
-            fields=[
-                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
-                ("issuing_authority", models.CharField(choices=[("CONNECT", "CONNECT"), ("HQ", "HQ")], max_length=50)),
-                (
-                    "issuer_environment",
-                    models.CharField(
-                        choices=[("production", "production"), ("staging", "staging"), ("india", "india")],
-                        max_length=50,
-                    ),
-                ),
-                (
-                    "server_credentials",
-                    models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to="users.serverkeys"),
-                ),
-            ],
-            options={
-                "verbose_name": "Issuing Authority",
-                "verbose_name_plural": "Issuing Authorities",
-            },
         ),
         migrations.AddField(
             model_name="credential",
