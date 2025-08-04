@@ -34,7 +34,7 @@ def reverse_create_server_credentials(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("users", "0023_serverkeys_rename_name_credential_title_and_more"),
+        ("users", "0023_credential_table_cleanup_and_more"),
         ("messaging", "0005_channel_channel_name_alter_message_direction"),
     ]
 
