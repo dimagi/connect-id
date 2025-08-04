@@ -9,7 +9,7 @@ import uuid
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("users", "0022_add_deviceintegritysample"),
+        ("users", "0023_credential_table_cleanup_and_more"),
     ]
 
     operations = [
