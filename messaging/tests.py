@@ -14,14 +14,15 @@ from rest_framework import status
 from messaging.factories import ChannelFactory, MessageFactory, ServerFactory
 from messaging.models import Channel, Message, MessageDirection, MessageStatus
 from messaging.serializers import MessageSerializer, NotificationData
-from users.factories import FCMDeviceFactory
+from users.factories import FCMDeviceFactory, ServerKeysFactory
 
 APPLICATION_JSON = "application/json"
 
 
 @pytest.fixture
 def server():
-    return ServerFactory()
+    server_keys = ServerKeysFactory()
+    return ServerFactory(server_credentials=server_keys)
 
 
 def test_send_message(authed_client, fcm_device):
@@ -159,7 +160,7 @@ class TestCreateChannelView:
     @staticmethod
     def post_channel_request(client, data, expected_status, server, expected_error_field=None):
         url = reverse("messaging:create_channel")
-        auth_header = make_basic_auth_header(server.server_id, server.secret_key)
+        auth_header = make_basic_auth_header(server.server_credentials.client_id, server.server_credentials.secret_key)
         response = client.post(url, data=json.dumps(data), content_type=APPLICATION_JSON, **auth_header)
 
         print(response)
@@ -200,11 +201,10 @@ class TestCreateChannelView:
 
 
 @pytest.mark.django_db
-def test_send_fcm_notification_view(client, channel):
+def test_send_fcm_notification_view(client, channel, server):
     url = reverse("messaging:send_fcm")
     data = rest_message(channel.channel_id)
-    server = ServerFactory()
-    headers = make_basic_auth_header(server.server_id, server.secret_key)
+    headers = make_basic_auth_header(server.server_credentials.client_id, server.server_credentials.secret_key)
 
     with mock.patch("messaging.views.send_bulk_notification") as mock_send_bulk_message:
         response = client.post(url, data=data, content_type=APPLICATION_JSON, **headers)
@@ -384,7 +384,7 @@ class TestUpdateConsentView:
                     "channel_id": str(channel.channel_id),
                     "consent": consent,
                 },
-                secret=server.secret_key,
+                secret=server.server_credentials.secret_key,
             )
 
     def test_restrict_consent(self, auth_device, channel, server):

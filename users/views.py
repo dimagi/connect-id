@@ -1,3 +1,4 @@
+import base64
 import logging
 from datetime import timedelta
 from secrets import token_hex
@@ -10,6 +11,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db.models import Count, F
 from django.db.models.functions import TruncMonth
+from django.db.utils import IntegrityError
 from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
 from django.views import View
@@ -27,7 +29,7 @@ from utils.app_integrity.exceptions import DuplicateSampleRequestError
 from utils.app_integrity.google_play_integrity import AppIntegrityService
 from utils.rest_framework import ClientProtectedResourceAuth
 
-from .auth import SessionTokenAuthentication
+from .auth import IssuingCredentialsAuth, SessionTokenAuthentication
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
 from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
@@ -35,12 +37,14 @@ from .models import (
     ConfigurationSession,
     ConnectUser,
     Credential,
+    IssuingAuthority,
     PhoneDevice,
     RecoveryStatus,
     SessionPhoneDevice,
     UserCredential,
     UserKey,
 )
+from .serializers import CredentialSerializer
 from .services import upload_photo_to_s3
 
 logger = logging.getLogger(__name__)
@@ -638,21 +642,54 @@ class FilterUsers(APIView):
         return JsonResponse(result)
 
 
+def get_issuing_auth(request):
+    auth_header = request.headers.get("authorization")
+    encoded_credentials = auth_header.split(" ")[1]
+    decoded_credentials = base64.b64decode(encoded_credentials).decode("utf-8")
+    client_id, client_secret = decoded_credentials.split(":")
+    issuing_auth = IssuingAuthority.objects.get(server_credentials__client_id=client_id)
+    return issuing_auth
+
+
 class AddCredential(APIView):
-    authentication_classes = [ClientProtectedResourceAuth]
+    authentication_classes = [IssuingCredentialsAuth]
 
     def post(self, request, *args, **kwargs):
-        phone_numbers = request.data["users"]
-        org_slug = request.data["organization"]
-        credential_name = request.data["credential"]
-        slug = f"{credential_name.lower().replace(' ', '_')}_{org_slug}"
-        credential, _ = Credential.objects.get_or_create(
-            name=credential_name, organization_slug=org_slug, defaults={"slug": slug}
-        )
-        users = ConnectUser.objects.filter(phone_number__in=phone_numbers, is_active=True)
-        for user in users:
-            UserCredential.add_credential(user, credential, request)
-        return HttpResponse()
+        creds = request.data.get("credentials")
+        if not creds:
+            return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+
+        issuing_auth = get_issuing_auth(request)
+        success_creds = []
+        failed_creds = []
+        for index, cred in enumerate(creds):
+            try:
+                credential, _ = Credential.objects.get_or_create(
+                    type=cred.get("type"),
+                    level=cred.get("level"),
+                    issuer=issuing_auth,
+                    slug=cred.get("app_id"),
+                )
+                credential.title = cred.get("title")
+                credential.app_id = cred.get("app_id")
+                credential.opportunity_id = cred.get("opportunity_id")
+                credential.save()
+            except (IntegrityError, AttributeError):
+                failed_creds.append(index)
+                continue
+            success_creds.append(index)
+            phone_numbers = cred.get("users", [])
+            users = ConnectUser.objects.filter(phone_number__in=phone_numbers, is_active=True)
+            for user in users:
+                UserCredential.add_credential(user, credential, request)
+        return JsonResponse({"success": success_creds, "failed": failed_creds})
+
+
+class ListCredentials(APIView):
+    def get(self, request, *args, **kwargs):
+        credentials = Credential.objects.filter(usercredential__user=request.user)
+        serializer = CredentialSerializer(credentials, many=True)
+        return JsonResponse({"credentials": serializer.data})
 
 
 class ForwardHQInvite(APIView):
@@ -737,20 +774,6 @@ def accept_credential(request, invite_id):
         "Thank you for accepting this credential. You will now have access to opportunities open "
         "to holders of this credential."
     )
-
-
-class FetchCredentials(ClientProtectedResourceMixin, View):
-    required_scopes = ["user_fetch"]
-
-    def get(self, request):
-        org_slug = request.GET.get("org_slug", None)
-        queryset = Credential.objects.all()
-        if org_slug:
-            queryset = queryset.filter(organization_slug=org_slug)
-
-        credentials = queryset.values("name", "slug")
-        results = {"credentials": list(credentials)}
-        return JsonResponse(results)
 
 
 @api_view(["POST"])

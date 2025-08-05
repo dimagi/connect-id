@@ -1,4 +1,5 @@
 import json
+import uuid
 from datetime import timedelta
 from unittest import mock
 from unittest.mock import PropertyMock, patch
@@ -19,16 +20,19 @@ from users.factories import (
     PhoneDeviceFactory,
     RecoveryStatusFactory,
     SessionPhoneDeviceFactory,
+    UserCredentialFactory,
     UserFactory,
 )
 from users.fcm_utils import create_update_device
 from users.models import (
     ConfigurationSession,
     ConnectUser,
+    Credential,
     DeviceIntegritySample,
     PhoneDevice,
     RecoveryStatus,
     SessionPhoneDevice,
+    UserCredential,
     UserKey,
 )
 from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
@@ -371,27 +375,277 @@ class TestRecoverSecondaryPhone:
 
 
 @pytest.mark.django_db
-class TestFetchCredentials:
-    def setup_method(self):
-        self.url = "/users/fetch_credentials"
-        CredentialFactory.create_batch(3, organization_slug="test_slug")
-        CredentialFactory.create_batch(10)
+class TestAddCredential:
+    endpoint = reverse("add_credential")
 
-    def assert_statements(self, response, expected_count):
+    def test_no_auth(self, client):
+        response = client.post(self.endpoint)
+        assert response.status_code == 401
+
+    def test_invalid_auth(self, authed_client, user):
+        payload = {"credentials": [{"foo": "bar"}]}
+        response = authed_client.post(self.endpoint, data=json.dumps(payload), content_type="application/json")
+        assert response.status_code == 401
+        assert response.json() == {"error_code": ErrorCodes.INVALID_CREDENTIALS}
+
+    @patch("users.models.send_sms")
+    def test_success(self, mock_add_credential, credential_issuing_client, credential_issuing_authority, user):
+        app_id = uuid.uuid4().hex
+        payload = {
+            "credentials": [
+                {
+                    "users": [user.phone_number.raw_input, "1234567890"],
+                    "title": "Test Credential",
+                    "app_id": app_id,
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                    "issuer_environment": "production",
+                    "slug": app_id,
+                }
+            ]
+        }
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
         assert response.status_code == 200
-        response_data = response.json()
-        assert "credentials" in response_data
-        assert len(response_data["credentials"]) == expected_count
-        for credential in response_data["credentials"]:
-            assert set(credential.keys()) == {"name", "slug"}
+        assert response.json() == {"success": [0], "failed": []}
+        assert UserCredential.objects.all().count() == 1
+        cred = Credential.objects.all().first()
+        assert cred.title == "Test Credential"
+        assert cred.issuer == credential_issuing_authority
+        assert cred.level == "ACTIVE_3_MONTHS"
+        assert cred.type == "DELIVER"
+        assert cred.app_id == app_id
 
-    def test_fetch_credential_with_org_slug(self, authed_client):
-        response = authed_client.get(self.url + "?org_slug=test_slug")
-        self.assert_statements(response, expected_count=3)
+    @patch("users.models.send_sms")
+    def test_bulk_add(self, mock_add_credential, credential_issuing_client):
+        users = UserFactory.create_batch(2)
+        app_id = uuid.uuid4().hex
+        payload = {
+            "credentials": [
+                {
+                    "users": [users[0].phone_number.raw_input],
+                    "title": "Test Credential",
+                    "app_id": app_id,
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                    "slug": app_id,
+                    "issuer_environment": "production",
+                },
+                {
+                    "users": [users[1].phone_number.raw_input],
+                    "title": "Test Credential 2",
+                    "app_id": app_id,
+                    "opp_id": uuid.uuid4().hex,
+                    "type": "DELIVER",
+                    "level": "ACTIVE_6_MONTHS",
+                    "slug": app_id,
+                    "issuer_environment": "staging",
+                },
+            ]
+        }
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+        assert response.status_code == 200
+        assert Credential.objects.all().count() == 2
+        assert UserCredential.objects.all().count() == 2
 
-    def test_fetch_credential_without_org_slug(self, authed_client):
-        response = authed_client.get(self.url)
-        self.assert_statements(response, expected_count=13)
+    @patch("users.models.send_sms")
+    def test_partial_fail(self, mock_add_credential, credential_issuing_client, user):
+        app_id = uuid.uuid4().hex
+        payload = {
+            "credentials": [
+                {
+                    "users": [user.phone_number.raw_input],
+                    "title": "Test Credential",
+                    "app_id": app_id,
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                    "slug": app_id,
+                    "issuer_environment": "production",
+                },
+                {
+                    "title": "Test Credential 2",
+                },
+                {
+                    "level": "ACTIVE_6_MONTHS",
+                },
+            ]
+        }
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+        assert response.status_code == 200
+        assert response.json() == {"success": [0], "failed": [1, 2]}
+        assert Credential.objects.all().count() == 1
+        assert UserCredential.objects.all().count() == 1
+
+    def test_missing_data(self, credential_issuing_client):
+        payload = {
+            "credentials": [
+                {
+                    "level": "ACTIVE_3_MONTHS",
+                }
+            ]
+        }
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+        assert response.status_code == 200
+        assert response.json() == {"success": [], "failed": [0]}
+
+    def test_no_phone_numbers(self, credential_issuing_client):
+        payload = {
+            "credentials": [
+                {
+                    "title": "Test Credential",
+                    "app_id": uuid.uuid4().hex,
+                    "slug": uuid.uuid4().hex,
+                    "issuer_environment": "production",
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                }
+            ]
+        }
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+        assert response.status_code == 200
+        assert Credential.objects.all().count() == 1
+        assert UserCredential.objects.all().count() == 0
+
+    def test_invalid_phone_numbers(self, credential_issuing_client):
+        payload = {
+            "credentials": [
+                {
+                    "users": ["invalid-phone", "123", ""],
+                    "title": "Test Credential",
+                    "app_id": uuid.uuid4().hex,
+                    "slug": uuid.uuid4().hex,
+                    "issuer_environment": "production",
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                }
+            ]
+        }
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+        assert response.status_code == 200
+        assert Credential.objects.all().count() == 1
+        assert UserCredential.objects.all().count() == 0
+
+    @patch("users.models.send_sms")
+    def test_duplicate_request(self, mock_add_credential, credential_issuing_client, user):
+        payload = {
+            "credentials": [
+                {
+                    "users": [user.phone_number.raw_input],
+                    "title": "Test Credential",
+                    "app_id": uuid.uuid4().hex,
+                    "slug": uuid.uuid4().hex,
+                    "issuer_environment": "production",
+                    "type": "DELIVER",
+                    "level": "ACTIVE_3_MONTHS",
+                }
+            ]
+        }
+
+        response1 = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+        assert response1.status_code == 200
+        assert Credential.objects.all().count() == 1
+        assert UserCredential.objects.all().count() == 1
+
+        # Duplicate request should not create new credentials
+        response2 = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+        assert response2.status_code == 200
+        assert Credential.objects.all().count() == 1
+        assert UserCredential.objects.all().count() == 1
+
+    def test_malformed_json(self, credential_issuing_client):
+        response = credential_issuing_client.post(
+            self.endpoint, data='{"credentials": [{"invalid": json}]}', content_type="application/json"
+        )
+        assert response.status_code == 400
+
+    def test_missing_credentials_key(self, credential_issuing_client):
+        payload = {"invalid_key": []}
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
+
+
+@pytest.mark.django_db
+class TestListCredentials:
+    url = reverse("list_credentials")
+
+    def test_success(self, auth_device, oauth_app, user, credential_issuing_authority):
+        cred = CredentialFactory.create(
+            title="Test Credential",
+            type=Credential.CredentialTypes.DELIVER,
+            level="ACTIVE_3_MONTH",
+            issuer=credential_issuing_authority,
+            app_id=uuid.uuid4().hex,
+        )
+        UserCredentialFactory.create(credential=cred, user=user)
+
+        response = auth_device.get(self.url)
+        assert response.status_code == 200
+        assert response.json() == {
+            "credentials": [
+                {
+                    "uuid": str(cred.uuid),
+                    "app_id": cred.app_id,
+                    "opp_id": None,
+                    "date": cred.created_at.isoformat(),
+                    "title": "Test Credential",
+                    "issuer": "HQ",
+                    "issuer_environment": "production",
+                    "level": "ACTIVE_3_MONTH",
+                    "type": "DELIVER",
+                    "slug": cred.slug,
+                }
+            ]
+        }
+
+    def test_no_credentials(self, auth_device):
+        response = auth_device.get(self.url)
+        assert response.status_code == 200
+        assert response.json() == {"credentials": []}
+
+    def test_multiple_credentials(self, auth_device, user, credential_issuing_authority):
+        cred_1 = CredentialFactory.create(title="Credential 1", issuer=credential_issuing_authority)
+        cred_2 = CredentialFactory.create(title="Credential 2", issuer=credential_issuing_authority)
+        cred_3 = CredentialFactory.create(title="Credential 3", issuer=credential_issuing_authority)
+        UserCredentialFactory.create(credential=cred_3)
+        UserCredential.objects.create(user=user, credential=cred_1)
+        UserCredential.objects.create(user=user, credential=cred_2)
+
+        response = auth_device.get(self.url)
+        data = response.json()
+        assert response.status_code == 200
+        assert len(data["credentials"]) == 2
+
+        titles = [cred["title"] for cred in data["credentials"]]
+        assert "Credential 1" in titles
+        assert "Credential 2" in titles
+
+    def test_no_auth(self, api_client):
+        response = api_client.get(self.url)
+        assert response.status_code == 401
+
+    def test_inactive_connect_user(self, auth_device, user):
+        user.is_active = False
+        user.save()
+        response = auth_device.get(self.url)
+        assert response.status_code == 401
 
 
 class BaseTestDeactivation:

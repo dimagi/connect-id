@@ -1,8 +1,9 @@
 from rest_framework import exceptions
-from rest_framework.authentication import TokenAuthentication
+from rest_framework.authentication import BasicAuthentication, TokenAuthentication
 
 from users.const import ErrorCodes
-from users.models import ConfigurationSession, ConnectUser, SessionUser
+from users.models import ConfigurationSession, ConnectUser, IssuingAuthority, SessionUser
+from utils.rest_framework import OauthClientUser
 
 
 class SessionTokenAuthentication(TokenAuthentication):
@@ -24,3 +25,14 @@ class SessionTokenAuthentication(TokenAuthentication):
             raise exceptions.AuthenticationFailed({"error_code": ErrorCodes.LOCKED_ACCOUNT})
         user = SessionUser()
         return (user, token)
+
+
+class IssuingCredentialsAuth(BasicAuthentication):
+    def authenticate_credentials(self, userid, password, request=None):
+        try:
+            issuing_auth = IssuingAuthority.objects.get(server_credentials__client_id=userid)
+        except IssuingAuthority.DoesNotExist:
+            raise exceptions.AuthenticationFailed({"error_code": ErrorCodes.INVALID_CREDENTIALS})
+        valid = password == issuing_auth.server_credentials.secret_key
+        if valid:
+            return OauthClientUser(), None
