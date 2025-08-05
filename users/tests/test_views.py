@@ -398,8 +398,7 @@ class TestAddCredential:
                     "title": "Test Credential",
                     "app_id": app_id,
                     "type": "DELIVER",
-                    "level": "ACTIVE_3_MONTHS",
-                    "issuer_environment": "production",
+                    "level": "3MON_ACTIVE",
                     "slug": app_id,
                 }
             ]
@@ -413,7 +412,7 @@ class TestAddCredential:
         cred = Credential.objects.all().first()
         assert cred.title == "Test Credential"
         assert cred.issuer == credential_issuing_authority
-        assert cred.level == "ACTIVE_3_MONTHS"
+        assert cred.level == "3MON_ACTIVE"
         assert cred.type == "DELIVER"
         assert cred.app_id == app_id
 
@@ -454,9 +453,8 @@ class TestAddCredential:
                     "title": "Test Credential",
                     "app_id": app_id,
                     "type": "DELIVER",
-                    "level": "ACTIVE_3_MONTHS",
+                    "level": "3MON_ACTIVE",
                     "slug": app_id,
-                    "issuer_environment": "production",
                 },
                 {
                     "users": [users[1].phone_number.raw_input],
@@ -464,9 +462,8 @@ class TestAddCredential:
                     "app_id": app_id,
                     "opp_id": uuid.uuid4().hex,
                     "type": "DELIVER",
-                    "level": "ACTIVE_6_MONTHS",
+                    "level": "6MON_ACTIVE",
                     "slug": app_id,
-                    "issuer_environment": "staging",
                 },
             ]
         }
@@ -487,15 +484,14 @@ class TestAddCredential:
                     "title": "Test Credential",
                     "app_id": app_id,
                     "type": "DELIVER",
-                    "level": "ACTIVE_3_MONTHS",
+                    "level": "3MON_ACTIVE",
                     "slug": app_id,
-                    "issuer_environment": "production",
                 },
                 {
                     "title": "Test Credential 2",
                 },
                 {
-                    "level": "ACTIVE_6_MONTHS",
+                    "level": "6MON_ACTIVE",
                 },
             ]
         }
@@ -511,7 +507,7 @@ class TestAddCredential:
         payload = {
             "credentials": [
                 {
-                    "level": "ACTIVE_3_MONTHS",
+                    "level": "3MON_ACTIVE",
                 }
             ]
         }
@@ -528,9 +524,8 @@ class TestAddCredential:
                     "title": "Test Credential",
                     "app_id": uuid.uuid4().hex,
                     "slug": uuid.uuid4().hex,
-                    "issuer_environment": "production",
                     "type": "DELIVER",
-                    "level": "ACTIVE_3_MONTHS",
+                    "level": "3MON_ACTIVE",
                 }
             ]
         }
@@ -549,9 +544,8 @@ class TestAddCredential:
                     "title": "Test Credential",
                     "app_id": uuid.uuid4().hex,
                     "slug": uuid.uuid4().hex,
-                    "issuer_environment": "production",
                     "type": "DELIVER",
-                    "level": "ACTIVE_3_MONTHS",
+                    "level": "3MON_ACTIVE",
                 }
             ]
         }
@@ -571,9 +565,8 @@ class TestAddCredential:
                     "title": "Test Credential",
                     "app_id": uuid.uuid4().hex,
                     "slug": uuid.uuid4().hex,
-                    "issuer_environment": "production",
                     "type": "DELIVER",
-                    "level": "ACTIVE_3_MONTHS",
+                    "level": "3MON_ACTIVE",
                 }
             ]
         }
