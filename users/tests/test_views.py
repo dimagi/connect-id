@@ -418,6 +418,32 @@ class TestAddCredential:
         assert cred.app_id == app_id
 
     @patch("users.models.send_sms")
+    def test_success_with_usernames(
+        self, mock_send_sms, credential_issuing_client, credential_issuing_authority, user
+    ):
+        app_id = uuid.uuid4().hex
+        payload = {
+            "credentials": [
+                {
+                    "usernames": [user.username],
+                    "title": "Test Credential",
+                    "app_id": app_id,
+                    "type": "APP_ACTIVITY",
+                    "level": "3MON_ACTIVE",
+                    "slug": app_id,
+                }
+            ]
+        }
+        response = credential_issuing_client.post(
+            self.endpoint, data=json.dumps(payload), content_type="application/json"
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"success": [0], "failed": []}
+        assert UserCredential.objects.all().count() == 1
+        assert Credential.objects.all().count() == 1
+
+    @patch("users.models.send_sms")
     def test_bulk_add(self, mock_add_credential, credential_issuing_client):
         users = UserFactory.create_batch(2)
         app_id = uuid.uuid4().hex
