@@ -2,13 +2,12 @@
 
 from django.conf import settings
 from django.db import migrations, models
-import django.db.models.deletion
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("users", "0022_add_deviceintegritysample"),
+        ("users", "0024_serverkeys_rename_name_credential_title_and_more"),
     ]
 
     operations = [
