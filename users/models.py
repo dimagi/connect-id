@@ -259,6 +259,8 @@ class SessionPhoneDevice(BasePhoneDevice):
 
     def generate_challenge(self):
         if self.is_otp_close_to_expiry:
+            # Set to false as the token is close to expiry and
+            # we want to auto generate a new one
             self.has_manual_otp = False
             self.save()
         if not self.has_manual_otp:
