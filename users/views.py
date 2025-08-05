@@ -678,8 +678,11 @@ class AddCredential(APIView):
                 failed_creds.append(index)
                 continue
             success_creds.append(index)
-            phone_numbers = cred.get("users", [])
-            users = ConnectUser.objects.filter(phone_number__in=phone_numbers, is_active=True)
+            if "usernames" in cred:
+                users = ConnectUser.objects.filter(username__in=cred["usernames"], is_active=True)
+            else:
+                phone_numbers = cred.get("users", [])
+                users = ConnectUser.objects.filter(phone_number__in=phone_numbers, is_active=True)
             for user in users:
                 UserCredential.add_credential(user, credential, request)
         return JsonResponse({"success": success_creds, "failed": failed_creds})
