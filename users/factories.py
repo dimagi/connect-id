@@ -5,7 +5,17 @@ from django.utils.timezone import now
 from factory.django import DjangoModelFactory
 from fcm_django.models import FCMDevice
 
-from users.models import ConfigurationSession, ConnectUser, Credential, PhoneDevice, RecoveryStatus, SessionPhoneDevice
+from users.models import (
+    ConfigurationSession,
+    ConnectUser,
+    Credential,
+    IssuingAuthority,
+    PhoneDevice,
+    RecoveryStatus,
+    ServerKeys,
+    SessionPhoneDevice,
+    UserCredential,
+)
 
 
 class UserFactory(DjangoModelFactory):
@@ -33,9 +43,17 @@ class CredentialFactory(DjangoModelFactory):
     class Meta:
         model = Credential
 
-    name = factory.Faker("name")
-    slug = factory.Faker("slug")
-    organization_slug = factory.Faker("slug")
+    title = factory.Faker("name")
+    type = Credential.CredentialTypes.DELIVER
+    slug = factory.Faker("uuid4")
+
+
+class UserCredentialFactory(DjangoModelFactory):
+    class Meta:
+        model = UserCredential
+
+    user = factory.SubFactory(UserFactory)
+    credential = factory.SubFactory(CredentialFactory)
 
 
 class PhoneDeviceFactory(DjangoModelFactory):
@@ -71,3 +89,18 @@ class SessionPhoneDeviceFactory(factory.django.DjangoModelFactory):
     phone_number = factory.Faker("phone_number")
     session = factory.SubFactory(ConfigurationSessionFactory)
     token = factory.Faker("bothify", text="????##")
+
+
+class IssuingAuthorityFactory(DjangoModelFactory):
+    class Meta:
+        model = IssuingAuthority
+
+    issuing_authority = IssuingAuthority.IssuingAuthorityTypes.HQ
+    issuer_environment = IssuingAuthority.IssuingAuthorityEnvironments.PRODUCTION
+
+
+class ServerKeysFactory(DjangoModelFactory):
+    class Meta:
+        model = ServerKeys
+
+    name = factory.Faker("name")

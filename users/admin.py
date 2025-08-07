@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import gettext_lazy as _
 
-from .models import ConfigurationSession, ConnectUser
+from .models import ConfigurationSession, ConnectUser, IssuingAuthority, ServerKeys
 
 
 @admin.register(ConnectUser)
@@ -33,3 +33,20 @@ class ConnectUserAdmin(UserAdmin):
 class ConfigurationSessionAdmin(admin.ModelAdmin):
     list_display = ("phone_number", "created")
     search_fields = ("phone_number",)
+
+
+@admin.register(IssuingAuthority)
+class IssuingAuthorityAdmin(admin.ModelAdmin):
+    list_display = ("issuing_authority", "issuer_environment", "server_credentials")
+
+
+@admin.register(ServerKeys)
+class ServerKeysAdmin(admin.ModelAdmin):
+    list_display = ("name", "client_id", "secret_key")
+    search_fields = ("name", "client_id")
+
+    def save_model(self, request, obj, form, change):
+        if "secret_key" in form.cleaned_data:
+            secret_key = form.cleaned_data["secret_key"]
+            obj.set_secret_key(secret_key)
+        super().save_model(request, obj, form, change)

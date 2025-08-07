@@ -14,6 +14,7 @@ from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
 from django_otp.util import random_hex
 from geopy.geocoders import Nominatim
+from oauth2_provider.generators import generate_client_id, generate_client_secret
 from phonenumber_field.modelfields import PhoneNumberField
 
 from users.exceptions import RecoveryPinNotSetError
@@ -181,10 +182,52 @@ class RecoveryStatus(models.Model):
     step = models.TextField(choices=RecoverySteps.choices)
 
 
+class ServerKeys(models.Model):
+    name = models.CharField(max_length=255)
+    client_id = models.CharField(max_length=100, unique=True, db_index=True, default=generate_client_id)
+    secret_key = models.CharField(max_length=255, default=generate_client_secret)
+
+    def __str__(self):
+        return self.name
+
+
+class IssuingAuthority(models.Model):
+    class IssuingAuthorityTypes(models.TextChoices):
+        CONNECT = "CONNECT", "CONNECT"
+        HQ = "HQ", "HQ"
+
+    class IssuingAuthorityEnvironments(models.TextChoices):
+        PRODUCTION = "production", "production"
+        STAGING = "staging", "staging"
+        INDIA = "india", "india"
+
+    issuing_authority = models.CharField(max_length=50, choices=IssuingAuthorityTypes.choices)
+    issuer_environment = models.CharField(max_length=50, choices=IssuingAuthorityEnvironments.choices)
+    server_credentials = models.ForeignKey(ServerKeys, on_delete=models.PROTECT)
+
+    class Meta:
+        verbose_name = "Issuing Authority"
+        verbose_name_plural = "Issuing Authorities"
+
+
 class Credential(models.Model):
-    name = models.CharField(max_length=300)
-    slug = models.CharField(max_length=100)
-    organization_slug = models.CharField(max_length=255)
+    class CredentialTypes(models.TextChoices):
+        APP_ACTIVITY = "APP_ACTIVITY", "APP_ACTIVITY"
+        LEARN = "LEARN", "LEARN"
+        DELIVER = "DELIVER", "DELIVER"
+
+    uuid = models.UUIDField(default=uuid4)
+    title = models.CharField(max_length=300)
+    issuer = models.ForeignKey(IssuingAuthority, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+    level = models.CharField(max_length=50)  # credential level/code (e.g. 3_MONTHS_ACTIVE)
+    type = models.CharField(max_length=50, choices=CredentialTypes.choices)
+    app_id = models.CharField(max_length=50, blank=True, null=True)
+    opportunity_id = models.CharField(max_length=50, blank=True, null=True)
+    slug = models.CharField(max_length=50)
+
+    class Meta:
+        unique_together = ("issuer", "level", "type", "slug")
 
 
 class UserCredential(models.Model):
@@ -204,7 +247,7 @@ class UserCredential(models.Model):
             location = reverse("accept_credential", args=(user_credential.invite_id,))
             url = f"https://{domain}{location}"
             message = (
-                f"You have been given credential '{credential.name}'."
+                f"You have been given credential '{credential.title}'."
                 f"Please click the following link to accept {url}"
             )
             sender = get_sms_sender(user.phone_number.country_code)
@@ -259,6 +302,8 @@ class SessionPhoneDevice(BasePhoneDevice):
 
     def generate_challenge(self):
         if self.is_otp_close_to_expiry:
+            # Set to false as the token is close to expiry and
+            # we want to auto generate a new one
             self.has_manual_otp = False
             self.save()
         if not self.has_manual_otp:
