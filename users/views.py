@@ -951,8 +951,7 @@ class GenerateManualOTP(APIView):
         if not (session_phone_device and session_phone_device.session.is_valid()):
             return JsonResponse({"error_code": ErrorCodes.SESSION_NOT_FOUND}, status=404)
 
-        expire_seconds = 60 * 60 * 4  # Four hours
-        session_phone_device.generate_token(valid_secs=expire_seconds)
+        session_phone_device.valid_until = now() + timedelta(hours=4)
         session_phone_device.has_manual_otp = True
         session_phone_device.save()
 

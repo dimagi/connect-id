@@ -1793,6 +1793,7 @@ class TestGenerateManualOTP:
         )
         SessionPhoneDeviceFactory.create()
 
+        token = newest_session_phone_device.token
         response = authed_client.get(self.url, data={"phone_number": phone_number})
         assert response.status_code == 200
 
@@ -1801,6 +1802,7 @@ class TestGenerateManualOTP:
             "otp": newest_session_phone_device.token,
         }
         assert newest_session_phone_device.has_manual_otp is True
+        assert newest_session_phone_device.token == token  # A new token should not be generated
 
     def test_no_auth(self, client):
         response = client.get(self.url)
