@@ -394,7 +394,7 @@ class TestAddCredential:
         payload = {
             "credentials": [
                 {
-                    "users": [user.phone_number.raw_input, "1234567890"],
+                    "usernames": [user.username, "does-not-exist"],
                     "title": "Test Credential",
                     "app_id": app_id,
                     "type": "DELIVER",
@@ -417,39 +417,13 @@ class TestAddCredential:
         assert cred.app_id == app_id
 
     @patch("users.models.send_sms")
-    def test_success_with_usernames(
-        self, mock_send_sms, credential_issuing_client, credential_issuing_authority, user
-    ):
-        app_id = uuid.uuid4().hex
-        payload = {
-            "credentials": [
-                {
-                    "usernames": [user.username],
-                    "title": "Test Credential",
-                    "app_id": app_id,
-                    "type": "APP_ACTIVITY",
-                    "level": "3MON_ACTIVE",
-                    "slug": app_id,
-                }
-            ]
-        }
-        response = credential_issuing_client.post(
-            self.endpoint, data=json.dumps(payload), content_type="application/json"
-        )
-
-        assert response.status_code == 200
-        assert response.json() == {"success": [0], "failed": []}
-        assert UserCredential.objects.all().count() == 1
-        assert Credential.objects.all().count() == 1
-
-    @patch("users.models.send_sms")
     def test_bulk_add(self, mock_add_credential, credential_issuing_client):
         users = UserFactory.create_batch(2)
         app_id = uuid.uuid4().hex
         payload = {
             "credentials": [
                 {
-                    "users": [users[0].phone_number.raw_input],
+                    "usernames": [users[0].username],
                     "title": "Test Credential",
                     "app_id": app_id,
                     "type": "DELIVER",
@@ -457,7 +431,7 @@ class TestAddCredential:
                     "slug": app_id,
                 },
                 {
-                    "users": [users[1].phone_number.raw_input],
+                    "usernames": [users[1].username],
                     "title": "Test Credential 2",
                     "app_id": app_id,
                     "opp_id": uuid.uuid4().hex,
@@ -480,7 +454,7 @@ class TestAddCredential:
         payload = {
             "credentials": [
                 {
-                    "users": [user.phone_number.raw_input],
+                    "usernames": [user.username],
                     "title": "Test Credential",
                     "app_id": app_id,
                     "type": "DELIVER",
@@ -517,7 +491,7 @@ class TestAddCredential:
         assert response.status_code == 200
         assert response.json() == {"success": [], "failed": [0]}
 
-    def test_no_phone_numbers(self, credential_issuing_client):
+    def test_no_usernames(self, credential_issuing_client):
         payload = {
             "credentials": [
                 {
@@ -536,11 +510,11 @@ class TestAddCredential:
         assert Credential.objects.all().count() == 1
         assert UserCredential.objects.all().count() == 0
 
-    def test_invalid_phone_numbers(self, credential_issuing_client):
+    def test_invalid_usernames(self, credential_issuing_client):
         payload = {
             "credentials": [
                 {
-                    "users": ["invalid-phone", "123", ""],
+                    "usernames": ["invalid-user", "123", ""],
                     "title": "Test Credential",
                     "app_id": uuid.uuid4().hex,
                     "slug": uuid.uuid4().hex,
@@ -561,7 +535,7 @@ class TestAddCredential:
         payload = {
             "credentials": [
                 {
-                    "users": [user.phone_number.raw_input],
+                    "usernames": [user.username],
                     "title": "Test Credential",
                     "app_id": uuid.uuid4().hex,
                     "slug": uuid.uuid4().hex,
