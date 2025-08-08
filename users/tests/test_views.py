@@ -1,6 +1,6 @@
 import json
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest import mock
 from unittest.mock import PropertyMock, patch
 
@@ -16,6 +16,7 @@ from services.ai.ocs import OpenChatStudio
 from test_utils.decorators import skip_app_integrity_check
 from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from users.factories import (
+    ConfigurationSessionFactory,
     CredentialFactory,
     PhoneDeviceFactory,
     RecoveryStatusFactory,
@@ -1773,3 +1774,53 @@ class TestReportIntegrityView:
         assert sample.passed_app_integrity_check
         assert not sample.passed_device_integrity_check
         assert not sample.passed_account_details_check
+
+
+@pytest.mark.django_db
+class TestGenerateManualOTP:
+    url = reverse("generate_manual_otp")
+
+    def _create_session_phone_device(self, expires, phone_number):
+        config_session = ConfigurationSessionFactory.create(expires=expires, phone_number=phone_number)
+        return SessionPhoneDeviceFactory.create(session=config_session, phone_number=phone_number)
+
+    def test_success(self, authed_client):
+        phone_number = Faker().phone_number()
+        now = datetime.now()
+        self._create_session_phone_device(expires=now + timedelta(days=1), phone_number=phone_number)
+        newest_session_phone_device = self._create_session_phone_device(
+            expires=now + timedelta(days=2), phone_number=phone_number
+        )
+        SessionPhoneDeviceFactory.create()
+
+        token = newest_session_phone_device.token
+        response = authed_client.get(self.url, data={"phone_number": phone_number})
+        assert response.status_code == 200
+
+        newest_session_phone_device.refresh_from_db()
+        assert response.json() == {
+            "otp": newest_session_phone_device.token,
+        }
+        assert newest_session_phone_device.has_manual_otp is True
+        assert newest_session_phone_device.token == token  # A new token should not be generated
+
+    def test_no_auth(self, client):
+        response = client.get(self.url)
+        assert response.status_code == 403
+
+    def test_no_phone_number(self, authed_client):
+        response = authed_client.get(self.url)
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
+
+    def test_no_session(self, authed_client, user):
+        response = authed_client.get(self.url, data={"phone_number": user.phone_number.raw_input})
+        assert response.status_code == 404
+        assert response.json() == {"error_code": ErrorCodes.SESSION_NOT_FOUND}
+
+    def test_session_expired(self, authed_client, user):
+        phone_number = Faker().phone_number()
+        self._create_session_phone_device(expires=datetime.now() - timedelta(days=1), phone_number=phone_number)
+        response = authed_client.get(self.url, data={"phone_number": phone_number})
+        assert response.status_code == 404
+        assert response.json() == {"error_code": ErrorCodes.SESSION_NOT_FOUND}

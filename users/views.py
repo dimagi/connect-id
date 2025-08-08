@@ -935,3 +935,27 @@ def report_integrity(request):
         return JsonResponse({"result_code": None}, status=500)
 
     return JsonResponse({"result_code": "passed" if sample.passed else "failed"})
+
+
+class GenerateManualOTP(APIView):
+    authentication_classes = [ClientProtectedResourceAuth]
+
+    def get(self, request, *args, **kwargs):
+        phone_number = request.query_params.get("phone_number")
+        if not phone_number:
+            return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+
+        session_phone_device = (
+            SessionPhoneDevice.objects.filter(phone_number=phone_number).order_by("-session__created").first()
+        )
+        if not (session_phone_device and session_phone_device.session.is_valid()):
+            return JsonResponse({"error_code": ErrorCodes.SESSION_NOT_FOUND}, status=404)
+
+        session_phone_device.valid_until = now() + timedelta(hours=4)
+        session_phone_device.has_manual_otp = True
+        session_phone_device.save()
+
+        session_phone_device.session.expires = session_phone_device.valid_until
+        session_phone_device.session.save()
+
+        return JsonResponse({"otp": session_phone_device.token})
