@@ -262,6 +262,7 @@ class ConfigurationSession(models.Model):
     is_phone_validated = models.BooleanField(default=False)
     gps_location = models.CharField(max_length=100, blank=True, null=True)  # GPS coordinates in format "lat lon"
     invited_user = models.BooleanField(default=False)
+    device_id = models.CharField(max_length=255, blank=True, null=True)
 
     def __str__(self):
         return self.key
