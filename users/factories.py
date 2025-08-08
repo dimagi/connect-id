@@ -80,6 +80,7 @@ class ConfigurationSessionFactory(DjangoModelFactory):
 
     key = factory.Faker("uuid4")
     phone_number = "+27738156127"
+    device_id = factory.Faker("uuid4")
 
 
 class SessionPhoneDeviceFactory(factory.django.DjangoModelFactory):

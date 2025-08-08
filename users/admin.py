@@ -31,8 +31,8 @@ class ConnectUserAdmin(UserAdmin):
 
 @admin.register(ConfigurationSession)
 class ConfigurationSessionAdmin(admin.ModelAdmin):
-    list_display = ("phone_number", "created")
-    search_fields = ("phone_number",)
+    list_display = ("phone_number", "device_id", "created")
+    search_fields = ("phone_number", "device_id")
 
 
 @admin.register(IssuingAuthority)
