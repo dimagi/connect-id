@@ -11,3 +11,4 @@
 /.direnv
 /.envrc
 .coverage
+.vscode/
