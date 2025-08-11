@@ -1182,7 +1182,7 @@ class TestStartConfigurationView:
 
         response = client.post(
             reverse("start_device_configuration"),
-            data={"phone_number": phone_number, "gps_location": gps_location},
+            data={"phone_number": phone_number, "gps_location": gps_location, "cc_device_id": "device_id"},
             HTTP_CC_INTEGRITY_TOKEN="token",
             HTTP_CC_REQUEST_HASH="hash",
         )
@@ -1193,6 +1193,7 @@ class TestStartConfigurationView:
         assert session.phone_number == phone_number
         assert session.gps_location == gps_location
         assert not session.is_phone_validated
+        assert session.device_id == "device_id"
 
     @skip_app_integrity_check
     @patch("users.models.ConfigurationSession.country_code", new_callable=PropertyMock)
