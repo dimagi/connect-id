@@ -891,6 +891,7 @@ class TestConfirmBackupCodeApi:
         assert response_data["username"] == user.username
         assert user.check_password(response_data["password"])
         assert UserKey.objects.filter(key=response_data.get("db_key")).exists()
+        assert "invited_user" in response_data
 
 
 class TestChangePhone:
@@ -1391,6 +1392,7 @@ class TestCompleteProfileView:
         assert len(response_json["username"]) == 20
         assert user.check_password(response_json["password"])
         assert response_json["db_key"] == user_key.key
+        assert "invited_user" in response_json
 
     def test_missing_required_fields(self, authed_client_token, valid_token):
         valid_token.is_phone_validated = True
