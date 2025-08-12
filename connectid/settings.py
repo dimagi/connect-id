@@ -193,6 +193,11 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
+SPECTACULAR_SETTINGS = {
+    "TITLE": "ConnectID API",
+    "DESCRIPTION": "API for ConnectID",
+    "VERSION": API_VERSION.V2,
+}
 
 AXES_COOLOFF_TIME = 6
 AXES_IPWARE_META_PRECEDENCE_ORDER = [
