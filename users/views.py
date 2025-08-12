@@ -15,10 +15,12 @@ from django.db.utils import IntegrityError
 from django.http import HttpResponse, JsonResponse
 from django.utils.timezone import now
 from django.views import View
+from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema, inline_serializer
 from firebase_admin import auth
 from googleapiclient.errors import HttpError
 from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
+from rest_framework import serializers
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
 
@@ -77,6 +79,69 @@ def register(request):
     return JsonResponse({"secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key})
 
 
+@extend_schema(
+    summary="Start Device Configuration",
+    description="Start device configuration for a user. T"
+    "his endpoint is used to initiate the configuration process for a user's device and setting up the session.",
+    auth="",
+    tags=["Device Configuration"],
+    parameters=[
+        OpenApiParameter(
+            name="CC-Integrity-Token",
+            type=str,
+            location=OpenApiParameter.HEADER,
+            required=True,
+            description="The Google Play integrity token.",
+        ),
+        OpenApiParameter(
+            name="CC-Request-Hash",
+            type=str,
+            location=OpenApiParameter.HEADER,
+            required=True,
+            description="The request hash given to the Google Play API when integrity token was requested.",
+        ),
+    ],
+    request=inline_serializer(
+        "StartDeviceConfigurationRequest",
+        {
+            "phone_number": serializers.CharField(),
+            "gps_location": serializers.CharField(required=False),
+        },
+    ),
+    responses={
+        200: {
+            "description": "Successful response with session token and configuration details.",
+        },
+        400: {
+            "description": "Bad Request - Missing required fields.",
+        },
+        403: {
+            "description": "Forbidden - Unsupported country code",
+        },
+    },
+    examples=[
+        OpenApiExample(
+            name="Successful configuration",
+            summary="A successful response example with pin",
+            value={
+                "required_lock": "PIN",
+                "demo_user": False,
+                "token": "<session_token>",
+                "sms_method": "FIREBASE",
+            },
+            status_codes=[200],
+        ),
+        OpenApiExample(
+            name="Missing phone number",
+            summary="A failed response example with missing phone number",
+            value={
+                "error_code": "MISSING_DATA",
+                "error_sub_code": "PHONE_NUMBER_REQUIRE",
+            },
+            status_codes=[400],
+        ),
+    ],
+)
 @api_view(["POST"])
 @permission_classes([])
 @require_app_integrity
@@ -130,6 +195,11 @@ def validate_phone(request):
     return HttpResponse()
 
 
+@extend_schema(
+    summary="Validate Firebase ID Token",
+    description="Validate the Firebase ID token for a user.",
+    tags=["Device Configuration"],
+)
 @api_view(["POST"])
 @authentication_classes([SessionTokenAuthentication])
 def validate_firebase_id_token(request):
@@ -832,6 +902,48 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
         return JsonResponse(count_by_year_month)
 
 
+@extend_schema(
+    summary="Check User Similarity",
+    description="Check if the session user is similar than the user linked to the phone number.",
+    tags=["Device Configuration"],
+    request=inline_serializer(
+        "CheckUserSimilarityRequest",
+        {
+            "name": serializers.CharField(),
+        },
+    ),
+    responses={
+        200: {
+            "description": "Successful response with account existence and photo URL if applicable.",
+        },
+        400: {
+            "description": "Bad Request - Missing name field.",
+        },
+        403: {
+            "description": "Forbidden - Phone not validated.",
+        },
+    },
+    examples=[
+        OpenApiExample(
+            name="Successful similarity check",
+            summary="A successful response example with account existence and photo URL",
+            value={"account_exists": True, "photo": "<base64_encoded_photo_url>"},
+            status_codes=[200],
+        ),
+        OpenApiExample(
+            name="Missing name field",
+            summary="A failed response example with missing name field",
+            value={"error_code": "NAME_REQUIRED"},
+            status_codes=[400],
+        ),
+        OpenApiExample(
+            name="Phone not validated",
+            summary="A failed response example with phone not validated error",
+            value={"error_code": "PHONE_NOT_VALIDATED"},
+            status_codes=[403],
+        ),
+    ],
+)
 @api_view(["POST"])
 @authentication_classes([SessionTokenAuthentication])
 def check_user_similarity(request):
