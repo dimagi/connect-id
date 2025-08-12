@@ -95,6 +95,7 @@ def start_device_configuration(request):
         is_phone_validated=is_demo_user,  # demo users are always considered validated
         gps_location=data.get("gps_location"),
         invited_user=request.invited_user,
+        device_id=data.get("cc_device_id", ""),
     )
 
     try:
