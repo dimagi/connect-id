@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "axes",
     "fcm_django",
     "django.contrib.sites",
+    "drf_spectacular",
 ]
 
 MIDDLEWARE = [
@@ -189,6 +190,7 @@ REST_FRAMEWORK = {
         API_VERSION.V1,
         API_VERSION.V2,
     ],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
 

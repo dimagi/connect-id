@@ -16,6 +16,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import TemplateView
+from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView
 
 from . import views
 
@@ -23,6 +24,8 @@ urlpatterns = [
     path("users/", include("users.urls")),
     path("messaging/", include("messaging.urls")),
     path("admin/", admin.site.urls),
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path("api/schema/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
     path("hq_invite/", TemplateView.as_view(template_name="connectid/deeplink.html"), name="deeplink"),
     path(".well-known/assetlinks.json", views.assetlinks_json, name="assetlinks_json"),
