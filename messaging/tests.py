@@ -188,14 +188,18 @@ class TestCreateChannelView:
             message = messages[0]
             channel = Channel.objects.get(connect_user__username=data["connectid"])
             assert message.token == fcm_device.registration_id
-            assert message.notification.title == "Channel created"
-            assert message.notification.body == "Please provide your consent to send/receive message."
+            assert message.notification.title == "🔔 New Channel 🔔"
+            assert (
+                message.notification.body
+                == f"A new messaging channel is available from {channel.visible_name}, press here to view"
+            )
             assert message.data == {
                 "key_url": server.key_url,
                 "action": "ccc_message",
                 "channel_source": data["channel_source"],
                 "channel_id": str(channel.channel_id),
                 "consent": str(channel.user_consent),
+                "channel_name": channel.channel_name,
             }
 
 
