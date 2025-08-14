@@ -234,6 +234,7 @@ def complete_profile(request):
             "username": user.username,
             "password": password,
             "db_key": db_key.key,
+            "invited_user": session.invited_user,
         }
     )
 
@@ -559,6 +560,7 @@ def confirm_backup_code(request):
             "username": user.username,
             "db_key": UserKey.get_or_create_key_for_user(user).key,
             "password": password,
+            "invited_user": session.invited_user,
         }
     )
 
