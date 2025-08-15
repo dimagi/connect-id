@@ -4,6 +4,7 @@ from datetime import timedelta
 from secrets import token_hex
 from uuid import uuid4
 
+import sentry_sdk
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import AbstractUser, AnonymousUser
@@ -13,6 +14,7 @@ from django.urls import reverse
 from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
 from django_otp.util import random_hex
+from geopy.exc import GeocoderUnavailable
 from geopy.geocoders import Nominatim
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 from phonenumber_field.modelfields import PhoneNumberField
@@ -287,7 +289,11 @@ class ConfigurationSession(models.Model):
         lat = coords[0]
         lon = coords[1]
         geolocator = Nominatim(user_agent="PersonalID")
-        location = geolocator.reverse(f"{lat} {lon}", language="en")
+        try:
+            location = geolocator.reverse(f"{lat} {lon}", language="en")
+        except GeocoderUnavailable as e:
+            sentry_sdk.capture_exception(e)
+            return None
         address = location.raw.get("address", {})
         return address.get("country_code")
 
