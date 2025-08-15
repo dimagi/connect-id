@@ -293,7 +293,7 @@ class ConfigurationSession(models.Model):
             location = geolocator.reverse(f"{lat} {lon}", language="en")
         except GeocoderUnavailable as e:
             sentry_sdk.capture_exception(e)
-            return ""
+            return
         address = location.raw.get("address", {})
         return address.get("country_code")
 
