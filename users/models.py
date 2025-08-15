@@ -83,7 +83,7 @@ class ConnectUser(AbstractUser):
             f"Your account deactivation request is pending. Please enter this token {self.deactivation_token} "
             f"to confirm account deactivation."
             f"Warning: This action is irreversible. If you didn't request deactivation, "
-            f"please ignore this message. \n\n {settings.APP_HASH}"
+            f"please ignore this message."
         )
         if not self.phone_number.raw_input.startswith(TEST_NUMBER_PREFIX):
             sender = get_sms_sender(self.phone_number.country_code)
