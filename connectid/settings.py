@@ -212,8 +212,6 @@ OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
 
 SITE_ID = 1
 
-APP_HASH = env("APP_HASH", default="apphash")
-
 SENTRY_DSN = env("SENTRY_DSN", default=None)
 SENTRY_ENVIRONMENT = env("SENTRY_ENVIRONMENT", default="local")
 SENTRY_TRACES_SAMPLE_RATE = env("SENTRY_TRACES_SAMPLE_RATE", default="0.0")
