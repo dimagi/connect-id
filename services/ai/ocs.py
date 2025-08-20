@@ -31,7 +31,7 @@ class OpenChatStudio:
                 data=data,
             )
         except Exception as e:
-            sentry_sdk.capture_exception(f"OCS request error: {e}")
+            sentry_sdk.capture_exception(e)
             return
 
         return self._extract_bot_message(response)
