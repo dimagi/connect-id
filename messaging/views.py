@@ -195,7 +195,7 @@ class CreateChannelView(APIView):
         if created:
             message = NotificationData(
                 usernames=[channel.connect_user.username],
-                title="🔔 New Channel 🔔",
+                title="New Channel",
                 body=f"A new messaging channel is available from {channel.visible_name}, press here to view",
                 data={
                     "key_url": str(server.key_url),

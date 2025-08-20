@@ -188,7 +188,7 @@ class TestCreateChannelView:
             message = messages[0]
             channel = Channel.objects.get(connect_user__username=data["connectid"])
             assert message.token == fcm_device.registration_id
-            assert message.notification.title == "🔔 New Channel 🔔"
+            assert message.notification.title == "New Channel"
             assert (
                 message.notification.body
                 == f"A new messaging channel is available from {channel.visible_name}, press here to view"
