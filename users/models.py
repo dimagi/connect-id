@@ -257,6 +257,10 @@ class UserCredential(models.Model):
 
 
 class ConfigurationSession(models.Model):
+    class OTPSMSStrategy(models.TextChoices):
+        FIREBASE = "firebase", "firebase"
+        PERSONAL_ID = "personal_id", "personal_id"
+
     key = models.CharField(max_length=70, primary_key=True)
     created = models.DateTimeField(auto_now_add=True)
     expires = models.DateTimeField()
@@ -265,6 +269,7 @@ class ConfigurationSession(models.Model):
     gps_location = models.CharField(max_length=100, blank=True, null=True)  # GPS coordinates in format "lat lon"
     invited_user = models.BooleanField(default=False)
     device_id = models.CharField(max_length=255, blank=True, null=True)
+    otp_sms_strategy = models.CharField(choices=OTPSMSStrategy.choices, default=OTPSMSStrategy.FIREBASE, max_length=15)
 
     def __str__(self):
         return self.key
