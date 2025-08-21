@@ -30,7 +30,7 @@ from utils.app_integrity.google_play_integrity import AppIntegrityService
 from utils.rest_framework import ClientProtectedResourceAuth
 
 from .auth import IssuingCredentialsAuth, SessionTokenAuthentication
-from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
+from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
 from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
 from .models import (
@@ -110,7 +110,7 @@ def start_device_configuration(request):
         "required_lock": ConnectUser.get_device_security_requirement(data["phone_number"], request.invited_user),
         "demo_user": is_demo_user,
         "token": token_session.key,
-        "sms_method": SMSMethods.PERSONAL_ID if request.invited_user else SMSMethods.FIREBASE,
+        "sms_method": token_session.otp_sms_strategy,
     }
     return JsonResponse(response_data)
 
