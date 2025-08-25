@@ -195,14 +195,15 @@ class CreateChannelView(APIView):
         if created:
             message = NotificationData(
                 usernames=[channel.connect_user.username],
-                title="Channel created",
-                body="Please provide your consent to send/receive message.",
+                title="New Channel",
+                body=f"A new messaging channel is available from {channel.visible_name}, press here to view",
                 data={
                     "key_url": str(server.key_url),
                     "action": CCC_MESSAGE_ACTION,
                     "channel_source": channel.visible_name,
                     "channel_id": str(channel.channel_id),
                     "consent": str(channel.user_consent),
+                    "channel_name": channel_name,
                 },
             )
             # send fcm notification.
