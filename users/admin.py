@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import gettext_lazy as _
 
-from .models import ConfigurationSession, ConnectUser, IssuingAuthority, ServerKeys
+from .models import ConfigurationSession, ConnectUser, DeviceIntegritySample, IssuingAuthority, ServerKeys
 
 
 @admin.register(ConnectUser)
@@ -58,3 +58,10 @@ class ServerKeysAdmin(admin.ModelAdmin):
             secret_key = form.cleaned_data["secret_key"]
             obj.set_secret_key(secret_key)
         super().save_model(request, obj, form, change)
+
+
+@admin.register(DeviceIntegritySample)
+class DeviceIntegritySampleAdmin(admin.ModelAdmin):
+    list_display = ("request_id", "device_id", "passed", "created")
+    search_fields = ("request_id", "device_id", "passed", "created")
+    list_filter = ("device_id", "passed")
