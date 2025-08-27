@@ -961,3 +961,17 @@ class GenerateManualOTP(APIView):
         session_phone_device.session.save()
 
         return JsonResponse({"otp": session_phone_device.token})
+
+
+@api_view(["POST"])
+@authentication_classes([SessionTokenAuthentication])
+def update_otp_strategy(request):
+    new_strategy = request.data.get("otp_sms_strategy", ConfigurationSession.OTPSMSStrategy.PERSONAL_ID)
+
+    if new_strategy not in ConfigurationSession.OTPSMSStrategy.values:
+        return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
+
+    request.auth.otp_sms_strategy = new_strategy
+    request.auth.save()
+
+    return JsonResponse({"new_strategy": request.auth.otp_sms_strategy})

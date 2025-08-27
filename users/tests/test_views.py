@@ -1820,3 +1820,24 @@ class TestGenerateManualOTP:
         response = authed_client.get(self.url, data={"phone_number": phone_number})
         assert response.status_code == 404
         assert response.json() == {"error_code": ErrorCodes.SESSION_NOT_FOUND}
+
+
+@pytest.mark.django_db
+class TestUpdateOTPStrategy:
+    url = reverse("update_otp_strategy")
+
+    def test_success(self, authed_client_token, valid_token):
+        assert valid_token.otp_sms_strategy == ConfigurationSession.OTPSMSStrategy.FIREBASE
+        new_strategy = ConfigurationSession.OTPSMSStrategy.PERSONAL_ID
+
+        response = authed_client_token.post(self.url, data={"otp_sms_strategy": new_strategy})
+        assert response.status_code == 200
+        assert response.json() == {"new_strategy": new_strategy}
+
+        valid_token.refresh_from_db()
+        assert valid_token.otp_sms_strategy == new_strategy
+
+    def test_invalid_strategy(self, authed_client_token, valid_token):
+        response = authed_client_token.post(self.url, data={"otp_sms_strategy": "invalid_strategy"})
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.INVALID_DATA}
