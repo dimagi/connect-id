@@ -210,7 +210,7 @@ class TestCreateChannelView:
         data = rest_channel_data(fcm_device.user, channel_name=channel_name)
 
         with mock.patch("fcm_django.models.messaging.send_each", wraps=_fake_send) as mock_send_message:
-            response = self.post_channel_request(client, data, status.HTTP_201_CREATED, server)
+            self.post_channel_request(client, data, status.HTTP_201_CREATED, server)
 
             mock_send_message.assert_called_once()
             messages = mock_send_message.call_args.args[0]
