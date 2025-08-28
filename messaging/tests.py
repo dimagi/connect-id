@@ -140,7 +140,7 @@ def rest_channel_data(user=None, consent=False, channel_name=None):
         "user_consent": consent,
         "connectid": str(user.username) if user else None,
         "channel_source": "hq project space",
-        "channel_name": channel_name
+        "channel_name": channel_name,
     }
 
 
@@ -206,7 +206,8 @@ class TestCreateChannelView:
 
     def test_create_channel_with_name(self, client, fcm_device, oauth_app, server):
         """Test that channel_name is used instead of channel_source when it is present"""
-        data = rest_channel_data(fcm_device.user, channel_name="HQ Project")
+        channel_name = "HQ Project"
+        data = rest_channel_data(fcm_device.user, channel_name=channel_name)
 
         with mock.patch("fcm_django.models.messaging.send_each", wraps=_fake_send) as mock_send_message:
             response = self.post_channel_request(client, data, status.HTTP_201_CREATED, server)
@@ -218,10 +219,10 @@ class TestCreateChannelView:
             message = messages[0]
             assert (
                 message.notification.body
-                == f"A new messaging channel is available from {channel.channel_name}, press here to view"
+                == f"A new messaging channel is available from {channel_name}, press here to view"
             )
             assert message.data["channel_source"] == data["channel_source"]
-            assert message.data["channel_source"] == data["channel_name"]
+            assert message.data["channel_source"] == channel_name
 
 
 @pytest.mark.django_db
