@@ -200,10 +200,10 @@ class CreateChannelView(APIView):
                 data={
                     "key_url": str(server.key_url),
                     "action": CCC_MESSAGE_ACTION,
-                    "channel_source": channel.visible_name,
+                    "channel_source": channel_source,
                     "channel_id": str(channel.channel_id),
                     "consent": str(channel.user_consent),
-                    "channel_name": channel_name,
+                    "channel_name": channel.visible_name,
                 },
             )
             # send fcm notification.
