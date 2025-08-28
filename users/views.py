@@ -110,7 +110,7 @@ def start_device_configuration(request):
         "required_lock": ConnectUser.get_device_security_requirement(data["phone_number"], request.invited_user),
         "demo_user": is_demo_user,
         "token": token_session.key,
-        "sms_method": SMSMethods.PERSONAL_ID if request.invited_user else SMSMethods.FIREBASE,
+        "sms_method": SMSMethods.FIREBASE,
     }
     return JsonResponse(response_data)
 
