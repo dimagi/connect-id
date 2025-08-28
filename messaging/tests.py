@@ -135,11 +135,12 @@ def channel(user, server, consent=True):
     return ChannelFactory(connect_user=user, user_consent=consent, server=server)
 
 
-def rest_channel_data(user=None, consent=False):
+def rest_channel_data(user=None, consent=False, channel_name=None):
     return {
         "user_consent": consent,
         "connectid": str(user.username) if user else None,
         "channel_source": "hq project space",
+        "channel_name": channel_name
     }
 
 
@@ -192,7 +193,7 @@ class TestCreateChannelView:
             assert message.notification.title == "New Channel"
             assert (
                 message.notification.body
-                == f"A new messaging channel is available from {channel.visible_name}, press here to view"
+                == f"A new messaging channel is available from {channel.channel_source}, press here to view"
             )
             assert message.data == {
                 "key_url": server.key_url,
@@ -200,8 +201,27 @@ class TestCreateChannelView:
                 "channel_source": data["channel_source"],
                 "channel_id": str(channel.channel_id),
                 "consent": str(channel.user_consent),
-                "channel_name": channel.channel_name,
+                "channel_name": data["channel_source"],
             }
+
+    def test_create_channel_with_name(self, client, fcm_device, oauth_app, server):
+        """Test that channel_name is used instead of channel_source when it is present"""
+        data = rest_channel_data(fcm_device.user, channel_name="HQ Project")
+
+        with mock.patch("fcm_django.models.messaging.send_each", wraps=_fake_send) as mock_send_message:
+            response = self.post_channel_request(client, data, status.HTTP_201_CREATED, server)
+
+            mock_send_message.assert_called_once()
+            messages = mock_send_message.call_args.args[0]
+
+            assert len(messages) == 1
+            message = messages[0]
+            assert (
+                message.notification.body
+                == f"A new messaging channel is available from {channel.channel_name}, press here to view"
+            )
+            assert message.data["channel_source"] == data["channel_source"]
+            assert message.data["channel_source"] == data["channel_name"]
 
 
 @pytest.mark.django_db
