@@ -222,7 +222,7 @@ class TestCreateChannelView:
                 == f"A new messaging channel is available from {channel_name}, press here to view"
             )
             assert message.data["channel_source"] == data["channel_source"]
-            assert message.data["channel_source"] == channel_name
+            assert message.data["channel_name"] == channel_name
 
 
 @pytest.mark.django_db
