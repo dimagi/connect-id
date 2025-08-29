@@ -55,3 +55,20 @@ class Message(models.Model):
     status = models.CharField(max_length=50, choices=MessageStatus.choices, default=MessageStatus.PENDING)
     # represents the direction the message is sent toward
     direction = models.CharField(max_length=4, choices=MessageDirection.choices)
+
+
+class NotificationTypes(models.TextChoices):
+    CONNECT = "CONNECT"  # notification from Connect
+    MESSAGING = "MESSAGING"  # notification from Messaging sources
+
+
+class Notification(models.Model):
+    notification_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(ConnectUser, on_delete=models.CASCADE)
+    type = models.CharField(max_length=50, choices=NotificationTypes.choices, default=NotificationTypes.CONNECT)
+    json = models.JSONField()
+    timestamp = models.DateTimeField(default=timezone.now)
+    received = models.DateTimeField(null=True, blank=True)
+
+    # Only needed for Messaging notifications
+    message_id = models.ForeignKey(Message, on_delete=models.CASCADE, null=True, blank=True)
