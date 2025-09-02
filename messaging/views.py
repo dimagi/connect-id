@@ -445,6 +445,6 @@ class UpdateNotificationReceivedView(APIView):
                 return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
 
             current_time = timezone.now()
-            notifications.update(received=current_time, status=MessageStatus.DELIVERED)
+            notifications.update(received=current_time)
 
         return JsonResponse({}, status=status.HTTP_200_OK)
