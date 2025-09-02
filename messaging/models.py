@@ -2,6 +2,7 @@ import uuid
 
 from django.db import models
 from django.utils import timezone
+from firebase_admin import messaging
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 
 from users.models import ConnectUser, ServerKeys
@@ -68,9 +69,31 @@ class Notification(models.Model):
     notification_type = models.CharField(
         max_length=50, choices=NotificationTypes.choices, default=NotificationTypes.CONNECT
     )
+    # json contains notification title, body and data
     json = models.JSONField()
     timestamp = models.DateTimeField(default=timezone.now)
     received = models.DateTimeField(null=True, blank=True)
 
     # Only needed for Messaging notifications
     message_id = models.ForeignKey(Message, on_delete=models.CASCADE, null=True, blank=True)
+
+    def to_fcm_notification(self, fcm_options={}):
+        title = self.json.get("title", "")
+        body = self.json.get("body", "")
+        data = {
+            **self.json.get("data", {}),
+            "notification_id": str(self.notification_id),
+            "notification_type": self.notification_type.value,
+        }
+        notification = None
+        if title or body:
+            notification = messaging.Notification(
+                title=title,
+                body=body,
+            )
+        return messaging.Message(
+            data=data,
+            notification=notification,
+            fcm_options=messaging.FCMOptions(**fcm_options),
+            android=messaging.AndroidConfig(priority="high"),
+        )
