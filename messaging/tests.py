@@ -1,5 +1,6 @@
 import base64
 import json
+import random
 import uuid
 from collections import defaultdict
 from unittest import mock
@@ -12,7 +13,7 @@ from firebase_admin import messaging
 from rest_framework import status
 
 from messaging.factories import ChannelFactory, MessageFactory, ServerFactory
-from messaging.models import Channel, Message, MessageDirection, MessageStatus
+from messaging.models import Channel, Message, MessageDirection, MessageStatus, Notification
 from messaging.serializers import MessageSerializer, NotificationData
 from users.factories import FCMDeviceFactory, ServerKeysFactory
 
@@ -28,7 +29,7 @@ def server():
 def test_send_message(authed_client, fcm_device):
     url = reverse("messaging:send_message")
 
-    with mock.patch("fcm_django.models.messaging.send_each", wraps=_fake_send) as mock_send_message:
+    with mock.patch("fcm_django.models.messaging.send", wraps=_fake_send) as mock_send_message:
         response = authed_client.post(
             url,
             data=json.dumps(
@@ -47,12 +48,17 @@ def test_send_message(authed_client, fcm_device):
             "responses": [{"username": fcm_device.user.username, "status": "success"}],
         }
         mock_send_message.assert_called_once()
-        messages = mock_send_message.call_args_list[0].args[0]
-        assert len(messages) == 1
-        assert json.loads(str(messages[0])) == {
+        message = mock_send_message.call_args_list[0].args[0]
+        notifications = Notification.objects.filter(user=fcm_device.user)
+        assert len(notifications) == 1
+        assert json.loads(str(message)) == {
             "android": {"priority": "high"},
             "fcm_options": {"analytics_label": "test"},
-            "data": {"test": "data"},
+            "data": {
+                "test": "data",
+                "notification_id": str(notifications[0].notification_id),
+                "notification_type": notifications[0].notification_type,
+            },
             "notification": {"body": "test message"},
             "token": fcm_device.registration_id,
         }
@@ -64,7 +70,7 @@ def test_send_message_bulk(authed_client, fcm_device):
     fcm_device2 = FCMDeviceFactory()
     fcm_device3 = FCMDeviceFactory(active=False)
 
-    with mock.patch("fcm_django.models.messaging.send_each", wraps=_fake_send) as mock_send_message:
+    with mock.patch("fcm_django.models.messaging.send", wraps=_fake_send) as mock_send_message:
         response = authed_client.post(
             url,
             data=json.dumps(
@@ -93,18 +99,27 @@ def test_send_message_bulk(authed_client, fcm_device):
         )
 
         assert response.status_code == 200, response.content
-        assert mock_send_message.call_count == 2
-        messages = mock_send_message.call_args_list[0].args[0]
-        assert len(messages) == 2
-        assert json.loads(str(messages[0])) == {
+        # only getting called for
+        # Notification 1 -> fcm_device, fcm_device2
+        # Notification 2 -> fcm_device
+        assert mock_send_message.call_count == 3
+        message = mock_send_message.call_args_list[0].args[0]
+        notifications = Notification.objects.filter(user=fcm_device.user)
+        assert len(notifications) == 2
+        assert json.loads(str(message)) == {
             "android": {"priority": "high"},
-            "data": {"test": "data1"},
+            "data": {
+                "test": "data1",
+                "notification_id": str(notifications[0].notification_id),
+                "notification_type": notifications[0].notification_type,
+            },
             "notification": {"body": "test message1", "title": "test title1"},
             "token": fcm_device.registration_id,
         }
 
         assert response.json()["all_success"] is False
         results = response.json()["messages"]
+        print(results)
         assert results == [
             {
                 "all_success": True,
@@ -125,9 +140,7 @@ def test_send_message_bulk(authed_client, fcm_device):
 
 
 def _fake_send(messages, **kwargs):
-    return messaging.BatchResponse(
-        [messaging.SendResponse({"name": f"message_id_{i}"}, None) for i, message in enumerate(messages)]
-    )
+    return messaging.BatchResponse([messaging.SendResponse({"name": f"message_id_{random.randint(10, 40)}"}, None)])
 
 
 @pytest.fixture
@@ -177,18 +190,17 @@ class TestCreateChannelView:
     def test_create_channel_success(self, client, fcm_device, oauth_app, server):
         data = rest_channel_data(fcm_device.user)
 
-        with mock.patch("fcm_django.models.messaging.send_each", wraps=_fake_send) as mock_send_message:
+        with mock.patch("fcm_django.models.messaging.send", wraps=_fake_send) as mock_send_message:
             response = self.post_channel_request(client, data, status.HTTP_201_CREATED, server)
 
             json_data = response.json()
             assert "channel_id" in json_data
 
             mock_send_message.assert_called_once()
-            messages = mock_send_message.call_args.args[0]
-
-            assert len(messages) == 1
-            message = messages[0]
+            message = mock_send_message.call_args.args[0]
             channel = Channel.objects.get(connect_user__username=data["connectid"])
+            notifications = Notification.objects.filter(user=fcm_device.user)
+            assert len(notifications) == 1
             assert message.token == fcm_device.registration_id
             assert message.notification.title == "New Channel"
             assert (
@@ -202,6 +214,8 @@ class TestCreateChannelView:
                 "channel_id": str(channel.channel_id),
                 "consent": str(channel.user_consent),
                 "channel_name": data["channel_source"],
+                "notification_id": str(notifications[0].notification_id),
+                "notification_type": notifications[0].notification_type,
             }
 
     def test_create_channel_with_name(self, client, fcm_device, oauth_app, server):
@@ -209,14 +223,11 @@ class TestCreateChannelView:
         channel_name = "HQ Project"
         data = rest_channel_data(fcm_device.user, channel_name=channel_name)
 
-        with mock.patch("fcm_django.models.messaging.send_each", wraps=_fake_send) as mock_send_message:
+        with mock.patch("fcm_django.models.messaging.send", wraps=_fake_send) as mock_send_message:
             self.post_channel_request(client, data, status.HTTP_201_CREATED, server)
 
             mock_send_message.assert_called_once()
-            messages = mock_send_message.call_args.args[0]
-
-            assert len(messages) == 1
-            message = messages[0]
+            message = mock_send_message.call_args.args[0]
             assert (
                 message.notification.body
                 == f"A new messaging channel is available from {channel_name}, press here to view"
