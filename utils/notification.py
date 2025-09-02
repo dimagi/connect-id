@@ -14,7 +14,7 @@ def send_bulk_notification(message: NotificationData):
         return message_result
 
     users = ConnectUser.objects.filter(username__in=message.usernames, is_active=True)
-    missing_users = set()
+    missing_users = set(message.usernames) - {u.username for u in users}
 
     for user in users:
         notification = Notification(
@@ -42,6 +42,8 @@ def send_bulk_notification(message: NotificationData):
                     result["error"] = fcm_response.exception.code
             else:
                 result["status"] = "success"
+        else:
+            result["status"] = "deactivated"
 
     for username in missing_users:
         message_all_success = False
