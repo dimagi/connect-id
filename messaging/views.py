@@ -15,12 +15,13 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.views import APIView
 
 from messaging.const import ErrorCodes
-from messaging.models import Channel, Message, MessageDirection, MessageServer, MessageStatus
+from messaging.models import Channel, Message, MessageDirection, MessageServer, MessageStatus, Notification
 from messaging.serializers import (
     CCC_MESSAGE_ACTION,
     BulkMessageSerializer,
     MessageSerializer,
     NotificationData,
+    NotificationSerializer,
     SingleMessageSerializer,
 )
 from messaging.task import make_request, send_messages_to_service_and_mark_status
@@ -419,5 +420,31 @@ class UpdateReceivedView(APIView):
 
             # To-Do should be async.
             send_messages_to_service_and_mark_status(channel_messages, MessageStatus.CONFIRMED_RECEIVED)
+
+        return JsonResponse({}, status=status.HTTP_200_OK)
+
+
+class RetrieveNotificationView(APIView):
+    def get(self, request, *args, **kwargs):
+        notifications = Notification.objects.filter(user=request.user)
+        notification_data = NotificationSerializer(notifications, many=True).data
+        return JsonResponse({"notifications": notification_data})
+
+
+class UpdateNotificationReceivedView(APIView):
+    def post(self, request, *args, **kwargs):
+        notification_ids = request.data.get("notifications", [])
+
+        if not notification_ids:
+            return JsonResponse({}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            notifications = Notification.objects.select_for_update().filter(notification_id__in=notification_ids)
+
+            if not notifications.exists():
+                return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
+
+            current_time = timezone.now()
+            notifications.update(received=current_time, status=MessageStatus.DELIVERED)
 
         return JsonResponse({}, status=status.HTTP_200_OK)

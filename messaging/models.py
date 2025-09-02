@@ -97,3 +97,7 @@ class Notification(models.Model):
             fcm_options=messaging.FCMOptions(**fcm_options),
             android=messaging.AndroidConfig(priority="high"),
         )
+
+    @property
+    def is_received(self):
+        return True if self.received else False

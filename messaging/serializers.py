@@ -2,7 +2,7 @@ import dataclasses
 
 from rest_framework import serializers
 
-from messaging.models import Message, NotificationTypes
+from messaging.models import Message, Notification, NotificationTypes
 
 CCC_MESSAGE_ACTION = "ccc_message"
 
@@ -83,3 +83,22 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def get_channel_name(self, obj):
         return obj.channel.visible_name
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    title = serializers.SerializerMethodField()
+    body = serializers.SerializerMethodField()
+    data = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Notification
+        fields = ("notification_id", "notification_type", "title", "body", "data", "timestamp", "is_received")
+
+    def get_title(self, obj):
+        return obj.json.get("title", "")
+
+    def get_body(self, obj):
+        return obj.json.get("body", "")
+
+    def get_data(self, obj):
+        return obj.json.get("data", "")
