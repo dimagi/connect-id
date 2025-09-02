@@ -4,11 +4,11 @@ from uuid import uuid4
 
 import factory
 from django.utils import timezone
-from factory import LazyFunction
+from factory import DictFactory, Faker, LazyFunction
 from factory.django import DjangoModelFactory
 from oauth2_provider.models import Application
 
-from messaging.models import Channel, Message, MessageServer
+from messaging.models import Channel, Message, MessageServer, Notification
 from users.factories import UserFactory
 
 
@@ -61,4 +61,21 @@ class MessageFactory(DjangoModelFactory):
     channel = factory.SubFactory(ChannelFactory)
     content = LazyFunction(generate_random_content)
     timestamp = factory.LazyFunction(timezone.now)
+    received = None
+
+
+class NotificationDataFactory(DictFactory):
+    title = Faker("pystr")
+    body = Faker("pystr")
+    data = factory.DictFactory()
+
+
+class NotificationFactory(DjangoModelFactory):
+    class Meta:
+        model = Notification
+
+    notification_id = factory.LazyFunction(uuid4)
+    user = factory.SubFactory(UserFactory)
+    timestamp = factory.LazyFunction(timezone.now)
+    json = NotificationDataFactory()
     received = None
