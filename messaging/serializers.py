@@ -86,19 +86,14 @@ class MessageSerializer(serializers.ModelSerializer):
 
 
 class NotificationSerializer(serializers.ModelSerializer):
-    title = serializers.SerializerMethodField()
-    body = serializers.SerializerMethodField()
-    data = serializers.SerializerMethodField()
-
     class Meta:
         model = Notification
-        fields = ("notification_id", "notification_type", "title", "body", "data", "timestamp", "is_received")
-
-    def get_title(self, obj):
-        return obj.json.get("title", "")
-
-    def get_body(self, obj):
-        return obj.json.get("body", "")
-
-    def get_data(self, obj):
-        return obj.json.get("data", "")
+        fields = (
+            "notification_id",
+            "notification_type",
+            "title",
+            "body",
+            "data",
+            "timestamp",
+            "is_received",
+        )

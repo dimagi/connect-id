@@ -78,18 +78,16 @@ class Notification(models.Model):
     message_id = models.ForeignKey(Message, on_delete=models.CASCADE, null=True, blank=True)
 
     def to_fcm_notification(self, fcm_options={}):
-        title = self.json.get("title", "")
-        body = self.json.get("body", "")
         data = {
-            **self.json.get("data", {}),
+            **self.data,
             "notification_id": str(self.notification_id),
             "notification_type": self.notification_type.value,
         }
         notification = None
-        if title or body:
+        if self.title or self.body:
             notification = messaging.Notification(
-                title=title,
-                body=body,
+                title=self.title,
+                body=self.body,
             )
         return messaging.Message(
             data=data,
@@ -101,3 +99,20 @@ class Notification(models.Model):
     @property
     def is_received(self):
         return True if self.received else False
+
+    @property
+    def title(self):
+        return self.json.get("title", "")
+
+    @property
+    def body(self):
+        return self.json.get("body", "")
+
+    @property
+    def data(self):
+        if self.notification_type == NotificationTypes.MESSAGING.value:
+            from messaging.serializers import MessageSerializer
+
+            return MessageSerializer(self.message).data
+
+        return self.json.get("data", {})
