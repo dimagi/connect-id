@@ -12,7 +12,7 @@ from django.urls import reverse
 from firebase_admin import messaging
 from rest_framework import status
 
-from messaging.factories import ChannelFactory, MessageFactory, ServerFactory
+from messaging.factories import ChannelFactory, MessageFactory, NotificationFactory, ServerFactory
 from messaging.models import Channel, Message, MessageDirection, MessageStatus, Notification
 from messaging.serializers import MessageSerializer, NotificationData
 from users.factories import FCMDeviceFactory, ServerKeysFactory
@@ -507,3 +507,68 @@ class TestUpdateReceivedView:
             all(msg["received_on"] for msg in data[str(ch.channel_id)]["messages"]) for ch in [channel1, channel2]
         )
         assert msg_status == MessageStatus.CONFIRMED_RECEIVED
+
+
+@pytest.mark.django_db
+class TestRetrieveNotificationsView:
+    url = reverse("messaging:retrieve_notifications")
+
+    def test_retrieve_messages_success(self, auth_device, fcm_device):
+        NotificationFactory.create_batch(10, user=fcm_device.user)
+
+        response = auth_device.get(self.url)
+        json_data = response.json()
+
+        assert response.status_code == status.HTTP_200_OK
+        assert all(key in json_data for key in ["notifications"])
+        assert len(json_data["notifications"]) == 10
+        notification = json_data["notifications"][0]
+        assert all(
+            key in notification
+            for key in ["notification_id", "notification_type", "title", "body", "data", "timestamp", "is_received"]
+        )
+
+    def test_retrieve_messages_no_data(self, auth_device):
+        Notification.objects.all().delete()
+        response = auth_device.get(self.url)
+        response_data = response.json()
+
+        assert response.status_code == status.HTTP_200_OK
+        assert all(key in response_data for key in ["notifications"])
+        assert all(not response_data[key] for key in ["notifications"])
+
+
+@pytest.mark.django_db
+class TestUpdateNotificationReceivedView:
+    url = reverse("messaging:update_notification_received")
+
+    def test_update_received(self, auth_device, fcm_device):
+        notifications = NotificationFactory.create_batch(5, user=fcm_device.user)
+        notification_ids = [str(notification.notification_id) for notification in notifications]
+
+        data = {"notifications": notification_ids}
+        data = json.dumps(data)
+        response = auth_device.post(self.url, data, content_type=APPLICATION_JSON)
+
+        assert response.status_code == status.HTTP_200_OK
+
+        for notification in notifications:
+            notification.refresh_from_db()
+            assert notification.received is not None
+
+    def test_empty_notification_list(self, auth_device):
+        data = {"notifications": []}
+        data = json.dumps(data)
+        response = auth_device.post(self.url, data, content_type=APPLICATION_JSON)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert Notification.objects.filter(received__isnull=False).count() == 0
+
+    def test_invalid_notification_ids(self, auth_device):
+        invalid_notification_ids = [str(uuid4()), str(uuid4())]
+        data = {"notifications": invalid_notification_ids}
+        data = json.dumps(data)
+        response = auth_device.post(self.url, data, content_type=APPLICATION_JSON)
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert Notification.objects.filter(received__isnull=False).count() == 0
