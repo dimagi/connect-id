@@ -13,9 +13,10 @@ from firebase_admin import messaging
 from rest_framework import status
 
 from messaging.factories import ChannelFactory, MessageFactory, NotificationFactory, ServerFactory
-from messaging.models import Channel, Message, MessageDirection, MessageStatus, Notification
+from messaging.models import Channel, Message, MessageDirection, MessageStatus, Notification, NotificationTypes
 from messaging.serializers import MessageSerializer, NotificationData
 from users.factories import FCMDeviceFactory, ServerKeysFactory
+from utils.notification import send_bulk_notification
 
 APPLICATION_JSON = "application/json"
 
@@ -260,7 +261,6 @@ def test_send_fcm_notification_view(client, channel, server):
             title="New Connect Message",
             body=f"You received a new message from {channel.visible_name}",
         )
-
         mock_send_bulk_message.assert_called_once_with(expected)
 
 
@@ -572,3 +572,81 @@ class TestUpdateNotificationReceivedView:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert Notification.objects.filter(received__isnull=False).count() == 0
+
+
+@pytest.mark.django_db
+class TestSendBulkNotificationUtil:
+    def test_send_notification(self, fcm_device):
+        with mock.patch("fcm_django.models.messaging.send", wraps=_fake_send) as mock_send_message:
+            fcm_notification = NotificationData(
+                usernames=[fcm_device.user.username],
+                title="test title",
+                body="test message",
+                data={"test": "data"},
+                fcm_options={"analytics_label": "test"},
+            )
+            ret = send_bulk_notification(fcm_notification)
+            assert ret == {
+                "all_success": True,
+                "responses": [{"username": fcm_device.user.username, "status": "success"}],
+            }
+
+            mock_send_message.assert_called_once()
+            message = mock_send_message.call_args_list[0].args[0]
+
+            notification = Notification.objects.filter(user=fcm_device.user).first()
+            assert notification is not None
+            assert json.loads(str(message)) == {
+                "android": {"priority": "high"},
+                "fcm_options": {"analytics_label": "test"},
+                "data": {
+                    "test": "data",
+                    "notification_id": str(notification.notification_id),
+                    "notification_type": notification.notification_type,
+                },
+                "notification": {"title": "test title", "body": "test message"},
+                "token": fcm_device.registration_id,
+            }
+            assert notification.notification_type == NotificationTypes.CONNECT
+            assert notification.data == fcm_notification.data
+            assert notification.title == fcm_notification.title
+            assert notification.body == fcm_notification.body
+
+    def test_send_notification_with_connect_message(self, fcm_device):
+        with mock.patch("fcm_django.models.messaging.send", wraps=_fake_send) as mock_send_message:
+            message = MessageFactory()
+            serialied_message = MessageSerializer(message).data
+            fcm_notification = NotificationData(
+                usernames=[fcm_device.user.username],
+                title="test title",
+                body="test message",
+                data=serialied_message,
+                fcm_options={"analytics_label": "test"},
+            )
+            ret = send_bulk_notification(fcm_notification)
+            assert ret == {
+                "all_success": True,
+                "responses": [{"username": fcm_device.user.username, "status": "success"}],
+            }
+
+            mock_send_message.assert_called_once()
+            message = mock_send_message.call_args_list[0].args[0]
+
+            notification = Notification.objects.filter(user=fcm_device.user).first()
+            assert notification is not None
+            assert json.loads(str(message)) == {
+                "android": {"priority": "high"},
+                "fcm_options": {"analytics_label": "test"},
+                "data": {
+                    **serialied_message,
+                    "notification_id": str(notification.notification_id),
+                    "notification_type": notification.notification_type,
+                },
+                "notification": {"title": "test title", "body": "test message"},
+                "token": fcm_device.registration_id,
+            }
+            assert notification.notification_type == NotificationTypes.MESSAGING
+            assert notification.data == fcm_notification.data
+            assert notification.title == fcm_notification.title
+            assert notification.body == fcm_notification.body
+            assert "data" not in notification.json
