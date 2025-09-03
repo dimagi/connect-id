@@ -64,7 +64,7 @@ class MessageFactory(DjangoModelFactory):
     received = None
 
 
-class NotificationDataFactory(DictFactory):
+class FCMNotificationDataFactory(DictFactory):
     title = Faker("pystr")
     body = Faker("pystr")
     data = factory.DictFactory()
@@ -77,5 +77,5 @@ class NotificationFactory(DjangoModelFactory):
     notification_id = factory.LazyFunction(uuid4)
     user = factory.SubFactory(UserFactory)
     timestamp = factory.LazyFunction(timezone.now)
-    json = NotificationDataFactory()
+    json = FCMNotificationDataFactory()
     received = None
