@@ -75,7 +75,7 @@ class Notification(models.Model):
     received = models.DateTimeField(null=True, blank=True)
 
     # Only needed for Messaging notifications
-    message_id = models.ForeignKey(Message, on_delete=models.CASCADE, null=True, blank=True)
+    message = models.OneToOneField(Message, on_delete=models.CASCADE, null=True, blank=True)
 
     def to_fcm_notification(self, fcm_options={}):
         data = {
