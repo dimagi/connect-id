@@ -875,6 +875,9 @@ def check_user_similarity(request):
 @api_view(["POST"])
 @authentication_classes([SessionTokenAuthentication])
 def send_session_otp(request):
+    if not request.auth.invited_user:
+        return JsonResponse({"error_code": ErrorCodes.NOT_ALLOWED}, status=403)
+
     otp_device, _ = SessionPhoneDevice.objects.get_or_create(
         phone_number=request.auth.phone_number, session=request.auth
     )
@@ -885,6 +888,9 @@ def send_session_otp(request):
 @api_view(["POST"])
 @authentication_classes([SessionTokenAuthentication])
 def confirm_session_otp(request):
+    if not request.auth.invited_user:
+        return JsonResponse({"error_code": ErrorCodes.NOT_ALLOWED}, status=403)
+
     device = SessionPhoneDevice.objects.get(phone_number=request.auth.phone_number, session=request.auth)
     data = request.data
     verified = device.verify_token(data.get("otp"))

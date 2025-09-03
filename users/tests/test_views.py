@@ -1350,6 +1350,7 @@ class TestCheckUserSimilarity:
 
         valid_token.phone_number = user.phone_number
         valid_token.is_phone_validated = True
+        valid_token.invited_user = False
         valid_token.save()
 
         user.name = "ExistingUser"
@@ -1442,6 +1443,14 @@ class TestCompleteProfileView:
 class TestSendSessionOtp:
     url = "/users/send_session_otp"
 
+    def test_not_invited_user(self, authed_client_token, valid_token):
+        valid_token.invited_user = False
+        valid_token.save()
+
+        response = authed_client_token.post(self.url)
+        assert response.status_code == 403
+        assert response.json() == {"error_code": ErrorCodes.NOT_ALLOWED}
+
     @patch("users.models.SessionPhoneDevice.generate_challenge")
     def test_success(self, mock_generate_challenge, authed_client_token, valid_token):
         SessionPhoneDeviceFactory(session=valid_token, phone_number=valid_token.phone_number)
@@ -1462,6 +1471,14 @@ class TestSendSessionOtp:
 @pytest.mark.django_db
 class TestConfirmSessionOtp:
     url = "/users/confirm_session_otp"
+
+    def test_not_invited_user(self, authed_client_token, valid_token):
+        valid_token.invited_user = False
+        valid_token.save()
+
+        response = authed_client_token.post(self.url)
+        assert response.status_code == 403
+        assert response.json() == {"error_code": ErrorCodes.NOT_ALLOWED}
 
     @patch("users.models.SessionPhoneDevice.verify_token")
     def test_invalid_token(self, mock_verify_token, authed_client_token, valid_token):
