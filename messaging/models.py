@@ -77,11 +77,21 @@ class Notification(models.Model):
     # Only needed for Messaging notifications
     message = models.OneToOneField(Message, on_delete=models.CASCADE, null=True, blank=True)
 
+    def save(self, **kwargs):
+        if self.data.get("notification_type", "") == NotificationTypes.MESSAGING.value:
+            self.message_id = self.data.get("message_id")
+            self.notification_type = NotificationTypes.MESSAGING.value
+            # No need to save data for message notifications
+            # it can be generated from the message using message_id
+            del self.json["data"]
+
+        super().save(**kwargs)
+
     def to_fcm_notification(self, fcm_options={}):
         data = {
             **self.data,
             "notification_id": str(self.notification_id),
-            "notification_type": self.notification_type.value,
+            "notification_type": self.notification_type,
         }
         notification = None
         if self.title or self.body:
