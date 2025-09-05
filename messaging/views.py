@@ -12,6 +12,7 @@ from firebase_admin import messaging
 from psycopg2.errors import ForeignKeyViolation
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
+from rest_framework.generics import ListAPIView
 from rest_framework.views import APIView
 
 from messaging.const import ErrorCodes
@@ -424,11 +425,11 @@ class UpdateReceivedView(APIView):
         return JsonResponse({}, status=status.HTTP_200_OK)
 
 
-class RetrieveNotificationView(APIView):
-    def get(self, request, *args, **kwargs):
-        notifications = Notification.objects.filter(user=request.user)
-        notification_data = NotificationSerializer(notifications, many=True).data
-        return JsonResponse({"notifications": notification_data})
+class RetrieveNotificationView(ListAPIView):
+    serializer_class = NotificationSerializer
+
+    def get_queryset(self):
+        return Notification.objects.filter(user=self.request.user)
 
 
 class UpdateNotificationReceivedView(APIView):

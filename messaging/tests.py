@@ -520,9 +520,8 @@ class TestRetrieveNotificationsView:
         json_data = response.json()
 
         assert response.status_code == status.HTTP_200_OK
-        assert all(key in json_data for key in ["notifications"])
-        assert len(json_data["notifications"]) == 10
-        notification = json_data["notifications"][0]
+        assert len(json_data) == 10
+        notification = json_data[0]
         assert all(
             key in notification
             for key in ["notification_id", "notification_type", "title", "body", "data", "timestamp", "is_received"]
@@ -534,8 +533,7 @@ class TestRetrieveNotificationsView:
         response_data = response.json()
 
         assert response.status_code == status.HTTP_200_OK
-        assert all(key in response_data for key in ["notifications"])
-        assert all(not response_data[key] for key in ["notifications"])
+        assert len(response_data) == 0
 
 
 @pytest.mark.django_db
