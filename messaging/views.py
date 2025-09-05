@@ -6,7 +6,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
+from django.utils.timezone import now
 from fcm_django.models import FCMDevice
 from firebase_admin import messaging
 from psycopg2.errors import ForeignKeyViolation
@@ -401,7 +401,7 @@ class UpdateReceivedView(APIView):
             if not messages.exists():
                 return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
 
-            current_time = timezone.now()
+            current_time = now()
             messages.update(received=current_time, status=MessageStatus.DELIVERED)
 
             # Group messages by their channel
@@ -440,12 +440,8 @@ class UpdateNotificationReceivedView(APIView):
             return JsonResponse({}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
-            notifications = Notification.objects.select_for_update().filter(notification_id__in=notification_ids)
-
-            if not notifications.exists():
+            updated_count = Notification.objects.filter(notification_id__in=notification_ids).update(received=now())
+            if updated_count == 0:
                 return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
-
-            current_time = timezone.now()
-            notifications.update(received=current_time)
 
         return JsonResponse({}, status=status.HTTP_200_OK)
