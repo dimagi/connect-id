@@ -441,7 +441,7 @@ class UpdateNotificationReceivedView(APIView):
 
         with transaction.atomic():
             updated_count = Notification.objects.filter(notification_id__in=notification_ids).update(received=now())
-            if updated_count == 0:
+            if updated_count <= 0:
                 return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
 
         return JsonResponse({}, status=status.HTTP_200_OK)
