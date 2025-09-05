@@ -120,7 +120,6 @@ def test_send_message_bulk(authed_client, fcm_device):
 
         assert response.json()["all_success"] is False
         results = response.json()["messages"]
-        print(results)
         assert results == [
             {
                 "all_success": True,
@@ -177,8 +176,6 @@ class TestCreateChannelView:
         url = reverse("messaging:create_channel")
         auth_header = make_basic_auth_header(server.server_credentials.client_id, server.server_credentials.secret_key)
         response = client.post(url, data=json.dumps(data), content_type=APPLICATION_JSON, **auth_header)
-
-        print(response)
 
         assert response.status_code == expected_status
 
@@ -347,7 +344,6 @@ class TestRetrieveMessagesView:
     url = reverse("messaging:retrieve_messages")
 
     def test_retrieve_messages_success(self, auth_device, fcm_device):
-        print(fcm_device.user.username)
         ch = ChannelFactory.create(connect_user=fcm_device.user, server=ServerFactory.create())
         MessageFactory.create_batch(10, channel=ch, direction=MessageDirection.MOBILE)
 
