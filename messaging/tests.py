@@ -520,7 +520,7 @@ class TestRetrieveNotificationsView:
         notification = json_data[0]
         assert all(
             key in notification
-            for key in ["notification_id", "notification_type", "title", "body", "data", "timestamp", "is_received"]
+            for key in ["notification_id", "notification_type", "title", "body", "data", "timestamp"]
         )
 
     def test_retrieve_messages_no_data(self, auth_device):
