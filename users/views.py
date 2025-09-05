@@ -892,9 +892,6 @@ def confirm_session_otp(request):
         return JsonResponse({"error": ErrorCodes.INCORRECT_OTP}, status=401)
     request.auth.is_phone_validated = True
     request.auth.save()
-    if device.has_manual_otp:
-        device.has_manual_otp = False
-        device.save()
     return HttpResponse()
 
 
