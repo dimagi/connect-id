@@ -429,7 +429,7 @@ class RetrieveNotificationView(ListAPIView):
     serializer_class = NotificationSerializer
 
     def get_queryset(self):
-        return Notification.objects.filter(user=self.request.user)
+        return Notification.objects.filter(user=self.request.user, received__isnull=True)
 
 
 class UpdateNotificationReceivedView(APIView):

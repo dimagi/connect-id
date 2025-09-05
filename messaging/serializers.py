@@ -95,5 +95,4 @@ class NotificationSerializer(serializers.ModelSerializer):
             "body",
             "data",
             "timestamp",
-            "is_received",
         )
