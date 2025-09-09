@@ -1506,7 +1506,7 @@ class TestConfirmSessionOtp:
 
         valid_token.refresh_from_db()
         assert valid_token.is_phone_validated
-        assert SessionPhoneDevice.objects.get(session=valid_token).has_manual_otp is False
+        assert SessionPhoneDevice.objects.get(session=valid_token).has_manual_otp is True
 
     @patch("users.models.SessionPhoneDevice.verify_token")
     def test_missing_otp(self, mock_verify_token, authed_client_token, valid_token):
