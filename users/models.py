@@ -302,6 +302,7 @@ class SessionPhoneDevice(BasePhoneDevice):
     session = models.ForeignKey(ConfigurationSession, on_delete=models.CASCADE)
     # this is non-nullable field on the base SideChannelDevice, so make it nullable
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
+    # For monitoring only - indicates whether a manual read of the OTP had to be requested
     has_manual_otp = models.BooleanField(default=False)
 
     class Meta:
