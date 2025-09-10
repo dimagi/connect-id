@@ -111,6 +111,7 @@ def start_device_configuration(request):
         "demo_user": is_demo_user,
         "token": token_session.key,
         "sms_method": SMSMethods.FIREBASE,
+        "otp_fallback": token_session.invited_user,
     }
     return JsonResponse(response_data)
 
