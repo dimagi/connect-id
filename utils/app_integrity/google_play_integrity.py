@@ -120,6 +120,9 @@ class AppIntegrityService:
         """
         Performs a sampling request to log the integrity check results.
         """
+        if DeviceIntegritySample.objects.filter(request_id=request_id).exists():
+            raise DuplicateSampleRequestError("Duplicate sample request")
+
         raw_verdict = self.obtain_verdict()
         verdict = self.parse_raw_verdict(raw_verdict)
 
