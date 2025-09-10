@@ -118,6 +118,7 @@ def valid_token(user):
     return ConfigurationSessionFactory(
         phone_number=user.phone_number,
         is_phone_validated=True,
+        invited_user=True,
     )
 
 
