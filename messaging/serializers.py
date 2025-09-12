@@ -2,7 +2,7 @@ import dataclasses
 
 from rest_framework import serializers
 
-from messaging.models import Message
+from messaging.models import Message, Notification, NotificationTypes
 
 CCC_MESSAGE_ACTION = "ccc_message"
 
@@ -46,6 +46,7 @@ class MessageSerializer(serializers.ModelSerializer):
     nonce = serializers.SerializerMethodField()
     message_id = serializers.SerializerMethodField()
     action = serializers.SerializerMethodField()
+    notification_type = serializers.CharField(default=NotificationTypes.MESSAGING.value)
 
     class Meta:
         model = Message
@@ -59,6 +60,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "timestamp",
             "status",
             "action",
+            "notification_type",
         ]
 
     def get_ciphertext(self, obj):
@@ -81,3 +83,16 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def get_channel_name(self, obj):
         return obj.channel.visible_name
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = (
+            "notification_id",
+            "notification_type",
+            "title",
+            "body",
+            "data",
+            "timestamp",
+        )

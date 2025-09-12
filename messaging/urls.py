@@ -17,4 +17,14 @@ urlpatterns = [
         name="retrieve_messages",
     ),
     path("update_received/", views.UpdateReceivedView.as_view(), name="update_received"),
+    path(
+        "retrieve_notifications/",
+        views.RetrieveNotificationView.as_view(),
+        name="retrieve_notifications",
+    ),
+    path(
+        "update_notification_received/",
+        views.UpdateNotificationReceivedView.as_view(),
+        name="update_notification_received",
+    ),
 ]

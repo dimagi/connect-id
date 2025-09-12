@@ -6,21 +6,23 @@ from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
+from django.utils.timezone import now
 from fcm_django.models import FCMDevice
 from firebase_admin import messaging
 from psycopg2.errors import ForeignKeyViolation
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
+from rest_framework.generics import ListAPIView
 from rest_framework.views import APIView
 
 from messaging.const import ErrorCodes
-from messaging.models import Channel, Message, MessageDirection, MessageServer, MessageStatus
+from messaging.models import Channel, Message, MessageDirection, MessageServer, MessageStatus, Notification
 from messaging.serializers import (
     CCC_MESSAGE_ACTION,
     BulkMessageSerializer,
     MessageSerializer,
     NotificationData,
+    NotificationSerializer,
     SingleMessageSerializer,
 )
 from messaging.task import make_request, send_messages_to_service_and_mark_status
@@ -399,7 +401,7 @@ class UpdateReceivedView(APIView):
             if not messages.exists():
                 return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
 
-            current_time = timezone.now()
+            current_time = now()
             messages.update(received=current_time, status=MessageStatus.DELIVERED)
 
             # Group messages by their channel
@@ -419,5 +421,27 @@ class UpdateReceivedView(APIView):
 
             # To-Do should be async.
             send_messages_to_service_and_mark_status(channel_messages, MessageStatus.CONFIRMED_RECEIVED)
+
+        return JsonResponse({}, status=status.HTTP_200_OK)
+
+
+class RetrieveNotificationView(ListAPIView):
+    serializer_class = NotificationSerializer
+
+    def get_queryset(self):
+        return Notification.objects.filter(user=self.request.user, received__isnull=True)
+
+
+class UpdateNotificationReceivedView(APIView):
+    def post(self, request, *args, **kwargs):
+        notification_ids = request.data.get("notifications", [])
+
+        if not notification_ids:
+            return JsonResponse({}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            updated_count = Notification.objects.filter(notification_id__in=notification_ids).update(received=now())
+            if updated_count <= 0:
+                return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
 
         return JsonResponse({}, status=status.HTTP_200_OK)
