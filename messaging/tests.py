@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 import pytest
 from django.urls import reverse
 from firebase_admin import messaging
+from firebase_admin.exceptions import INVALID_ARGUMENT, InvalidArgumentError
 from rest_framework import status
 
 from messaging.factories import ChannelFactory, MessageFactory, NotificationFactory, ServerFactory
@@ -644,3 +645,52 @@ class TestSendBulkNotificationUtil:
             assert notification.title == fcm_notification.title
             assert notification.body == fcm_notification.body
             assert "data" not in notification.json
+
+    def test_send_notification_inactive_user(self, fcm_device):
+        with mock.patch(
+            "fcm_django.models.messaging.send", wraps=_fake_send_raises_error(messaging.UnregisteredError)
+        ) as mock_send_message:
+            fcm_notification = NotificationData(
+                usernames=[fcm_device.user.username],
+                title="test title",
+                body="test message",
+                data={"test": "data"},
+                fcm_options={"analytics_label": "test"},
+            )
+            ret = send_bulk_notification(fcm_notification)
+            assert ret == {
+                "all_success": False,
+                "responses": [{"username": fcm_device.user.username, "status": "deactivated"}],
+            }
+
+            mock_send_message.assert_called_once()
+            notification = Notification.objects.filter(user=fcm_device.user).first()
+            assert notification is not None
+
+    def test_send_notification_fcm_error(self, fcm_device):
+        with mock.patch(
+            "fcm_django.models.messaging.send", wraps=_fake_send_raises_error(InvalidArgumentError)
+        ) as mock_send_message:
+            fcm_notification = NotificationData(
+                usernames=[fcm_device.user.username],
+                title="test title",
+                body="test message",
+                data={"test": "data"},
+                fcm_options={"analytics_label": "test"},
+            )
+            ret = send_bulk_notification(fcm_notification)
+            assert ret == {
+                "all_success": False,
+                "responses": [{"username": fcm_device.user.username, "status": "error", "error": INVALID_ARGUMENT}],
+            }
+            mock_send_message.assert_called_once()
+
+            notification = Notification.objects.filter(user=fcm_device.user).first()
+            assert notification is not None
+
+
+def _fake_send_raises_error(error):
+    def _error_return(message, **kwargs):
+        raise error(message=message)
+
+    return _error_return
