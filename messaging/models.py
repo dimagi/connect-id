@@ -78,7 +78,7 @@ class Notification(models.Model):
     message = models.OneToOneField(Message, on_delete=models.CASCADE, null=True, blank=True)
 
     def save(self, **kwargs):
-        if self.data.get("notification_type", "") == NotificationTypes.MESSAGING.value:
+        if self.data is not None and self.data.get("notification_type", "") == NotificationTypes.MESSAGING.value:
             self.message_id = self.data.get("message_id")
             self.notification_type = NotificationTypes.MESSAGING.value
             # No need to save data for message notifications

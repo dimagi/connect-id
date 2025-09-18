@@ -1,5 +1,6 @@
 from fcm_django.models import FCMDevice
 from firebase_admin import messaging
+from firebase_admin.exceptions import FirebaseError
 
 from messaging.models import Notification
 from messaging.serializers import NotificationData
@@ -29,17 +30,16 @@ def send_bulk_notification(message: NotificationData):
         message_result["responses"].append(result)
 
         if fcm_device is not None:
-            registration_id = fcm_device.registration_id
             fcm_notification = notification.to_fcm_notification(fcm_options=message.fcm_options)
-            fcm_response = fcm_device.send_message(fcm_notification)
-
-            if fcm_response.exception:
+            try:
+                fcm_device.send_message(fcm_notification)
+            except messaging.UnregisteredError:
+                message_all_success = False
+                result["status"] = "deactivated"
+            except FirebaseError as e:
                 message_all_success = False
                 result["status"] = "error"
-                if registration_id in fcm_response.deactivated_registration_ids:
-                    result["status"] = "deactivated"
-                else:
-                    result["error"] = fcm_response.exception.code
+                result["error"] = e.code
             else:
                 result["status"] = "success"
         else:
