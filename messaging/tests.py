@@ -227,14 +227,14 @@ class TestCreateChannelView:
     def test_create_channel_uppercase(self, client, fcm_device, oauth_app, server):
         data = rest_channel_data(fcm_device.user)
         data["connectid"] = data["connectid"].upper()
-        with mock.patch("fcm_django.models.messaging.send_each", wraps=_fake_send):
+        with mock.patch("messaging.views.send_bulk_notification"):
             # this inclues an assertion that the request succeeds
             self.post_channel_request(client, data, status.HTTP_201_CREATED, server)
 
     def test_create_channel_lowercase(self, client, fcm_device, oauth_app, server):
         data = rest_channel_data(fcm_device.user)
         data["connectid"] = data["connectid"].lower()
-        with mock.patch("fcm_django.models.messaging.send_each", wraps=_fake_send):
+        with mock.patch("messaging.views.send_bulk_notification"):
             # this inclues an assertion that the request succeeds
             self.post_channel_request(client, data, status.HTTP_201_CREATED, server)
 
