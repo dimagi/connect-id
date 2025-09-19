@@ -234,6 +234,20 @@ class TestCreateChannelView:
             assert message.data["channel_source"] == data["channel_source"]
             assert message.data["channel_name"] == channel_name
 
+    def test_create_channel_uppercase(self, client, fcm_device, oauth_app, server):
+        data = rest_channel_data(fcm_device.user)
+        data["connectid"] = data["connectid"].upper()
+        with mock.patch("messaging.views.send_bulk_notification"):
+            # this inclues an assertion that the request succeeds
+            self.post_channel_request(client, data, status.HTTP_201_CREATED, server)
+
+    def test_create_channel_lowercase(self, client, fcm_device, oauth_app, server):
+        data = rest_channel_data(fcm_device.user)
+        data["connectid"] = data["connectid"].lower()
+        with mock.patch("messaging.views.send_bulk_notification"):
+            # this inclues an assertion that the request succeeds
+            self.post_channel_request(client, data, status.HTTP_201_CREATED, server)
+
 
 @pytest.mark.django_db
 def test_send_fcm_notification_view(client, channel, server):
