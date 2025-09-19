@@ -10,6 +10,7 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import AbstractUser, AnonymousUser
 from django.contrib.sites.models import Site
 from django.db import models
+from django.db.models.functions import Lower
 from django.urls import reverse
 from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
@@ -110,7 +111,8 @@ class ConnectUser(AbstractUser):
                 fields=["phone_number"],
                 condition=models.Q(is_active=True),
                 name="phone_number_active_user",
-            )
+            ),
+            models.UniqueConstraint(Lower("username"), name="unique_lower_user"),
         ]
 
 
