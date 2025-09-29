@@ -47,6 +47,7 @@ def unlock_user(inactive_user, disable_current_active_user=True):
 
     inactive_user.is_locked = False
     inactive_user.is_active = True
+    inactive_user.failed_backup_code_attempts = 0
     inactive_user.save()
 
 
