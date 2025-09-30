@@ -207,8 +207,12 @@ def complete_profile(request):
     if not (name and recovery_pin and photo):
         return JsonResponse({"error": ErrorCodes.MISSING_DATA}, status=400)
 
-    # Deactivate any existing user with the same phone number
-    ConnectUser.objects.filter(phone_number=request.auth.phone_number, is_active=True).update(is_active=False)
+    users = ConnectUser.objects.filter(phone_number=request.auth.phone_number, is_active=True)
+    if users:
+        logger.WARNING(
+            f"User with active number attempted to create new account: existing user {users.first().username}"
+        )
+        return JsonResponse({"error": ErrorCodes.ACTIVE_USER_EXISTS}, status=401)
 
     session = request.auth
     device_security = ConnectUser.DeviceSecurity.PIN if session.invited_user else ConnectUser.DeviceSecurity.BIOMETRIC
