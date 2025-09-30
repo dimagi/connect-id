@@ -573,14 +573,28 @@ class TestUpdateNotificationReceivedView:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert Notification.objects.filter(received__isnull=False).count() == 0
 
-    def test_invalid_notification_ids(self, auth_device):
-        invalid_notification_ids = [str(uuid4()), str(uuid4())]
-        data = {"notifications": invalid_notification_ids}
+    def test_not_found_notification_ids(self, auth_device):
+        notification_ids = [str(uuid4()), str(uuid4())]
+        data = {"notifications": notification_ids}
         data = json.dumps(data)
         response = auth_device.post(self.url, data, content_type=APPLICATION_JSON)
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert Notification.objects.filter(received__isnull=False).count() == 0
+
+    def test_invalid_notification_ids(self, auth_device):
+        invalid_notification_ids = [1, 2]
+        data = {"notifications": invalid_notification_ids}
+        data = json.dumps(data)
+
+        with mock.patch("sentry_sdk.capture_exception") as mock_capture_exception:
+            response = auth_device.post(self.url, data, content_type=APPLICATION_JSON)
+            error = mock_capture_exception.call_args_list[0].args[0]
+
+            assert mock_capture_exception.call_count == 2
+            assert isinstance(error, ValueError)
+            assert response.status_code == status.HTTP_404_NOT_FOUND
+            assert Notification.objects.filter(received__isnull=False).count() == 0
 
 
 @pytest.mark.django_db
