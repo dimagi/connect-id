@@ -2,6 +2,7 @@ import base64
 from collections import defaultdict
 from uuid import UUID
 
+import sentry_sdk
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from django.http import JsonResponse
@@ -439,8 +440,19 @@ class UpdateNotificationReceivedView(APIView):
         if not notification_ids:
             return JsonResponse({}, status=status.HTTP_400_BAD_REQUEST)
 
+        valid_notification_ids = []
+        for notification_id in notification_ids:
+            try:
+                uuid = UUID(str(notification_id))
+                valid_notification_ids.append(uuid)
+            except ValueError as e:
+                sentry_sdk.capture_exception(e)
+                pass
+
         with transaction.atomic():
-            updated_count = Notification.objects.filter(notification_id__in=notification_ids).update(received=now())
+            updated_count = Notification.objects.filter(notification_id__in=valid_notification_ids).update(
+                received=now()
+            )
             if updated_count <= 0:
                 return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
 
