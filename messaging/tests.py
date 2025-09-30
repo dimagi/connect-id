@@ -16,6 +16,7 @@ from rest_framework import status
 from messaging.factories import ChannelFactory, MessageFactory, NotificationFactory, ServerFactory
 from messaging.models import Channel, Message, MessageDirection, MessageStatus, Notification, NotificationTypes
 from messaging.serializers import MessageSerializer, NotificationData
+from messaging.task import CommCareHQAPIException
 from users.factories import FCMDeviceFactory, ServerKeysFactory
 from utils.notification import send_bulk_notification
 
@@ -446,6 +447,25 @@ class TestUpdateConsentView:
         data = json.dumps(data)
         response = auth_device.post(url, data, content_type=APPLICATION_JSON)
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_failure_from_hq(self, auth_device, channel, server):
+        with patch("messaging.views.make_request") as mock_make_request:
+            mock_make_request.side_effect = CommCareHQAPIException("HQ request failed")
+            data = {
+                "channel": str(channel.channel_id),
+                "consent": False,
+            }
+            json_data = json.dumps(data)
+            response = auth_device.post(self.url, json_data, content_type=APPLICATION_JSON)
+
+            assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+            data["channel_id"] = data.pop("channel")
+
+            mock_make_request.assert_called_once_with(
+                url=channel.server.consent_url,
+                json_data=data,
+                secret=channel.server.server_credentials.secret_key,
+            )
 
 
 @pytest.mark.django_db
