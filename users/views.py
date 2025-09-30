@@ -209,9 +209,7 @@ def complete_profile(request):
 
     users = ConnectUser.objects.filter(phone_number=request.auth.phone_number, is_active=True)
     if users:
-        logger.WARNING(
-            f"User with active number attempted to create new account: existing user {users.first().username}"
-        )
+        logger.info(f"User with active number attempted to create new account: existing user {users.first().username}")
         return JsonResponse({"error": ErrorCodes.ACTIVE_USER_EXISTS}, status=401)
 
     session = request.auth
