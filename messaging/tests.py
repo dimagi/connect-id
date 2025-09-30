@@ -459,6 +459,8 @@ class TestUpdateConsentView:
             response = auth_device.post(self.url, json_data, content_type=APPLICATION_JSON)
 
             assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+            response_json = response.json()
+            assert response_json == {"error": "Failed to update consent for channel."}
             data["channel_id"] = data.pop("channel")
 
             mock_make_request.assert_called_once_with(
