@@ -1420,7 +1420,7 @@ class TestCompleteProfileView:
         assert response.json() == {"error": ErrorCodes.PHONE_NOT_VALIDATED}
 
     @patch("users.views.upload_photo_to_s3")
-    def test_existing_account_deactivation(self, mock_upload_photo, authed_client_token, valid_token, user):
+    def test_existing_account(self, mock_upload_photo, authed_client_token, valid_token, user):
         assert user.is_active
 
         valid_token.phone_number = user.phone_number
@@ -1428,14 +1428,14 @@ class TestCompleteProfileView:
         mock_upload_photo.return_value = None
 
         response = authed_client_token.post(self.url, data=self.post_data)
-        assert response.status_code == 200
+        assert response.status_code == 401
 
         user.refresh_from_db()
-        assert not user.is_active
+        assert user.is_active
 
         new_user = ConnectUser.objects.get(phone_number=valid_token.phone_number, is_active=True)
-        assert new_user.username != user.username
-        assert new_user.name == self.post_data["name"]
+        assert new_user.username == user.username
+        assert new_user.name != self.post_data["name"]
 
 
 @pytest.mark.django_db
