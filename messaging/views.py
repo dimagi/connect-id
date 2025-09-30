@@ -25,7 +25,7 @@ from messaging.serializers import (
     NotificationSerializer,
     SingleMessageSerializer,
 )
-from messaging.task import make_request, send_messages_to_service_and_mark_status
+from messaging.task import CommCareHQAPIException, make_request, send_messages_to_service_and_mark_status
 from users.models import ConnectUser
 from utils.notification import send_bulk_notification
 from utils.rest_framework import ClientProtectedResourceAuth, MessagingServerAuth
@@ -375,17 +375,21 @@ class UpdateConsentView(APIView):
             "consent": channel.user_consent,
         }
 
-        response = make_request(
-            url=channel.server.consent_url, json_data=json_data, secret=channel.server.server_credentials.secret_key
-        )
+        status_code = status.HTTP_200_OK
+        response = {}
 
-        if response.status_code != status.HTTP_200_OK:
-            return JsonResponse(
-                {"error": "Failed to update consent service"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        try:
+            make_request(
+                url=channel.server.consent_url,
+                json_data=json_data,
+                secret=channel.server.server_credentials.secret_key,
             )
 
-        return JsonResponse({}, status=status.HTTP_200_OK)
+        except CommCareHQAPIException:
+            response = {"error": "Failed to update consent for channel."}
+            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+
+        return JsonResponse(response, status=status_code)
 
 
 class UpdateReceivedView(APIView):

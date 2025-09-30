@@ -38,7 +38,7 @@ def make_request(url, json_data, secret):
         response.raise_for_status()
         return response
     except requests.exceptions.RequestException as e:
-        return CommCareHQAPIException({"status": "error", "message": str(e)})
+        raise CommCareHQAPIException({"status": "error", "message": str(e)})
 
 
 def send_messages_to_service_and_mark_status(channel_messages, status_to_be_updated: MessageStatus):
