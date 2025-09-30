@@ -447,7 +447,6 @@ class UpdateNotificationReceivedView(APIView):
                 valid_notification_ids.append(uuid)
             except ValueError as e:
                 sentry_sdk.capture_exception(e)
-                pass
 
         with transaction.atomic():
             updated_count = Notification.objects.filter(notification_id__in=valid_notification_ids).update(
