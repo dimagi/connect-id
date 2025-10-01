@@ -1404,6 +1404,7 @@ class TestCompleteProfileView:
 
     @patch("users.views.upload_photo_to_s3")
     def test_upload_photo_error(self, mock_upload_photo, authed_client_token, valid_token):
+        valid_token.phone_number = "+919999999999"
         valid_token.is_phone_validated = True
         valid_token.save()
         mock_upload_photo.return_value = "test-error"
