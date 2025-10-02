@@ -124,5 +124,5 @@ class Notification(models.Model):
             from messaging.serializers import MessageSerializer
 
             return MessageSerializer(self.message).data
-
-        return self.json.get("data", {})
+        # always return an empty dictionary, sometimes the data can be none
+        return self.json.get("data") or {}
