@@ -1,7 +1,10 @@
 from fcm_django.models import FCMDevice
 from firebase_admin import messaging
+from firebase_admin.exceptions import FirebaseError
 
+from messaging.models import Notification
 from messaging.serializers import NotificationData
+from users.models import ConnectUser
 
 
 def send_bulk_notification(message: NotificationData):
@@ -11,32 +14,38 @@ def send_bulk_notification(message: NotificationData):
         message_result["all_success"] = message_all_success
         return message_result
 
-    active_devices = FCMDevice.objects.filter(user__username__in=message.usernames, active=True).values_list(
-        "registration_id", "user__username"
-    )
-    registration_id_to_username = {reg_id: username for reg_id, username in active_devices}
+    users = ConnectUser.objects.filter(username__in=message.usernames, is_active=True)
+    missing_users = set(message.usernames) - {u.username for u in users}
 
-    batch_response = FCMDevice.objects.send_message(
-        _build_message(message),
-        additional_registration_ids=list(registration_id_to_username),
-        skip_registration_id_lookup=True,
-    )
+    for user in users:
+        notification = Notification(
+            user=user,
+            json={"title": message.title, "body": message.body, "data": message.data},
+        )
+        notification.save()
 
-    for response, registration_id in zip(batch_response.response.responses, batch_response.registration_ids_sent):
-        result = {"username": registration_id_to_username[registration_id]}
+        fcm_device = FCMDevice.objects.filter(user=user, active=True).first()
+
+        result = {"username": user.username}
         message_result["responses"].append(result)
-        if response.exception:
-            message_all_success = False
-            result["status"] = "error"
-            if registration_id in batch_response.deactivated_registration_ids:
-                result["status"] = "deactivated"
-            else:
-                result["error"] = response.exception.code
-        else:
-            result["status"] = "success"
 
-    missing_usernames = set(message.usernames) - set(registration_id_to_username.values())
-    for username in missing_usernames:
+        if fcm_device is not None:
+            fcm_notification = notification.to_fcm_notification(fcm_options=message.fcm_options)
+            try:
+                fcm_device.send_message(fcm_notification)
+            except messaging.UnregisteredError:
+                message_all_success = False
+                result["status"] = "deactivated"
+            except FirebaseError as e:
+                message_all_success = False
+                result["status"] = "error"
+                result["error"] = e.code
+            else:
+                result["status"] = "success"
+        else:
+            result["status"] = "deactivated"
+
+    for username in missing_users:
         message_all_success = False
         result = {"status": "deactivated", "username": username}
         message_result["responses"].append(result)

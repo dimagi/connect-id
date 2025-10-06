@@ -2,6 +2,7 @@ import uuid
 
 from django.db import models
 from django.utils import timezone
+from firebase_admin import messaging
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 
 from users.models import ConnectUser, ServerKeys
@@ -55,3 +56,73 @@ class Message(models.Model):
     status = models.CharField(max_length=50, choices=MessageStatus.choices, default=MessageStatus.PENDING)
     # represents the direction the message is sent toward
     direction = models.CharField(max_length=4, choices=MessageDirection.choices)
+
+
+class NotificationTypes(models.TextChoices):
+    CONNECT = "CONNECT"  # notification from Connect
+    MESSAGING = "MESSAGING"  # notification from Messaging sources
+
+
+class Notification(models.Model):
+    notification_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(ConnectUser, on_delete=models.CASCADE)
+    notification_type = models.CharField(
+        max_length=50, choices=NotificationTypes.choices, default=NotificationTypes.CONNECT
+    )
+    # json contains notification title, body and data
+    json = models.JSONField()
+    timestamp = models.DateTimeField(default=timezone.now)
+    received = models.DateTimeField(null=True, blank=True)
+
+    # Only needed for Messaging notifications
+    message = models.OneToOneField(Message, on_delete=models.CASCADE, null=True, blank=True)
+
+    def save(self, **kwargs):
+        if self.data is not None and self.data.get("notification_type", "") == NotificationTypes.MESSAGING.value:
+            self.message_id = self.data.get("message_id")
+            self.notification_type = NotificationTypes.MESSAGING.value
+            # No need to save data for message notifications
+            # it can be generated from the message using message_id
+            del self.json["data"]
+
+        super().save(**kwargs)
+
+    def to_fcm_notification(self, fcm_options={}):
+        data = {
+            **self.data,
+            "notification_id": str(self.notification_id),
+            "notification_type": self.notification_type,
+        }
+        notification = None
+        if self.title or self.body:
+            notification = messaging.Notification(
+                title=self.title,
+                body=self.body,
+            )
+        return messaging.Message(
+            data=data,
+            notification=notification,
+            fcm_options=messaging.FCMOptions(**fcm_options),
+            android=messaging.AndroidConfig(priority="high"),
+        )
+
+    @property
+    def is_received(self):
+        return True if self.received else False
+
+    @property
+    def title(self):
+        return self.json.get("title", "")
+
+    @property
+    def body(self):
+        return self.json.get("body", "")
+
+    @property
+    def data(self):
+        if self.notification_type == NotificationTypes.MESSAGING.value:
+            from messaging.serializers import MessageSerializer
+
+            return MessageSerializer(self.message).data
+
+        return self.json.get("data", {})

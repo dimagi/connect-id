@@ -1405,6 +1405,7 @@ class TestCompleteProfileView:
 
     @patch("users.views.upload_photo_to_s3")
     def test_upload_photo_error(self, mock_upload_photo, authed_client_token, valid_token):
+        valid_token.phone_number = "+919999999999"
         valid_token.is_phone_validated = True
         valid_token.save()
         mock_upload_photo.return_value = "test-error"
@@ -1421,7 +1422,7 @@ class TestCompleteProfileView:
         assert response.json() == {"error": ErrorCodes.PHONE_NOT_VALIDATED}
 
     @patch("users.views.upload_photo_to_s3")
-    def test_existing_account_deactivation(self, mock_upload_photo, authed_client_token, valid_token, user):
+    def test_existing_account(self, mock_upload_photo, authed_client_token, valid_token, user):
         assert user.is_active
 
         valid_token.phone_number = user.phone_number
@@ -1429,14 +1430,14 @@ class TestCompleteProfileView:
         mock_upload_photo.return_value = None
 
         response = authed_client_token.post(self.url, data=self.post_data)
-        assert response.status_code == 200
+        assert response.status_code == 401
 
         user.refresh_from_db()
-        assert not user.is_active
+        assert user.is_active
 
         new_user = ConnectUser.objects.get(phone_number=valid_token.phone_number, is_active=True)
-        assert new_user.username != user.username
-        assert new_user.name == self.post_data["name"]
+        assert new_user.username == user.username
+        assert new_user.name != self.post_data["name"]
 
 
 @pytest.mark.django_db
@@ -1523,7 +1524,7 @@ class TestConfirmSessionOtp:
 
         valid_token.refresh_from_db()
         assert valid_token.is_phone_validated
-        assert SessionPhoneDevice.objects.get(session=valid_token).has_manual_otp is False
+        assert SessionPhoneDevice.objects.get(session=valid_token).has_manual_otp is True
 
     @patch("users.models.SessionPhoneDevice.verify_token")
     def test_missing_otp(self, mock_verify_token, authed_client_token, valid_token):

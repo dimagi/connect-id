@@ -10,6 +10,7 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import AbstractUser, AnonymousUser
 from django.contrib.sites.models import Site
 from django.db import models
+from django.db.models.functions import Lower
 from django.urls import reverse
 from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
@@ -110,7 +111,8 @@ class ConnectUser(AbstractUser):
                 fields=["phone_number"],
                 condition=models.Q(is_active=True),
                 name="phone_number_active_user",
-            )
+            ),
+            models.UniqueConstraint(Lower("username"), name="unique_lower_user"),
         ]
 
 
@@ -302,19 +304,11 @@ class SessionPhoneDevice(BasePhoneDevice):
     session = models.ForeignKey(ConfigurationSession, on_delete=models.CASCADE)
     # this is non-nullable field on the base SideChannelDevice, so make it nullable
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
+    # For monitoring only - indicates whether a manual read of the OTP had to be requested
     has_manual_otp = models.BooleanField(default=False)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["phone_number", "session"], name="phone_number_session")]
-
-    def generate_challenge(self):
-        if self.is_otp_close_to_expiry:
-            # Set to false as the token is close to expiry and
-            # we want to auto generate a new one
-            self.has_manual_otp = False
-            self.save()
-        if not self.has_manual_otp:
-            return super().generate_challenge()
 
 
 class DeviceIntegritySample(models.Model):

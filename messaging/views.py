@@ -6,24 +6,26 @@ from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
+from django.utils.timezone import now
 from fcm_django.models import FCMDevice
 from firebase_admin import messaging
 from psycopg2.errors import ForeignKeyViolation
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
+from rest_framework.generics import ListAPIView
 from rest_framework.views import APIView
 
 from messaging.const import ErrorCodes
-from messaging.models import Channel, Message, MessageDirection, MessageServer, MessageStatus
+from messaging.models import Channel, Message, MessageDirection, MessageServer, MessageStatus, Notification
 from messaging.serializers import (
     CCC_MESSAGE_ACTION,
     BulkMessageSerializer,
     MessageSerializer,
     NotificationData,
+    NotificationSerializer,
     SingleMessageSerializer,
 )
-from messaging.task import make_request, send_messages_to_service_and_mark_status
+from messaging.task import CommCareHQAPIException, make_request, send_messages_to_service_and_mark_status
 from users.models import ConnectUser
 from utils.notification import send_bulk_notification
 from utils.rest_framework import ClientProtectedResourceAuth, MessagingServerAuth
@@ -187,7 +189,7 @@ class CreateChannelView(APIView):
         channel_source = data["channel_source"]
         channel_name = data.get("channel_name")
         server = get_current_message_server(request)
-        user = get_object_or_404(ConnectUser, username=connect_id)
+        user = get_object_or_404(ConnectUser, username__iexact=connect_id)
         channel, created = Channel.objects.get_or_create(
             server=server, connect_user=user, channel_source=channel_source, defaults={"channel_name": channel_name}
         )
@@ -200,10 +202,10 @@ class CreateChannelView(APIView):
                 data={
                     "key_url": str(server.key_url),
                     "action": CCC_MESSAGE_ACTION,
-                    "channel_source": channel.visible_name,
+                    "channel_source": channel_source,
                     "channel_id": str(channel.channel_id),
                     "consent": str(channel.user_consent),
-                    "channel_name": channel_name,
+                    "channel_name": channel.visible_name,
                 },
             )
             # send fcm notification.
@@ -373,17 +375,21 @@ class UpdateConsentView(APIView):
             "consent": channel.user_consent,
         }
 
-        response = make_request(
-            url=channel.server.consent_url, json_data=json_data, secret=channel.server.server_credentials.secret_key
-        )
+        status_code = status.HTTP_200_OK
+        response = {}
 
-        if response.status_code != status.HTTP_200_OK:
-            return JsonResponse(
-                {"error": "Failed to update consent service"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        try:
+            make_request(
+                url=channel.server.consent_url,
+                json_data=json_data,
+                secret=channel.server.server_credentials.secret_key,
             )
 
-        return JsonResponse({}, status=status.HTTP_200_OK)
+        except CommCareHQAPIException:
+            response = {"error": "Failed to update consent for channel."}
+            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+
+        return JsonResponse(response, status=status_code)
 
 
 class UpdateReceivedView(APIView):
@@ -399,7 +405,7 @@ class UpdateReceivedView(APIView):
             if not messages.exists():
                 return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
 
-            current_time = timezone.now()
+            current_time = now()
             messages.update(received=current_time, status=MessageStatus.DELIVERED)
 
             # Group messages by their channel
@@ -419,5 +425,27 @@ class UpdateReceivedView(APIView):
 
             # To-Do should be async.
             send_messages_to_service_and_mark_status(channel_messages, MessageStatus.CONFIRMED_RECEIVED)
+
+        return JsonResponse({}, status=status.HTTP_200_OK)
+
+
+class RetrieveNotificationView(ListAPIView):
+    serializer_class = NotificationSerializer
+
+    def get_queryset(self):
+        return Notification.objects.filter(user=self.request.user, received__isnull=True)
+
+
+class UpdateNotificationReceivedView(APIView):
+    def post(self, request, *args, **kwargs):
+        notification_ids = request.data.get("notifications", [])
+
+        if not notification_ids:
+            return JsonResponse({}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            updated_count = Notification.objects.filter(notification_id__in=notification_ids).update(received=now())
+            if updated_count <= 0:
+                return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
 
         return JsonResponse({}, status=status.HTTP_200_OK)

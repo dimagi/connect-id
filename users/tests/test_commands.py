@@ -43,6 +43,7 @@ class TestUnlockAndGenerateBackupCode:
         locked_user.refresh_from_db()
         assert locked_user.is_locked is False
         assert locked_user.is_active is True
+        assert locked_user.failed_backup_code_attempts == 0
 
     def test_disable_active_user(self, locked_user):
         active_user = UserFactory.create(phone_number=locked_user.phone_number)
