@@ -14,7 +14,7 @@ from fcm_django.models import FCMDevice
 from payments.models import PaymentProfile
 from services.ai.ocs import OpenChatStudio
 from test_utils.decorators import skip_app_integrity_check
-from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
+from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
 from users.factories import (
     ConfigurationSessionFactory,
     CredentialFactory,
@@ -1295,6 +1295,46 @@ class TestStartConfigurationView:
         integrity_service_mock.assert_called_once_with(
             token="token", request_hash="hash", app_package="my.fancy.app", is_demo_user=True
         )
+
+    @skip_app_integrity_check
+    @patch("users.models.ConfigurationSession.country_code", new_callable=PropertyMock)
+    @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
+    def test_invited_user_starts_session_on_api_v1(self, check_number_mock, mock_country_code, client):
+        phone_number = Faker().phone_number()
+        gps_location = "1.2 3.4"
+        check_number_mock.return_value = True
+
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": phone_number, "gps_location": gps_location, "cc_device_id": "device_id"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+            HTTP_ACCEPT="application/json; version=1.0",
+        )
+        assert response.status_code == 200
+
+        sms_method = response.json().get("sms_method")
+        assert sms_method == SMSMethods.PERSONAL_ID
+
+    @skip_app_integrity_check
+    @patch("users.models.ConfigurationSession.country_code", new_callable=PropertyMock)
+    @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
+    def test_invited_user_starts_session_on_api_v2(self, check_number_mock, mock_country_code, client):
+        phone_number = Faker().phone_number()
+        gps_location = "1.2 3.4"
+        check_number_mock.return_value = True
+
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": phone_number, "gps_location": gps_location, "cc_device_id": "device_id"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+            HTTP_ACCEPT="application/json; version=2.0",
+        )
+        assert response.status_code == 200
+
+        sms_method = response.json().get("sms_method")
+        assert sms_method == SMSMethods.FIREBASE
 
 
 @pytest.mark.django_db

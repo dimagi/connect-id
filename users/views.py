@@ -106,11 +106,16 @@ def start_device_configuration(request):
         logger.error(f"Invalid location data for phone number ...{data['phone_number'][-6:]}")
 
     token_session.save()
+
+    sms_method = SMSMethods.FIREBASE
+    if request.version == settings.API_VERSION.V1:
+        sms_method = SMSMethods.PERSONAL_ID if request.invited_user else SMSMethods.FIREBASE
+
     response_data = {
         "required_lock": ConnectUser.get_device_security_requirement(data["phone_number"], request.invited_user),
         "demo_user": is_demo_user,
         "token": token_session.key,
-        "sms_method": SMSMethods.FIREBASE,
+        "sms_method": sms_method,
         "otp_fallback": token_session.invited_user,
     }
     return JsonResponse(response_data)
