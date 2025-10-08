@@ -56,7 +56,7 @@ class ServerKeysAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         if "secret_key" in form.cleaned_data:
             secret_key = form.cleaned_data["secret_key"]
-            obj.set_secret_key(secret_key)
+            obj.secret_key = secret_key
         super().save_model(request, obj, form, change)
 
 

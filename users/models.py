@@ -194,6 +194,10 @@ class ServerKeys(models.Model):
     def __str__(self):
         return self.name
 
+    class Meta:
+        verbose_name = "Server Keys"
+        verbose_name_plural = "Server Keys"
+
 
 class IssuingAuthority(models.Model):
     class IssuingAuthorityTypes(models.TextChoices):
