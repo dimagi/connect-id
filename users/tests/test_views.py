@@ -1315,6 +1315,7 @@ class TestStartConfigurationView:
 
         sms_method = response.json().get("sms_method")
         assert sms_method == SMSMethods.PERSONAL_ID
+        assert "otp_fallback" not in response.json()
 
     @skip_app_integrity_check
     @patch("users.models.ConfigurationSession.country_code", new_callable=PropertyMock)
@@ -1335,6 +1336,7 @@ class TestStartConfigurationView:
 
         sms_method = response.json().get("sms_method")
         assert sms_method == SMSMethods.FIREBASE
+        assert response.json().get("otp_fallback")
 
 
 @pytest.mark.django_db
