@@ -14,7 +14,7 @@ from fcm_django.models import FCMDevice
 from payments.models import PaymentProfile
 from services.ai.ocs import OpenChatStudio
 from test_utils.decorators import skip_app_integrity_check
-from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes
+from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
 from users.factories import (
     ConfigurationSessionFactory,
     CredentialFactory,
@@ -1296,6 +1296,48 @@ class TestStartConfigurationView:
             token="token", request_hash="hash", app_package="my.fancy.app", is_demo_user=True
         )
 
+    @skip_app_integrity_check
+    @patch("users.models.ConfigurationSession.country_code", new_callable=PropertyMock)
+    @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
+    def test_invited_user_starts_session_on_api_v1(self, check_number_mock, mock_country_code, client):
+        phone_number = Faker().phone_number()
+        gps_location = "1.2 3.4"
+        check_number_mock.return_value = True
+
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": phone_number, "gps_location": gps_location, "cc_device_id": "device_id"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+            HTTP_ACCEPT="application/json; version=1.0",
+        )
+        assert response.status_code == 200
+
+        sms_method = response.json().get("sms_method")
+        assert sms_method == SMSMethods.PERSONAL_ID
+        assert "otp_fallback" not in response.json()
+
+    @skip_app_integrity_check
+    @patch("users.models.ConfigurationSession.country_code", new_callable=PropertyMock)
+    @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
+    def test_invited_user_starts_session_on_api_v2(self, check_number_mock, mock_country_code, client):
+        phone_number = Faker().phone_number()
+        gps_location = "1.2 3.4"
+        check_number_mock.return_value = True
+
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": phone_number, "gps_location": gps_location, "cc_device_id": "device_id"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+            HTTP_ACCEPT="application/json; version=2.0",
+        )
+        assert response.status_code == 200
+
+        sms_method = response.json().get("sms_method")
+        assert sms_method == SMSMethods.FIREBASE
+        assert response.json().get("otp_fallback")
+
 
 @pytest.mark.django_db
 class TestCheckUserSimilarity:
@@ -1350,6 +1392,7 @@ class TestCheckUserSimilarity:
 
         valid_token.phone_number = user.phone_number
         valid_token.is_phone_validated = True
+        valid_token.invited_user = False
         valid_token.save()
 
         user.name = "ExistingUser"
@@ -1443,6 +1486,14 @@ class TestCompleteProfileView:
 class TestSendSessionOtp:
     url = "/users/send_session_otp"
 
+    def test_not_invited_user(self, authed_client_token, valid_token):
+        valid_token.invited_user = False
+        valid_token.save()
+
+        response = authed_client_token.post(self.url)
+        assert response.status_code == 403
+        assert response.json() == {"error_code": ErrorCodes.NOT_ALLOWED}
+
     @patch("users.models.SessionPhoneDevice.generate_challenge")
     def test_success(self, mock_generate_challenge, authed_client_token, valid_token):
         SessionPhoneDeviceFactory(session=valid_token, phone_number=valid_token.phone_number)
@@ -1463,6 +1514,14 @@ class TestSendSessionOtp:
 @pytest.mark.django_db
 class TestConfirmSessionOtp:
     url = "/users/confirm_session_otp"
+
+    def test_not_invited_user(self, authed_client_token, valid_token):
+        valid_token.invited_user = False
+        valid_token.save()
+
+        response = authed_client_token.post(self.url)
+        assert response.status_code == 403
+        assert response.json() == {"error_code": ErrorCodes.NOT_ALLOWED}
 
     @patch("users.models.SessionPhoneDevice.verify_token")
     def test_invalid_token(self, mock_verify_token, authed_client_token, valid_token):
