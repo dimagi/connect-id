@@ -16,7 +16,7 @@ import environ
 import sentry_sdk
 from sentry_sdk.integrations.celery import CeleryIntegration
 from sentry_sdk.integrations.django import DjangoIntegration
-from sentry_sdk.integrations.logging import LoggingIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration, ignore_logger
 from sentry_sdk.integrations.redis import RedisIntegration
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -213,7 +213,7 @@ OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
 SITE_ID = 1
 
 SENTRY_DSN = env("SENTRY_DSN", default=None)
-SENTRY_ENVIRONMENT = env("SENTRY_ENVIRONMENT", default="local")
+SENTRY_ENVIRONMENT = env("SENTRY_ENVIRONMENT", default="production")
 SENTRY_TRACES_SAMPLE_RATE = env("SENTRY_TRACES_SAMPLE_RATE", default="0.0")
 
 CELERY_TASK_ALWAYS_EAGER = True
@@ -222,6 +222,7 @@ CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
 
 if SENTRY_DSN:
+    ignore_logger("django.security.DisallowedHost")
     sentry_logging = LoggingIntegration(
         level=logging.INFO,  # Capture info and above as breadcrumbs
         event_level=logging.ERROR,  # Send errors as events
