@@ -1880,3 +1880,16 @@ class TestGenerateManualOTP:
         response = authed_client.get(self.url, data={"phone_number": phone_number})
         assert response.status_code == 404
         assert response.json() == {"error_code": ErrorCodes.SESSION_NOT_FOUND}
+
+
+@pytest.mark.django_db
+class TestGetActiveUserCount:
+    url = reverse("active_user_count")
+
+    def test_success(self, authed_client):
+        UserFactory.create_batch(5, is_active=True)
+        UserFactory.create_batch(3, is_active=False)
+
+        response = authed_client.get(self.url)
+        assert response.status_code == 200
+        assert response.json() == {"active_user_count": 6}  # Including the authed user

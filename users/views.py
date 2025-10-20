@@ -951,6 +951,13 @@ def report_integrity(request):
     return JsonResponse({"result_code": "passed" if sample.passed else "failed"})
 
 
+@api_view(["GET"])
+@authentication_classes([ClientProtectedResourceAuth])
+def get_active_user_count(request):
+    count = ConnectUser.objects.filter(is_active=True).count()
+    return JsonResponse({"active_user_count": count})
+
+
 class GenerateManualOTP(APIView):
     authentication_classes = [ClientProtectedResourceAuth]
 
