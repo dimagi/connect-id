@@ -1,3 +1,4 @@
+from django.db.models import Q
 from django.http import JsonResponse
 from fcm_django.models import DeviceType, FCMDevice
 
@@ -7,7 +8,12 @@ def create_update_device(user, token):
 
     if device:
         if device.user_id != user.id:
-            return JsonResponse({"error": "FCM token already registered to another user"}, status=400)
+            # Update ownership of device
+            FCMDevice.objects.filter(Q(registration_id=token) | Q(user=user)).update(active=False)
+            device.active = True
+            device.user = user
+            device.save()
+            return JsonResponse({}, status=200)
 
         if device.active:
             return JsonResponse({}, status=202)
