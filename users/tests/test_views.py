@@ -81,6 +81,18 @@ def test_create_update_device__existing(user):
     assert FCMDevice.objects.filter(user=user).count() == 1
 
 
+def test_create_update_device__different_user(user):
+    test_token = "testtoken"
+    create_update_device(user, test_token)
+
+    another_user = UserFactory()
+    response = create_update_device(another_user, test_token)
+
+    assert response.status_code == 200
+    assert FCMDevice.objects.filter(user=another_user, active=True).count() == 1
+    assert FCMDevice.objects.filter(user=user, active=True).exists() is False
+
+
 def test_create_update_device__reactivate(user):
     response = create_update_device(user, "testtoken")
     assert response.status_code == 201, response.content
