@@ -572,7 +572,7 @@ class TestRetrieveNotificationsView:
         response_data = response.json()
 
         assert response.status_code == status.HTTP_200_OK
-        assert len(response_data) == 0
+        assert len(response_data["notifications"]) == 0
 
 
 @pytest.mark.django_db
