@@ -548,17 +548,23 @@ class TestRetrieveNotificationsView:
 
     def test_retrieve_messages_success(self, auth_device, fcm_device):
         NotificationFactory.create_batch(10, user=fcm_device.user)
-
+        channel = ChannelFactory.create(connect_user=fcm_device.user)
         response = auth_device.get(self.url)
         json_data = response.json()
 
         assert response.status_code == status.HTTP_200_OK
-        assert len(json_data) == 10
-        notification = json_data[0]
+        assert "notifications" in json_data
+        assert "channels" in json_data
+        assert len(json_data["notifications"]) == 10
+        notification = json_data["notifications"][0]
         assert all(
             key in notification
             for key in ["notification_id", "notification_type", "title", "body", "data", "timestamp"]
         )
+
+        # Check the channel we created appears in the channels list
+        channel_ids = [c["channel_id"] for c in json_data["channels"]]
+        assert str(channel.channel_id) in channel_ids
 
     def test_retrieve_messages_no_data(self, auth_device):
         Notification.objects.all().delete()
