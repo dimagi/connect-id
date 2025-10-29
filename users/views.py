@@ -848,7 +848,7 @@ class FetchNonInvitedUserSignupCount(ClientProtectedResourceMixin, View):
 
     def get(self, request, *args, **kwargs):
         """
-        Get all phone numbers for users that signed up but were not invited (Connect) users
+        Return the number of users by month that signed up but were not invited (Connect) users
         at the time of signup.
         """
         user_sq = ConnectUser.objects.filter(
