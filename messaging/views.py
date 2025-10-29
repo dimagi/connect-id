@@ -436,6 +436,30 @@ class RetrieveNotificationView(ListAPIView):
     def get_queryset(self):
         return Notification.objects.filter(user=self.request.user, received__isnull=True)
 
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        notifications_data = serializer.data
+
+        # Get all channels for the user
+        user_channels = Channel.objects.filter(connect_user=request.user)
+        channels_data = []
+
+        for channel in user_channels:
+            channels_data.append(
+                {
+                    "channel_id": str(channel.channel_id),
+                    "channel_source": channel.visible_name,
+                    "key_url": channel.server.key_url,
+                    "consent": channel.user_consent,
+                }
+            )
+        response_data = {
+            "notifications": notifications_data,
+            "channels": channels_data,
+        }
+        return JsonResponse(response_data, status=status.HTTP_200_OK, safe=False)
+
 
 class UpdateNotificationReceivedView(APIView):
     def post(self, request, *args, **kwargs):
