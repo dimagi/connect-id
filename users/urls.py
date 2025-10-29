@@ -51,6 +51,11 @@ urlpatterns = [
     path("forward_hq_invite", views.ForwardHQInvite.as_view(), name="forward_hq_invite"),
     path("confirm_hq_invite", views.ConfirmHQInviteCallback.as_view(), name="confirm_hq_invite"),
     path("fetch_user_counts", views.FetchUserCounts.as_view(), name="fetch_user_counts"),
+    path(
+        "fetch_non_invited_user_signups",
+        views.FetchNonInvitedUserSignupCount.as_view(),
+        name="fetch_non_invited_user_signups",
+    ),
     path("check_name", views.check_user_similarity, name="check_user_similarity"),
     path("start_configuration", views.start_device_configuration, name="start_device_configuration"),
     path("complete_profile", views.complete_profile, name="complete_profile"),

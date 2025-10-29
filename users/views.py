@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
-from django.db.models import Count, F
+from django.db.models import Count, F, OuterRef, Subquery
 from django.db.models.functions import TruncMonth
 from django.db.utils import IntegrityError
 from django.http import HttpResponse, JsonResponse
@@ -840,6 +840,29 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
             .annotate(monthly_count=Count("*"))
         )
         count_by_year_month = {item["date_joined_month"].strftime("%Y-%m"): item["monthly_count"] for item in counts}
+        return JsonResponse(count_by_year_month)
+
+
+class FetchNonInvitedUserSignupCount(ClientProtectedResourceMixin, View):
+    required_scopes = ["user_fetch"]
+
+    def get(self, request, *args, **kwargs):
+        """
+        Get all phone numbers for users that signed up but were not invited (Connect) users
+        at the time of signup.
+        """
+        user_sq = ConnectUser.objects.filter(
+            phone_number=OuterRef("phone_number"),
+            date_joined__gt=OuterRef("created"),
+        ).values("phone_number")
+
+        query = (
+            ConfigurationSession.objects.filter(invited_user=False, phone_number=Subquery(user_sq))
+            .annotate(joined_at=TruncMonth("created"))
+            .values("joined_at")
+            .annotate(monthly_count=Count("*"))
+        )
+        count_by_year_month = {item["joined_at"].strftime("%Y-%m"): item["monthly_count"] for item in query}
         return JsonResponse(count_by_year_month)
 
 
