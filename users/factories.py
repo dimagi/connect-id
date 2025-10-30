@@ -79,7 +79,7 @@ class ConfigurationSessionFactory(DjangoModelFactory):
         model = ConfigurationSession
 
     key = factory.Faker("uuid4")
-    phone_number = "+27738156127"
+    phone_number = factory.Faker("phone_number")
     device_id = factory.Faker("uuid4")
 
 
