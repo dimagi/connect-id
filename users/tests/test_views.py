@@ -1899,7 +1899,7 @@ class TestFetchUserCounts:
 
         current_month = list(total_users_response.keys())[0]
         assert total_users_response[current_month] == 1
-        assert non_invited_users_response[current_month] == 0
+        assert non_invited_users_response == {}
 
     def test_success_with_multiple_users(self, authed_client):
         # Create 5 ConnectUsers without any ConfigurationSessions (historical users)
