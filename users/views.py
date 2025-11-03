@@ -680,7 +680,7 @@ class AddCredential(APIView):
                     type=cred.get("type"),
                     level=cred.get("level"),
                     issuer=issuing_auth,
-                    slug=cred.get("app_id"),
+                    slug=cred.get("slug"),
                 )
                 credential.title = cred.get("title")
                 credential.app_id = cred.get("app_id")
