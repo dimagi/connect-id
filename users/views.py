@@ -841,14 +841,14 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
         )
 
         session_sq = ConfigurationSession.objects.filter(
-            invited_user=False,
             phone_number=OuterRef("phone_number"),
+            expires__gte=OuterRef("date_joined"),
+            invited_user=False,
         ).order_by("-created")
 
         non_invited_users_qs = (
             ConnectUser.objects.filter(
                 is_active=True,
-                date_joined__gt=Subquery(session_sq.values("created")[:1]),
                 phone_number=Subquery(session_sq.values("phone_number")[:1]),
             )
             .annotate(date_joined_month=TruncMonth("date_joined"))

@@ -1960,3 +1960,36 @@ class TestFetchUserCounts:
 
         assert total_users_response[current_month] == 4
         assert non_invited_users_response[current_month] == 2
+
+    def test_failed_non_invited_session_is_not_counted_when_invited(self, authed_client):
+        """
+        This test makes sure that if a user was initially non-invited and failed to sign up,
+        but then later became invited and sign up afterwards, they are not counted.
+        """
+        # Create a non-invited session, but no user to simulate "failed" signup
+        non_invited_session = ConfigurationSessionFactory(
+            invited_user=False, expires=datetime.now() - timedelta(hours=48)
+        )
+
+        # Create an invited user with the same phone number, who signed up 1 day later
+        invited_session = ConfigurationSessionFactory(
+            phone_number=non_invited_session.phone_number,
+            invited_user=True,
+            expires=datetime.now() - timedelta(hours=24),
+        )
+        # User completed signup 1 hour before session expiry
+        UserFactory(
+            phone_number=invited_session.phone_number,
+            date_joined=datetime.now() - timedelta(hours=25),
+            is_active=True,
+        )
+
+        response = authed_client.get(reverse("fetch_user_counts"))
+        assert response.status_code == 200
+
+        total_users_response = response.json()["total_users"]
+        non_invited_users_response = response.json()["non_invited_users"]
+        current_month = list(total_users_response.keys())[0]
+
+        assert total_users_response[current_month] == 2
+        assert non_invited_users_response == {}
