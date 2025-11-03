@@ -840,16 +840,18 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
             .annotate(monthly_count=Count("*"))
         )
 
-        config_session_user_counts_sq = ConnectUser.objects.filter(
+        session_sq = ConfigurationSession.objects.filter(
+            invited_user=False,
             phone_number=OuterRef("phone_number"),
-            date_joined__gt=OuterRef("created"),
-        ).values("phone_number")
+        ).order_by("-created")
 
         non_invited_users_qs = (
-            ConfigurationSession.objects.filter(
-                invited_user=False, phone_number=Subquery(config_session_user_counts_sq)
+            ConnectUser.objects.filter(
+                is_active=True,
+                date_joined__gt=Subquery(session_sq.values("created")[:1]),
+                phone_number=Subquery(session_sq.values("phone_number")[:1]),
             )
-            .annotate(date_joined_month=TruncMonth("created"))
+            .annotate(date_joined_month=TruncMonth("date_joined"))
             .values("date_joined_month")
             .annotate(monthly_count=Count("*"))
         )
