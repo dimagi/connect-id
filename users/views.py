@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
-from django.db.models import Count, F, OuterRef, Subquery
+from django.db.models import Count, Exists, F, OuterRef
 from django.db.models.functions import TruncMonth
 from django.db.utils import IntegrityError
 from django.http import HttpResponse, JsonResponse
@@ -840,17 +840,18 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
             .annotate(monthly_count=Count("*"))
         )
 
-        session_sq = ConfigurationSession.objects.filter(
-            invited_user=False,
+        session_exists = ConfigurationSession.objects.filter(
             phone_number=OuterRef("phone_number"),
-        ).order_by("-created")
+            expires__gte=OuterRef("date_joined"),
+            invited_user=False,
+        )
 
         non_invited_users_qs = (
             ConnectUser.objects.filter(
                 is_active=True,
-                date_joined__gt=Subquery(session_sq.values("created")[:1]),
-                phone_number=Subquery(session_sq.values("phone_number")[:1]),
             )
+            .annotate(has_valid_session=Exists(session_exists))
+            .filter(has_valid_session=True)
             .annotate(date_joined_month=TruncMonth("date_joined"))
             .values("date_joined_month")
             .annotate(monthly_count=Count("*"))
