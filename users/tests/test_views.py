@@ -1892,3 +1892,71 @@ class TestGenerateManualOTP:
         response = authed_client.get(self.url, data={"phone_number": phone_number})
         assert response.status_code == 404
         assert response.json() == {"error_code": ErrorCodes.SESSION_NOT_FOUND}
+
+
+@pytest.mark.django_db
+class TestFetchUserCounts:
+    def test_no_auth(self, client):
+        response = client.get(reverse("fetch_user_counts"))
+        assert response.status_code == 403
+
+    def test_success(self, authed_client):
+        response = authed_client.get(reverse("fetch_user_counts"))
+        assert response.status_code == 200
+        assert "total_users" in response.json()
+        assert "non_invited_users" in response.json()
+
+        total_users_response = response.json()["total_users"]
+        non_invited_users_response = response.json()["non_invited_users"]
+
+        current_month = list(total_users_response.keys())[0]
+        assert total_users_response[current_month] == 1
+        assert non_invited_users_response == {}
+
+    def test_success_with_multiple_users(self, authed_client):
+        # Create 5 ConnectUsers without any ConfigurationSessions (historical users)
+        UserFactory.create_batch(5)
+
+        # Create ConfigurationSessions for invited and non-invited users and link ConnectUsers to them
+        invited_sessions = ConfigurationSessionFactory.create_batch(3, invited_user=True)
+        for session in invited_sessions:
+            UserFactory(phone_number=session.phone_number)
+
+        non_invited_sessions = ConfigurationSessionFactory.create_batch(3, invited_user=False)
+        for session in non_invited_sessions:
+            UserFactory(phone_number=session.phone_number)
+
+        response = authed_client.get(reverse("fetch_user_counts"))
+        assert response.status_code == 200
+
+        total_users_response = response.json()["total_users"]
+        non_invited_users_response = response.json()["non_invited_users"]
+        current_month = list(total_users_response.keys())[0]
+
+        assert total_users_response[current_month] == (
+            1 + 5 + 3 + 3
+        )  # initial user + historical + invited + non-invited
+        assert non_invited_users_response[current_month] == 3
+
+    def test_multiple_users_with_phone_number_reuse(self, authed_client):
+        """
+        This test makes sure that if a phone number was used by multiple users over time,
+        only the latest user is counted.
+        """
+        # Set up a user that changed phone numbers
+        configuration_sessions = ConfigurationSessionFactory.create_batch(2, invited_user=False)
+        UserFactory(phone_number=configuration_sessions[0].phone_number, is_active=False)
+        UserFactory(phone_number=configuration_sessions[1].phone_number, is_active=True)
+
+        session = ConfigurationSessionFactory(phone_number=configuration_sessions[0].phone_number, invited_user=False)
+        UserFactory(phone_number=session.phone_number, is_active=True)
+
+        response = authed_client.get(reverse("fetch_user_counts"))
+        assert response.status_code == 200
+
+        total_users_response = response.json()["total_users"]
+        non_invited_users_response = response.json()["non_invited_users"]
+        current_month = list(total_users_response.keys())[0]
+
+        assert total_users_response[current_month] == 4
+        assert non_invited_users_response[current_month] == 2

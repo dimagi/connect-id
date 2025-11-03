@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
-from django.db.models import Count, F
+from django.db.models import Count, F, OuterRef, Subquery
 from django.db.models.functions import TruncMonth
 from django.db.utils import IntegrityError
 from django.http import HttpResponse, JsonResponse
@@ -834,13 +834,41 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
     required_scopes = ["user_fetch"]
 
     def get(self, request, *args, **kwargs):
-        counts = (
+        total_counts_qs = (
             ConnectUser.objects.annotate(date_joined_month=TruncMonth("date_joined"))
             .values("date_joined_month")
             .annotate(monthly_count=Count("*"))
         )
-        count_by_year_month = {item["date_joined_month"].strftime("%Y-%m"): item["monthly_count"] for item in counts}
-        return JsonResponse(count_by_year_month)
+
+        session_sq = ConfigurationSession.objects.filter(
+            invited_user=False,
+            phone_number=OuterRef("phone_number"),
+        ).order_by("-created")
+
+        non_invited_users_qs = (
+            ConnectUser.objects.filter(
+                is_active=True,
+                date_joined__gt=Subquery(session_sq.values("created")[:1]),
+                phone_number=Subquery(session_sq.values("phone_number")[:1]),
+            )
+            .annotate(date_joined_month=TruncMonth("date_joined"))
+            .values("date_joined_month")
+            .annotate(monthly_count=Count("*"))
+        )
+
+        total_counts_by_year_month = {
+            item["date_joined_month"].strftime("%Y-%m"): item["monthly_count"] for item in total_counts_qs
+        }
+        non_invited_counts_by_year_month = {
+            item["date_joined_month"].strftime("%Y-%m"): item["monthly_count"] for item in non_invited_users_qs
+        }
+
+        return JsonResponse(
+            {
+                "total_users": total_counts_by_year_month,
+                "non_invited_users": non_invited_counts_by_year_month,
+            }
+        )
 
 
 @api_view(["POST"])
