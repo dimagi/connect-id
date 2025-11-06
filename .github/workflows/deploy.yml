@@ -51,6 +51,85 @@ jobs:
           role-session-name: GithubDeploy
           aws-region: ${{ env.AWS_REGION }}
 
+      - id: slack
+        name: Notify Deploy Start
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          channel-id: 'C05APTXCTSM'
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                      "type": "mrkdwn",
+                      "text": "*ConnectID Deploy to ${{ inputs.environment }}*"
+                  }
+                },
+                {
+                  "type": "divider"
+                },
+                {
+                  "type": "section",
+                  "text": {
+                      "type": "mrkdwn",
+                      "text": "*Status*: In Progress"
+                  }
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                      {
+                          "type": "mrkdwn",
+                          "text": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Deploy Run>"
+                      }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN}}
+
       - id: deploy
         working-directory: ./deploy
         run: 'kamal deploy'
+
+      - name: Notify Deploy End
+        uses: slackapi/slack-github-action@v1.24.0
+        if: always()
+        with:
+          channel-id: 'C05APTXCTSM'
+          update-ts: ${{ steps.slack.outputs.ts }}
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                      "type": "mrkdwn",
+                      "text": "*ConnectID Deploy to ${{ inputs.environment }}*"
+                  }
+                },
+                {
+                  "type": "divider"
+                },
+                {
+                  "type": "section",
+                  "text": {
+                      "type": "mrkdwn",
+                      "text": "*Status*: ${{ steps.deploy.conclusion }}"
+                  }
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                      {
+                          "type": "mrkdwn",
+                          "text": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Deploy Run>"
+                      }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN}}
