@@ -53,21 +53,3 @@ def send_bulk_notification(message: NotificationData):
     message_result["all_success"] = message_all_success
     message_result["responses"].sort(key=lambda r: message.usernames.index(r["username"]))
     return message_result
-
-
-def _build_message(message):
-    notification = _build_notification(message)
-    return messaging.Message(
-        data=message.data,
-        notification=notification,
-        fcm_options=messaging.FCMOptions(**message.fcm_options),
-        android=messaging.AndroidConfig(priority="high"),
-    )
-
-
-def _build_notification(data):
-    if data.title or data.body:
-        return messaging.Notification(
-            title=data.title,
-            body=data.body,
-        )
