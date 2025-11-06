@@ -64,10 +64,14 @@ class MessageFactory(DjangoModelFactory):
     received = None
 
 
+class MessageDataFactory(DictFactory):
+    my_data = Faker("pystr")
+
+
 class FCMNotificationDataFactory(DictFactory):
     title = Faker("pystr")
     body = Faker("pystr")
-    data = factory.DictFactory()
+    data = MessageDataFactory()
 
 
 class NotificationFactory(DjangoModelFactory):
