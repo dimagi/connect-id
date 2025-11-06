@@ -91,8 +91,13 @@ class NotificationSerializer(serializers.ModelSerializer):
         fields = (
             "notification_id",
             "notification_type",
-            "title",
-            "body",
-            "data",
             "timestamp",
         )
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        data = getattr(instance, "data", {})
+        # Add all keys from data dictionary to the top-level
+        if isinstance(data, dict):
+            rep.update(data)
+        return rep

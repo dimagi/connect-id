@@ -559,7 +559,7 @@ class TestRetrieveNotificationsView:
         notification = json_data["notifications"][0]
         assert all(
             key in notification
-            for key in ["notification_id", "notification_type", "title", "body", "data", "timestamp"]
+            for key in ["notification_id", "notification_type", "title", "body", "my_data", "timestamp"]
         )
 
         # Check the channel we created appears in the channels list
