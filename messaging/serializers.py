@@ -96,7 +96,7 @@ class NotificationSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
-        data = getattr(instance, "data", {}) or {}
+        data = getattr(instance, "data", {})
         # Add all keys from data dictionary to the top-level
         if isinstance(data, dict):
             rep.update(data)
