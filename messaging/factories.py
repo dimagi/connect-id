@@ -66,11 +66,13 @@ class MessageFactory(DjangoModelFactory):
 
 class MessageDataFactory(DictFactory):
     my_data = Faker("pystr")
+    title = Faker("pystr")
+    body = Faker("pystr")
 
 
 class FCMNotificationDataFactory(DictFactory):
-    title = Faker("pystr")
-    body = Faker("pystr")
+    title = None
+    body = None
     data = MessageDataFactory()
 
 
