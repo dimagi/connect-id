@@ -1005,8 +1005,9 @@ class GenerateManualOTP(APIView):
         return JsonResponse({"otp": session_phone_device.token})
 
 
-class FetchUserAnalytics(ClientProtectedResourceMixin, View):
+class FetchUserAnalytics(APIView):
     required_scopes = ["user_fetch"]
+    authentication_classes = [ClientProtectedResourceAuth]
 
     def post(self, request, *args, **kwargs):
         usernames = request.POST.getlist("usernames")
