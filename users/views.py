@@ -1011,7 +1011,7 @@ class FetchUserAnalytics(ClientProtectedResourceMixin, View):
     def post(self, request, *args, **kwargs):
         usernames = request.POST.getlist("usernames")
 
-        if usernames is None or len(usernames) < 0:
+        if not usernames:
             return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
         users = (
