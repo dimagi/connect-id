@@ -1020,7 +1020,7 @@ class FetchUserAnalytics(APIView):
             .annotate(viewed_work_history_count=Count("usercredential__id", filter=Q(usercredential__accepted=True)))
             .annotate(
                 has_viewed_work_history=Case(
-                    When(Q(viewed_work_history_count__gte=1), then=Value(True)), default=None
+                    When(Q(viewed_work_history_count__gte=1), then=Value(True)), default=Value(False)
                 ),
                 has_sent_message=Max(
                     "channel__message__timestamp", filter=Q(channel__message__direction=MessageDirection.SERVER.value)
