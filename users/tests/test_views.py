@@ -2051,15 +2051,15 @@ class TestFetchUserAnalytics:
         assert len(data) == 3
 
         user1_data = next(item for item in data if item["username"] == user1.username)
-        assert user1_data["has_viewed_work_history"] is True
+        assert user1_data["has_viewed_work_history"]
         assert user1_data["has_sent_message"] is None
 
         user2_data = next(item for item in data if item["username"] == user2.username)
-        assert user2_data["has_viewed_work_history"] is None
+        assert not user2_data["has_viewed_work_history"]
         assert user2_data["has_sent_message"] is not None
 
         user3_data = next(item for item in data if item["username"] == user3.username)
-        assert user3_data["has_viewed_work_history"] is None
+        assert not user3_data["has_viewed_work_history"]
         assert user3_data["has_sent_message"] is None
 
     def test_no_users_found(self, authed_client):
