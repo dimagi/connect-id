@@ -63,6 +63,8 @@ class MessageSerializer(serializers.ModelSerializer):
             "status",
             "action",
             "notification_type",
+            "title",
+            "body",
         ]
 
     def get_ciphertext(self, obj):
