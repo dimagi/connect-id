@@ -1903,6 +1903,7 @@ class TestFetchUserCounts:
         assert response.status_code == 403
 
     def test_success(self, authed_client):
+        UserFactory.create()
         response = authed_client.get(reverse("fetch_user_counts"))
         assert response.status_code == 200
         assert "total_users" in response.json()
@@ -1935,9 +1936,7 @@ class TestFetchUserCounts:
         non_invited_users_response = response.json()["non_invited_users"]
         current_month = list(total_users_response.keys())[0]
 
-        assert total_users_response[current_month] == (
-            1 + 5 + 3 + 3
-        )  # initial user + historical + invited + non-invited
+        assert total_users_response[current_month] == (5 + 3 + 3)  # historical + invited + non-invited
         assert non_invited_users_response[current_month] == 3
 
     def test_multiple_users_with_phone_number_reuse(self, authed_client):
@@ -1960,7 +1959,7 @@ class TestFetchUserCounts:
         non_invited_users_response = response.json()["non_invited_users"]
         current_month = list(total_users_response.keys())[0]
 
-        assert total_users_response[current_month] == 4
+        assert total_users_response[current_month] == 3
         assert non_invited_users_response[current_month] == 2
 
     def test_failed_non_invited_session_is_not_counted_when_invited(self, authed_client):
@@ -1993,7 +1992,7 @@ class TestFetchUserCounts:
         non_invited_users_response = response.json()["non_invited_users"]
         current_month = list(total_users_response.keys())[0]
 
-        assert total_users_response[current_month] == 2
+        assert total_users_response[current_month] == 1
         assert non_invited_users_response == {}
 
 
