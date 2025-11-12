@@ -136,9 +136,9 @@ class CreateChannelView(APIView):
         if created:
             message = NotificationData(
                 usernames=[channel.connect_user.username],
-                title="New Channel",
-                body=f"A new messaging channel is available from {channel.visible_name}, press here to view",
                 data={
+                    "title": "New Channel",
+                    "body": f"A new messaging channel is available from {channel.visible_name}, press here to view",
                     "key_url": str(server.key_url),
                     "action": CCC_MESSAGE_ACTION,
                     "channel_source": channel_source,
@@ -179,8 +179,6 @@ class SendServerConnectMessage(APIView):
         message_to_send = NotificationData(
             usernames=[channel.connect_user.username],
             data=MessageSerializer(message).data,
-            title="New Connect Message",
-            body=f"You received a new message from {channel.visible_name}",
             fcm_options=fcm_options,
         )
         send_bulk_notification(message_to_send)
