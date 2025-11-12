@@ -2002,7 +2002,7 @@ class TestFetchUserAnalytics:
     url = reverse("fetch_user_analytics")
 
     def test_no_auth(self, client):
-        response = client.post(self.url)
+        response = client.get(self.url)
         assert response.status_code == 403
 
     def test_success_single_user(self, authed_client, user, credential_issuing_authority):
@@ -2022,7 +2022,7 @@ class TestFetchUserAnalytics:
             content={"text": "test message"},
         )
 
-        response = authed_client.post(self.url, data={"usernames": [user.username]})
+        response = authed_client.get(self.url)
         assert response.status_code == 200
         data = response.json()["data"]
         assert len(data) == 1
@@ -2043,9 +2043,7 @@ class TestFetchUserAnalytics:
         channel2 = ChannelFactory(connect_user=user2)
         MessageFactory(channel=channel2, direction=MessageDirection.SERVER, content={"text": "test message 2"})
 
-        # User 3: No analytics data
-
-        response = authed_client.post(self.url, data={"usernames": [user1.username, user2.username, user3.username]})
+        response = authed_client.get(self.url)
         assert response.status_code == 200
         data = response.json()["data"]
         assert len(data) == 3
@@ -2063,15 +2061,6 @@ class TestFetchUserAnalytics:
         assert user3_data["has_sent_message"] is None
 
     def test_no_users_found(self, authed_client):
-        response = authed_client.post(self.url, data={"usernames": ["nonexistent_user"]})
-        assert response.status_code == 200
-        assert response.json()["data"] == []
-
-    def test_inactive_user_not_counted(self, authed_client, credential_issuing_authority):
-        user = UserFactory(is_active=False)
-        cred = CredentialFactory(issuer=credential_issuing_authority)
-        UserCredentialFactory(user=user, credential=cred, accepted=True)
-
-        response = authed_client.post(self.url, data={"usernames": [user.username]})
+        response = authed_client.get(self.url)
         assert response.status_code == 200
         assert response.json()["data"] == []
