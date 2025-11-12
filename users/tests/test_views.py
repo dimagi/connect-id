@@ -11,6 +11,8 @@ from django.urls import reverse
 from faker import Faker
 from fcm_django.models import FCMDevice
 
+from messaging.factories import ChannelFactory, MessageFactory
+from messaging.models import MessageDirection
 from payments.models import PaymentProfile
 from services.ai.ocs import OpenChatStudio
 from test_utils.decorators import skip_app_integrity_check
@@ -1901,6 +1903,7 @@ class TestFetchUserCounts:
         assert response.status_code == 403
 
     def test_success(self, authed_client):
+        UserFactory.create()
         response = authed_client.get(reverse("fetch_user_counts"))
         assert response.status_code == 200
         assert "total_users" in response.json()
@@ -1933,9 +1936,7 @@ class TestFetchUserCounts:
         non_invited_users_response = response.json()["non_invited_users"]
         current_month = list(total_users_response.keys())[0]
 
-        assert total_users_response[current_month] == (
-            1 + 5 + 3 + 3
-        )  # initial user + historical + invited + non-invited
+        assert total_users_response[current_month] == (5 + 3 + 3)  # historical + invited + non-invited
         assert non_invited_users_response[current_month] == 3
 
     def test_multiple_users_with_phone_number_reuse(self, authed_client):
@@ -1958,7 +1959,7 @@ class TestFetchUserCounts:
         non_invited_users_response = response.json()["non_invited_users"]
         current_month = list(total_users_response.keys())[0]
 
-        assert total_users_response[current_month] == 4
+        assert total_users_response[current_month] == 3
         assert non_invited_users_response[current_month] == 2
 
     def test_failed_non_invited_session_is_not_counted_when_invited(self, authed_client):
@@ -1991,5 +1992,74 @@ class TestFetchUserCounts:
         non_invited_users_response = response.json()["non_invited_users"]
         current_month = list(total_users_response.keys())[0]
 
-        assert total_users_response[current_month] == 2
+        assert total_users_response[current_month] == 1
         assert non_invited_users_response == {}
+
+
+@pytest.mark.django_db
+class TestFetchUserAnalytics:
+    url = reverse("fetch_user_analytics")
+
+    def test_no_auth(self, client):
+        response = client.get(self.url)
+        assert response.status_code == 403
+
+    def test_success_single_user(self, authed_client, user, credential_issuing_authority):
+        # Create a credential for the user
+        cred = CredentialFactory(issuer=credential_issuing_authority)
+        UserCredentialFactory(user=user, credential=cred, accepted=True)
+
+        cred_2 = CredentialFactory(issuer=credential_issuing_authority)
+        UserCredentialFactory(user=user, credential=cred_2, accepted=False)
+
+        # Create a channel and message for the user
+        channel = ChannelFactory(connect_user=user)
+        MessageFactory(
+            channel=channel,
+            direction=MessageDirection.SERVER,
+            timestamp=datetime.now(),
+            content={"text": "test message"},
+        )
+
+        response = authed_client.get(self.url)
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert len(data) == 1
+        assert data[0]["username"] == user.username
+        assert data[0]["has_viewed_work_history"] is True
+        assert data[0]["has_sent_message"] is not None
+
+    def test_success_multiple_users(self, authed_client, credential_issuing_authority):
+        user1 = UserFactory(is_active=True)
+        user2 = UserFactory(is_active=True)
+        user3 = UserFactory(is_active=True)
+
+        # User 1: Has viewed work history
+        cred1 = CredentialFactory(issuer=credential_issuing_authority)
+        UserCredentialFactory(user=user1, credential=cred1, accepted=True)
+
+        # User 2: Has sent message
+        channel2 = ChannelFactory(connect_user=user2)
+        MessageFactory(channel=channel2, direction=MessageDirection.SERVER, content={"text": "test message 2"})
+
+        response = authed_client.get(self.url)
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert len(data) == 3
+
+        user1_data = next(item for item in data if item["username"] == user1.username)
+        assert user1_data["has_viewed_work_history"]
+        assert user1_data["has_sent_message"] is None
+
+        user2_data = next(item for item in data if item["username"] == user2.username)
+        assert not user2_data["has_viewed_work_history"]
+        assert user2_data["has_sent_message"] is not None
+
+        user3_data = next(item for item in data if item["username"] == user3.username)
+        assert not user3_data["has_viewed_work_history"]
+        assert user3_data["has_sent_message"] is None
+
+    def test_no_users_found(self, authed_client):
+        response = authed_client.get(self.url)
+        assert response.status_code == 200
+        assert response.json()["data"] == []
