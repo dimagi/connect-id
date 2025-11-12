@@ -1005,18 +1005,12 @@ class GenerateManualOTP(APIView):
         return JsonResponse({"otp": session_phone_device.token})
 
 
-class FetchUserAnalytics(APIView):
+class FetchUserAnalytics(ClientProtectedResourceMixin, View):
     required_scopes = ["user_fetch"]
-    authentication_classes = [ClientProtectedResourceAuth]
 
-    def post(self, request, *args, **kwargs):
-        usernames = request.POST.getlist("usernames")
-
-        if not usernames:
-            return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
-
+    def get(self, request, *args, **kwargs):
         users = (
-            ConnectUser.objects.filter(username__in=usernames, is_active=True)
+            ConnectUser.objects.filter(is_active=True)
             .annotate(viewed_work_history_count=Count("usercredential__id", filter=Q(usercredential__accepted=True)))
             .annotate(
                 has_viewed_work_history=Case(
@@ -1028,5 +1022,4 @@ class FetchUserAnalytics(APIView):
             )
             .values("username", "has_viewed_work_history", "has_sent_message")
         )
-
         return JsonResponse({"data": list(users)})
