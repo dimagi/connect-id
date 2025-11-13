@@ -850,6 +850,7 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
             ConnectUser.objects.filter(
                 is_active=True,
             )
+            .exclude(phone_number__startswith=TEST_NUMBER_PREFIX)  # exclude demo users
             .annotate(has_valid_session=Exists(session_exists))
             .filter(has_valid_session=True)
             .annotate(date_joined_month=TruncMonth("date_joined"))
