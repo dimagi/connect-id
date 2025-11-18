@@ -881,7 +881,7 @@ class TestConfirmBackupCodeApi:
         user.save()
 
         response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
-        assert response.status_code == 400
+        assert response.status_code == 401
         assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
 
         user.refresh_from_db()
