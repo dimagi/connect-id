@@ -30,6 +30,11 @@ env.read_env(str(BASE_DIR / ".env"))
 
 
 # Application definition
+LOCAL_APPS = [
+    "messaging",
+    "payments",
+    "users.apps.UsersConfig",
+]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -39,16 +44,14 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "phonenumber_field",
-    "users.apps.UsersConfig",
-    "messaging",
     "oauth2_provider",
-    "payments",
     "rest_framework",
     "rest_framework.authtoken",
     "axes",
     "fcm_django",
     "django.contrib.sites",
-]
+    "waffle",
+] + LOCAL_APPS
 
 MIDDLEWARE = [
     "allow_cidr.middleware.AllowCIDRMiddleware",
@@ -261,6 +264,7 @@ ALLOWED_CIDR_NETS = env.list("DJANGO_ALLOWED_CIDR_NETS", default=[])
 
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
+# Twilio settings
 TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default=None)
 TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default=None)
 TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default=None)
@@ -323,6 +327,7 @@ OCS_CONFIG = {
     },
 }
 
+# Connect integration settings
 COMMCARE_CONNECT_CLIENT_ID = env("COMMCARE_CONNECT_CLIENT_ID", default="")
 COMMCARE_CONNECT_CLIENT_SECRET = env("COMMCARE_CONNECT_CLIENT_SECRET", default="")
 CONNECT_INVITED_USER_URL = "https://connect.dimagi.com/users/invited_user/"
