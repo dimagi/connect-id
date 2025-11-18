@@ -331,6 +331,12 @@ class DeviceIntegritySample(models.Model):
         ordering = ["-created"]
 
 
+class UserAnalyticsData(models.Model):
+    user = models.OneToOneField(ConnectUser, on_delete=models.CASCADE)
+    has_viewed_work_history = models.DateTimeField(null=True)
+    has_sent_message = models.DateTimeField(null=True)
+
+
 class SessionUser(AnonymousUser):
     @property
     def is_authenticated(self):
