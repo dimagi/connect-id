@@ -844,6 +844,7 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
         session_exists = ConfigurationSession.objects.filter(
             phone_number=OuterRef("phone_number"),
             expires__gte=OuterRef("date_joined"),
+            created__lte=OuterRef("date_joined"),
             invited_user=False,
         )
 
@@ -851,11 +852,12 @@ class FetchUserCounts(ClientProtectedResourceMixin, View):
             ConnectUser.objects.filter(
                 is_active=True,
             )
+            .exclude(phone_number__startswith=TEST_NUMBER_PREFIX)
             .annotate(has_valid_session=Exists(session_exists))
             .filter(has_valid_session=True)
             .annotate(date_joined_month=TruncMonth("date_joined"))
             .values("date_joined_month")
-            .annotate(monthly_count=Count("*"))
+            .annotate(monthly_count=Count("phone_number", distinct=True))
         )
 
         total_counts_by_year_month = {

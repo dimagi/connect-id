@@ -202,12 +202,9 @@ class TestCreateChannelView:
             notifications = Notification.objects.filter(user=fcm_device.user)
             assert len(notifications) == 1
             assert message.token == fcm_device.registration_id
-            assert message.notification.title == "New Channel"
-            assert (
-                message.notification.body
-                == f"A new messaging channel is available from {channel.channel_source}, press here to view"
-            )
             assert message.data == {
+                "title": "New Channel",
+                "body": f"A new messaging channel is available from {channel.channel_source}, press here to view",
                 "key_url": server.key_url,
                 "action": "ccc_message",
                 "channel_source": data["channel_source"],
@@ -229,8 +226,7 @@ class TestCreateChannelView:
             mock_send_message.assert_called_once()
             message = mock_send_message.call_args.args[0]
             assert (
-                message.notification.body
-                == f"A new messaging channel is available from {channel_name}, press here to view"
+                message.data["body"] == f"A new messaging channel is available from {channel_name}, press here to view"
             )
             assert message.data["channel_source"] == data["channel_source"]
             assert message.data["channel_name"] == channel_name
@@ -271,8 +267,6 @@ def test_send_fcm_notification_view(client, channel, server):
         expected = NotificationData(
             usernames=[channel.connect_user.username],
             data=serialized_msg,
-            title="New Connect Message",
-            body=f"You received a new message from {channel.visible_name}",
         )
         mock_send_bulk_message.assert_called_once_with(expected)
 
@@ -559,7 +553,7 @@ class TestRetrieveNotificationsView:
         notification = json_data["notifications"][0]
         assert all(
             key in notification
-            for key in ["notification_id", "notification_type", "title", "body", "data", "timestamp"]
+            for key in ["notification_id", "notification_type", "title", "body", "my_data", "timestamp"]
         )
 
         # Check the channel we created appears in the channels list

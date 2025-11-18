@@ -1944,12 +1944,34 @@ class TestFetchUserCounts:
         This test makes sure that if a phone number was used by multiple users over time,
         only the latest user is counted.
         """
+        now = datetime.now()
+
+        # Create a user that signed up with a reusable phone number last month
+        # but is now inactive
+        session_last_month = ConfigurationSessionFactory(invited_user=False)
+
+        reusable_phone_number = session_last_month.phone_number
+        session_last_month.created = now - timedelta(days=30)
+        session_last_month.expires = now - timedelta(days=30, hours=1)
+        session_last_month.save()
+        UserFactory(phone_number=reusable_phone_number, is_active=False)
+
         # Set up a user that changed phone numbers
         configuration_sessions = ConfigurationSessionFactory.create_batch(2, invited_user=False)
-        UserFactory(phone_number=configuration_sessions[0].phone_number, is_active=False)
+        configuration_sessions[0].phone_number = reusable_phone_number
+        configuration_sessions[0].save()
+
+        UserFactory(phone_number=reusable_phone_number, is_active=False)
         UserFactory(phone_number=configuration_sessions[1].phone_number, is_active=True)
 
-        session = ConfigurationSessionFactory(phone_number=configuration_sessions[0].phone_number, invited_user=False)
+        # Set up a failed session just before successful session commence
+        failed_session = ConfigurationSessionFactory(invited_user=False)
+        failed_session.phone_number = reusable_phone_number
+        failed_session.created = now - timedelta(hours=1)
+        failed_session.expires = now + timedelta(hours=3)
+
+        # Set up a user that successfully signed up with the reusable phone number
+        session = ConfigurationSessionFactory(phone_number=reusable_phone_number, invited_user=False)
         UserFactory(phone_number=session.phone_number, is_active=True)
 
         response = authed_client.get(reverse("fetch_user_counts"))
@@ -1959,7 +1981,7 @@ class TestFetchUserCounts:
         non_invited_users_response = response.json()["non_invited_users"]
         current_month = list(total_users_response.keys())[0]
 
-        assert total_users_response[current_month] == 3
+        assert total_users_response[current_month] == 4
         assert non_invited_users_response[current_month] == 2
 
     def test_failed_non_invited_session_is_not_counted_when_invited(self, authed_client):

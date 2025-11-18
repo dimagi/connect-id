@@ -47,6 +47,8 @@ class MessageSerializer(serializers.ModelSerializer):
     message_id = serializers.SerializerMethodField()
     action = serializers.SerializerMethodField()
     notification_type = serializers.CharField(default=NotificationTypes.MESSAGING.value)
+    title = serializers.SerializerMethodField()
+    body = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
@@ -61,6 +63,8 @@ class MessageSerializer(serializers.ModelSerializer):
             "status",
             "action",
             "notification_type",
+            "title",
+            "body",
         ]
 
     def get_ciphertext(self, obj):
@@ -84,6 +88,12 @@ class MessageSerializer(serializers.ModelSerializer):
     def get_channel_name(self, obj):
         return obj.channel.visible_name
 
+    def get_title(self, obj):
+        return "New Connect Message"
+
+    def get_body(self, obj):
+        return f"You received a new message from {obj.channel.visible_name}"
+
 
 class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
@@ -91,8 +101,13 @@ class NotificationSerializer(serializers.ModelSerializer):
         fields = (
             "notification_id",
             "notification_type",
-            "title",
-            "body",
-            "data",
             "timestamp",
         )
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        data = getattr(instance, "data", {})
+        # Add all keys from data dictionary to the top-level
+        if isinstance(data, dict):
+            rep.update(data)
+        return rep
