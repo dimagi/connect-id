@@ -25,7 +25,7 @@ from messaging.serializers import (
     SingleMessageSerializer,
 )
 from messaging.task import CommCareHQAPIException, make_request, send_messages_to_service_and_mark_status
-from users.models import ConnectUser
+from users.models import ConnectUser, UserAnalyticsData
 from utils.notification import send_bulk_notification
 from utils.rest_framework import ClientProtectedResourceAuth, MessagingServerAuth
 
@@ -250,7 +250,7 @@ class SendMobileConnectMessage(APIView):
             messages_ready_to_be_sent_ids.append(str(msg.message_id))
 
         send_messages_to_service_and_mark_status(messages_ready_to_be_sent, MessageStatus.SENT_TO_SERVICE)
-
+        UserAnalyticsData.objects.update_or_create(user=request.user, defaults={"has_sent_message": now()})
         return JsonResponse(
             {"message_id": messages_ready_to_be_sent_ids},
             status=status.HTTP_201_CREATED,

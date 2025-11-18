@@ -42,6 +42,7 @@ from .models import (
     PhoneDevice,
     RecoveryStatus,
     SessionPhoneDevice,
+    UserAnalyticsData,
     UserCredential,
     UserKey,
 )
@@ -701,6 +702,7 @@ class ListCredentials(APIView):
     def get(self, request, *args, **kwargs):
         credentials = Credential.objects.filter(usercredential__user=request.user)
         serializer = CredentialSerializer(credentials, many=True)
+        UserAnalyticsData.objects.update_or_create(user=request.user, defaults={"has_viewed_work_history": now()})
         return JsonResponse({"credentials": serializer.data})
 
 
