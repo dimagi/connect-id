@@ -31,6 +31,7 @@ env.read_env(str(BASE_DIR / ".env"))
 
 # Application definition
 LOCAL_APPS = [
+    "flags",
     "messaging",
     "payments",
     "users.apps.UsersConfig",
@@ -66,6 +67,7 @@ MIDDLEWARE = [
     "axes.middleware.AxesMiddleware",
     "utils.middleware.CurrentVersionMiddleware",
     "utils.middleware.Log401ErrorsMiddleware",
+    "waffle.middleware.WaffleMiddleware",
 ]
 
 AUTHENTICATION_BACKENDS = [
@@ -336,3 +338,8 @@ CONNECT_RESEND_INVITES_URL = "https://connect.dimagi.com/users/resend_invites/"
 # List of countries that are blacklisted from using PersonalID
 # Example: ["us", "ca", "gb"] (Alpha-2 country codes)
 BLACKLISTED_COUNTRY_CODES = env.list("BLACKLISTED_COUNTRY_CODES", default=[])
+
+# Waffle settings
+WAFFLE_FLAG_MODEL = "flags.Flag"
+WAFFLE_CREATE_MISSING_FLAGS = True
+WAFFLE_CREATE_MISSING_SWITCHES = True

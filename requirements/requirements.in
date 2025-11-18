@@ -6,6 +6,7 @@ django-oauth-toolkit
 django-otp
 django-phonenumber-field
 djangorestframework
+django-waffle
 fcm-django>=2.2
 gunicorn
 phonenumberslite
