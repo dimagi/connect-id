@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
-from django.db.models import Case, Count, Exists, F, Max, OuterRef, Q, Value, When
+from django.db.models import Count, Exists, F, OuterRef
 from django.db.models.functions import TruncMonth
 from django.db.utils import IntegrityError
 from django.http import HttpResponse, JsonResponse
@@ -22,7 +22,6 @@ from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
 
-from messaging.models import MessageDirection
 from services.ai.ocs import OpenChatStudio
 from utils import get_ip, get_sms_sender, send_sms
 from utils.app_integrity.decorators import require_app_integrity
@@ -1014,16 +1013,8 @@ class FetchUserAnalytics(ClientProtectedResourceMixin, View):
 
     def get(self, request, *args, **kwargs):
         users = (
-            ConnectUser.objects.filter(is_active=True)
-            .annotate(viewed_work_history_count=Count("usercredential__id", filter=Q(usercredential__accepted=True)))
-            .annotate(
-                has_viewed_work_history=Case(
-                    When(Q(viewed_work_history_count__gte=1), then=Value(True)), default=Value(False)
-                ),
-                has_sent_message=Max(
-                    "channel__message__timestamp", filter=Q(channel__message__direction=MessageDirection.SERVER.value)
-                ),
-            )
+            UserAnalyticsData.objects.filter(user__is_active=True)
+            .annotate(username=F("user__username"))
             .values("username", "has_viewed_work_history", "has_sent_message")
         )
         return JsonResponse({"data": list(users)})

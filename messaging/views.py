@@ -250,7 +250,8 @@ class SendMobileConnectMessage(APIView):
             messages_ready_to_be_sent_ids.append(str(msg.message_id))
 
         send_messages_to_service_and_mark_status(messages_ready_to_be_sent, MessageStatus.SENT_TO_SERVICE)
-        UserAnalyticsData.objects.update_or_create(user=request.user, defaults={"has_sent_message": now()})
+        if len(message_objs):
+            UserAnalyticsData.objects.update_or_create(user=request.user, defaults={"has_sent_message": now()})
         return JsonResponse(
             {"message_id": messages_ready_to_be_sent_ids},
             status=status.HTTP_201_CREATED,

@@ -8,11 +8,10 @@ import factory
 import pytest
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
+from django.utils.timezone import now
 from faker import Faker
 from fcm_django.models import FCMDevice
 
-from messaging.factories import ChannelFactory, MessageFactory
-from messaging.models import MessageDirection
 from payments.models import PaymentProfile
 from services.ai.ocs import OpenChatStudio
 from test_utils.decorators import skip_app_integrity_check
@@ -35,6 +34,7 @@ from users.models import (
     PhoneDevice,
     RecoveryStatus,
     SessionPhoneDevice,
+    UserAnalyticsData,
     UserCredential,
     UserKey,
 )
@@ -605,6 +605,7 @@ class TestListCredentials:
         UserCredentialFactory.create(credential=cred, user=user)
 
         response = auth_device.get(self.url)
+        assert UserAnalyticsData.objects.filter(user=user, has_viewed_work_history__isnull=False).exists()
         assert response.status_code == 200
         assert response.json() == {
             "credentials": [
@@ -2026,43 +2027,24 @@ class TestFetchUserAnalytics:
         response = client.get(self.url)
         assert response.status_code == 403
 
-    def test_success_single_user(self, authed_client, user, credential_issuing_authority):
-        # Create a credential for the user
-        cred = CredentialFactory(issuer=credential_issuing_authority)
-        UserCredentialFactory(user=user, credential=cred, accepted=True)
-
-        cred_2 = CredentialFactory(issuer=credential_issuing_authority)
-        UserCredentialFactory(user=user, credential=cred_2, accepted=False)
-
-        # Create a channel and message for the user
-        channel = ChannelFactory(connect_user=user)
-        MessageFactory(
-            channel=channel,
-            direction=MessageDirection.SERVER,
-            timestamp=datetime.now(),
-            content={"text": "test message"},
-        )
+    def test_success_single_user(self, authed_client, user):
+        UserAnalyticsData.objects.create(user=user, has_viewed_work_history=now(), has_sent_message=now())
 
         response = authed_client.get(self.url)
         assert response.status_code == 200
         data = response.json()["data"]
         assert len(data) == 1
         assert data[0]["username"] == user.username
-        assert data[0]["has_viewed_work_history"] is True
+        assert data[0]["has_viewed_work_history"] is not None
         assert data[0]["has_sent_message"] is not None
 
-    def test_success_multiple_users(self, authed_client, credential_issuing_authority):
+    def test_success_multiple_users(self, authed_client):
         user1 = UserFactory(is_active=True)
+        UserAnalyticsData.objects.create(user=user1, has_viewed_work_history=now())
         user2 = UserFactory(is_active=True)
+        UserAnalyticsData.objects.create(user=user2, has_sent_message=now())
         user3 = UserFactory(is_active=True)
-
-        # User 1: Has viewed work history
-        cred1 = CredentialFactory(issuer=credential_issuing_authority)
-        UserCredentialFactory(user=user1, credential=cred1, accepted=True)
-
-        # User 2: Has sent message
-        channel2 = ChannelFactory(connect_user=user2)
-        MessageFactory(channel=channel2, direction=MessageDirection.SERVER, content={"text": "test message 2"})
+        UserAnalyticsData.objects.create(user=user3)
 
         response = authed_client.get(self.url)
         assert response.status_code == 200
@@ -2070,15 +2052,15 @@ class TestFetchUserAnalytics:
         assert len(data) == 3
 
         user1_data = next(item for item in data if item["username"] == user1.username)
-        assert user1_data["has_viewed_work_history"]
+        assert user1_data["has_viewed_work_history"] is not None
         assert user1_data["has_sent_message"] is None
 
         user2_data = next(item for item in data if item["username"] == user2.username)
-        assert not user2_data["has_viewed_work_history"]
+        assert user2_data["has_viewed_work_history"] is None
         assert user2_data["has_sent_message"] is not None
 
         user3_data = next(item for item in data if item["username"] == user3.username)
-        assert not user3_data["has_viewed_work_history"]
+        assert user3_data["has_viewed_work_history"] is None
         assert user3_data["has_sent_message"] is None
 
     def test_no_users_found(self, authed_client):
