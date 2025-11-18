@@ -11,8 +11,8 @@ class TestTogglesView:
     endpoint = reverse("toggles")
 
     def test_success(self, client):
-        SwitchFactory()
-        SwitchFactory(active=False)
+        SwitchFactory(name="A1")
+        SwitchFactory(name="B2", active=False)
 
         response = client.get(self.endpoint)
 
@@ -21,8 +21,8 @@ class TestTogglesView:
 
         data = json.loads(response.content)
         assert "toggles" in data
-        assert data["toggles"]["TEST_FEATURE_0"] is True
-        assert data["toggles"]["TEST_FEATURE_1"] is False
+        assert data["toggles"]["A1"] is True
+        assert data["toggles"]["B2"] is False
 
     def test_no_toggles(self, client):
         response = client.get(self.endpoint)

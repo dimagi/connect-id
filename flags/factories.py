@@ -6,5 +6,5 @@ class SwitchFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = Switch
 
-    name = factory.Sequence(lambda n: f"TEST_SWITCH_{n}")
+    name = factory.Faker("bothify", text="SWITCH_????####", letters="ABCDEFGHIJKLMNOPQRSTUVWXYZ")
     active = True
