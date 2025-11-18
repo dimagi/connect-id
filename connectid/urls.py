@@ -22,6 +22,7 @@ from . import views
 urlpatterns = [
     path("users/", include("users.urls")),
     path("messaging/", include("messaging.urls")),
+    path("toggles/", include("flags.urls")),
     path("admin/", admin.site.urls),
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
     path("hq_invite/", TemplateView.as_view(template_name="connectid/deeplink.html"), name="deeplink"),
