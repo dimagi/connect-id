@@ -335,6 +335,9 @@ class UserAnalyticsData(models.Model):
     user = models.OneToOneField(ConnectUser, on_delete=models.CASCADE)
     has_viewed_work_history = models.DateTimeField(null=True)
     has_sent_message = models.DateTimeField(null=True)
+    # TODO: this field will be populated for users who have SSO
+    # in a HQ app.
+    has_sso_on_hq_app = models.DateTimeField(null=True)
 
 
 class SessionUser(AnonymousUser):
