@@ -1015,6 +1015,6 @@ class FetchUserAnalytics(ClientProtectedResourceMixin, View):
         users = (
             UserAnalyticsData.objects.filter(user__is_active=True)
             .annotate(username=F("user__username"))
-            .values("username", "has_viewed_work_history", "has_sent_message")
+            .values("username", "has_viewed_work_history", "has_sent_message", "has_sso_on_hq_app")
         )
         return JsonResponse({"data": list(users)})
