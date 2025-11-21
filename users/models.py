@@ -50,6 +50,8 @@ class ConnectUser(AbstractUser):
     is_locked = models.BooleanField(default=False)
     failed_backup_code_attempts = models.IntegerField(default=0)
 
+    hq_sso_date = models.DateTimeField(null=True)
+
     # removed from base class
     first_name = None
     last_name = None
@@ -329,15 +331,6 @@ class DeviceIntegritySample(models.Model):
 
     class Meta:
         ordering = ["-created"]
-
-
-class UserAnalyticsData(models.Model):
-    user = models.OneToOneField(ConnectUser, on_delete=models.CASCADE)
-    has_viewed_work_history = models.DateTimeField(null=True)
-    has_sent_message = models.DateTimeField(null=True)
-    # TODO: this field will be populated for users who have SSO
-    # in a HQ app.
-    has_sso_on_hq_app = models.DateTimeField(null=True)
 
 
 class SessionUser(AnonymousUser):
