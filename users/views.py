@@ -1010,5 +1010,5 @@ class FetchUserAnalytics(ClientProtectedResourceMixin, View):
     required_scopes = ["user_fetch"]
 
     def get(self, request, *args, **kwargs):
-        users = ConnectUser.objects.filter(user__is_active=True).values("username", "hq_sso_date")
+        users = ConnectUser.objects.filter(is_active=True).values("username", "hq_sso_date")
         return JsonResponse({"data": list(users)})
