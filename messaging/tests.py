@@ -18,7 +18,6 @@ from messaging.models import Channel, Message, MessageDirection, MessageStatus, 
 from messaging.serializers import MessageSerializer, NotificationData
 from messaging.task import CommCareHQAPIException
 from users.factories import FCMDeviceFactory, ServerKeysFactory
-from users.models import UserAnalyticsData
 from utils.notification import send_bulk_notification
 
 APPLICATION_JSON = "application/json"
@@ -294,7 +293,6 @@ class TestSendMessageView:
         with patch("messaging.views.send_messages_to_service_and_mark_status") as mock_make_request:
             response = auth_device.post(self.url, json.dumps(data), content_type=APPLICATION_JSON)
             json_data = response.json()
-            assert UserAnalyticsData.objects.filter(user=user, has_sent_message__isnull=False).exists()
             assert response.status_code == status.HTTP_201_CREATED
             assert "message_id" in json_data
 

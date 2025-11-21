@@ -41,7 +41,6 @@ from .models import (
     PhoneDevice,
     RecoveryStatus,
     SessionPhoneDevice,
-    UserAnalyticsData,
     UserCredential,
     UserKey,
 )
@@ -701,7 +700,6 @@ class ListCredentials(APIView):
     def get(self, request, *args, **kwargs):
         credentials = Credential.objects.filter(usercredential__user=request.user)
         serializer = CredentialSerializer(credentials, many=True)
-        UserAnalyticsData.objects.update_or_create(user=request.user, defaults={"has_viewed_work_history": now()})
         return JsonResponse({"credentials": serializer.data})
 
 
@@ -1012,9 +1010,5 @@ class FetchUserAnalytics(ClientProtectedResourceMixin, View):
     required_scopes = ["user_fetch"]
 
     def get(self, request, *args, **kwargs):
-        users = (
-            UserAnalyticsData.objects.filter(user__is_active=True)
-            .annotate(username=F("user__username"))
-            .values("username", "has_viewed_work_history", "has_sent_message", "has_sso_on_hq_app")
-        )
+        users = ConnectUser.objects.filter(user__is_active=True).values("username", "hq_sso_date")
         return JsonResponse({"data": list(users)})
