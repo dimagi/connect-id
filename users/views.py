@@ -1027,8 +1027,8 @@ class AddUserAnalytics(APIView):
 
     def post(self, request, *args, **kwargs):
         username = request.data["username"]
-        hq_sso_date = request.date.get("hq_sso_date")
+        hq_sso_date = request.data.get("hq_sso_date")
         user = get_object_or_404(ConnectUser, username=username, is_active=True)
         user.hq_sso_date = hq_sso_date
-        user.update()
+        user.save()
         return HttpResponse(status=200)
