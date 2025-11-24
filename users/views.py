@@ -1012,7 +1012,7 @@ class FetchUserAnalytics(ClientProtectedResourceMixin, View):
 
     def get(self, request, *args, **kwargs):
         users = (
-            ConnectUser.objects.filter(is_active=True)
+            ConnectUser.objects.filter(is_active=True, is_staff=False)
             .annotate(has_sso_on_hq_app=F("hq_sso_date"))
             .values("username", "has_sso_on_hq_app")
         )
