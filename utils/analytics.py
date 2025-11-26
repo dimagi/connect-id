@@ -61,7 +61,7 @@ def _serialize_events(events: list[Event]):
 
 
 def _get_ga_client_id(request):
-    if hasattr(request, "user") and request.user.id:
+    if hasattr(request, "user") and request.user and request.user.id:
         return f"personalid-user-{request.user.id}"
     return f"personalid-anon-{uuid.uuid4()}"
 
