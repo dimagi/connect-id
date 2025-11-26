@@ -11,6 +11,18 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class GATrackingInfo:
+    client_id: str
+    session_id: str
+
+    @classmethod
+    def from_request(cls, request):
+        client_id = _get_ga_client_id(request)
+        session_id = _get_ga_session_id(request)
+        return cls(client_id=client_id, session_id=session_id)
+
+
+@dataclass
 class Event:
     name: str
     params: dict[str, Any]
@@ -29,18 +41,17 @@ def send_bulk_events_to_ga(request, events: list[Event]):
         logger.info("Please specify GA_API_SECRET environment variable.")
         return
 
-    client_id = _get_ga_client_id(request)
-    session_id = _get_ga_session_id(request)
+    tracking_info = GATrackingInfo.from_request(request)
     enriched_events = []
     for event in events:
         enriched_params = {
             **event.params,
-            "session_id": session_id,
+            "session_id": tracking_info.session_id,
             # This is needed for tracking to work properly.
             "engagement_time_msec": 100,
         }
         enriched_events.append(Event(name=event.name, params=enriched_params))
-    send_ga_event.delay(client_id, _serialize_events(enriched_events))
+    send_ga_event.delay(tracking_info.client_id, _serialize_events(enriched_events))
 
 
 @shared_task(name="send_ga_event")
