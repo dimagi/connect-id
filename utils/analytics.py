@@ -68,6 +68,6 @@ def _get_ga_client_id(request):
 
 def _get_ga_session_id(request):
     try:
-        return str(request.user.get_session_timestamp())
+        return str(request.user.get_session_timestamp().timestamp())
     except AttributeError:
-        return str(now())
+        return str(now().timestamp())
