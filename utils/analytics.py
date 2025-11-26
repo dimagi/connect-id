@@ -33,15 +33,16 @@ def send_bulk_events_to_ga(request, events: list[Event]):
 
     client_id = _get_ga_client_id(request)
     session_id = _get_ga_session_id(request)
+    enriched_events = []
     for event in events:
-        event.params.update(
-            {
-                "session_id": session_id,
-                # This is needed for tracking to work properly.
-                "engagement_time_msec": 100,
-            }
-        )
-    send_ga_event.delay(client_id, _serialize_events(events))
+        enriched_params = {
+            **event.params,
+            "session_id": session_id,
+            # This is needed for tracking to work properly.
+            "engagement_time_msec": 100,
+        }
+        enriched_events.append(Event(name=event.name, params=enriched_params))
+    send_ga_event.delay(client_id, _serialize_events(enriched_events))
 
 
 @shared_task(name="send_ga_event")
