@@ -51,10 +51,8 @@ def send_ga_event(client_id: str, events: list[Event]):
     url = f"{base_url}?{urlencode(params)}"
     payload = {"client_id": client_id, "events": events}
 
-    response = requests.post(url, json=payload)
+    response = requests.post(url, json=payload, timeout=10)
     response.raise_for_status()
-
-    return response
 
 
 def _serialize_events(events: list[Event]):
