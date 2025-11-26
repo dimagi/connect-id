@@ -112,7 +112,7 @@ class ConnectUser(AbstractUser):
             minutes=MAX_SESSION_MINUTES
         ):
             self.last_session_timestamp = now()
-            self.save()
+            self.save(update_fields=["last_session_timestamp"])
         return self.last_session_timestamp
 
     class Meta:
