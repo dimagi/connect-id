@@ -35,6 +35,8 @@ class ErrorCodes:
 
 MAX_BACKUP_CODE_ATTEMPTS = 3
 
+MAX_SESSION_MINUTES = 30
+
 
 class SMSMethods:
     PERSONAL_ID = "personal_id"
