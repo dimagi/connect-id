@@ -24,7 +24,7 @@ from users.exceptions import RecoveryPinNotSetError
 from users.services import get_user_photo_base64
 from utils import get_sms_sender, send_sms
 
-from .const import MAX_BACKUP_CODE_ATTEMPTS, MAX_SESSION_MINUTES, TEST_NUMBER_PREFIX
+from .const import MAX_BACKUP_CODE_ATTEMPTS, TEST_NUMBER_PREFIX
 
 
 class ConnectUser(AbstractUser):
@@ -49,8 +49,6 @@ class ConnectUser(AbstractUser):
     device_security = models.CharField(choices=DeviceSecurity.choices, default=DeviceSecurity.BIOMETRIC, max_length=15)
     is_locked = models.BooleanField(default=False)
     failed_backup_code_attempts = models.IntegerField(default=0)
-
-    last_session_timestamp = models.DateTimeField(blank=True, null=True)
 
     # removed from base class
     first_name = None
@@ -106,14 +104,6 @@ class ConnectUser(AbstractUser):
     @property
     def backup_code_attempts_left(self):
         return max(MAX_BACKUP_CODE_ATTEMPTS - self.failed_backup_code_attempts, 0)
-
-    def get_session_timestamp(self):
-        if not self.last_session_timestamp or now() - self.last_session_timestamp > timedelta(
-            minutes=MAX_SESSION_MINUTES
-        ):
-            self.last_session_timestamp = now()
-            self.save(update_fields=["last_session_timestamp"])
-        return self.last_session_timestamp
 
     class Meta:
         constraints = [

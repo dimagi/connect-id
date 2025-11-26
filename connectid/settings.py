@@ -345,5 +345,5 @@ WAFFLE_CREATE_MISSING_FLAGS = True
 WAFFLE_CREATE_MISSING_SWITCHES = True
 
 # Google Analytics settings
-GA_MEASUREMENT_ID = env("GA_MEASUREMENT_ID", default="")
 GA_API_SECRET = env("GA_API_SECRET", default="")
+FIREBASE_APP_ID = env("FIREBASE_APP_ID", default="")
