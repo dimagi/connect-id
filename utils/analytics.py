@@ -17,8 +17,8 @@ class GATrackingInfo:
 
     @classmethod
     def from_request(cls, request):
-        client_id = _get_ga_client_id(request)
-        session_id = _get_ga_session_id(request)
+        client_id = _get_firebase_client_id(request)
+        session_id = _get_firebase_session_id(request)
         return cls(client_id=client_id, session_id=session_id)
 
 
@@ -73,9 +73,9 @@ def _serialize_events(events: list[Event]):
     return [asdict(event) for event in events]
 
 
-def _get_ga_client_id(request):
+def _get_firebase_client_id(request):
     return request.headers.get("X-Firebase-Instance-ID")
 
 
-def _get_ga_session_id(request):
+def _get_firebase_session_id(request):
     return request.headers.get("X-Firebase-Session-ID")
