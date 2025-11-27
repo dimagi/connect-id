@@ -33,15 +33,19 @@ def send_event_to_ga(request, event: Event):
 
 
 def send_bulk_events_to_ga(request, events: list[Event]):
-    if not settings.FIREBASE_APP_ID:
+    if not settings.FIREBASE_APP_ID or not settings.FIREBASE_APP_ID.strip():
         logger.info("Please specify FIREBASE_APP_ID environment variable.")
         return
 
-    if not settings.GA_API_SECRET:
+    if not settings.GA_API_SECRET or not settings.GA_API_SECRET.strip():
         logger.info("Please specify GA_API_SECRET environment variable.")
         return
 
     tracking_info = GATrackingInfo.from_request(request)
+    if not tracking_info.client_id or not tracking_info.session_id:
+        logger.info("Missing required Firebase headers from request.")
+        return
+
     enriched_events = []
     for event in events:
         enriched_params = {
