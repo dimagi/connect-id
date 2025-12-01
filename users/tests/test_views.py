@@ -1997,9 +1997,9 @@ class TestFetchUserCounts:
         invited_session = ConfigurationSessionFactory(
             phone_number=non_invited_session.phone_number,
             invited_user=True,
-            expires=datetime.now() - timedelta(hours=24),
+            expires=datetime.now() + timedelta(hours=1),
         )
-        # User completed signup in the current month
+        # User completed signup 1 hour before session expiry
         UserFactory(
             phone_number=invited_session.phone_number,
             date_joined=datetime.now(),
