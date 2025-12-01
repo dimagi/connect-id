@@ -1997,12 +1997,12 @@ class TestFetchUserCounts:
         invited_session = ConfigurationSessionFactory(
             phone_number=non_invited_session.phone_number,
             invited_user=True,
-            expires=datetime.now() - timedelta(hours=24),
+            expires=datetime.now() + timedelta(hours=1),
         )
         # User completed signup 1 hour before session expiry
         UserFactory(
             phone_number=invited_session.phone_number,
-            date_joined=datetime.now() - timedelta(hours=25),
+            date_joined=datetime.now(),
             is_active=True,
         )
 
@@ -2011,7 +2011,7 @@ class TestFetchUserCounts:
 
         total_users_response = response.json()["total_users"]
         non_invited_users_response = response.json()["non_invited_users"]
-        current_month = list(total_users_response.keys())[0]
+        current_month = datetime.now().strftime("%Y-%m")
 
         assert total_users_response[current_month] == 2
         assert non_invited_users_response == {}
