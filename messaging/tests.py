@@ -287,7 +287,7 @@ class TestSendMessageView:
         expected_message_data[str(channel.channel_id)] = {"url": server.delivery_url, "messages": serialized_msgs}
         return expected_message_data
 
-    def test_send_message_from_mobile(self, auth_device, channel, server):
+    def test_send_message_from_mobile(self, user, auth_device, channel, server):
         data = rest_message(channel.channel_id)
 
         with patch("messaging.views.send_messages_to_service_and_mark_status") as mock_make_request:

@@ -50,6 +50,8 @@ class ConnectUser(AbstractUser):
     is_locked = models.BooleanField(default=False)
     failed_backup_code_attempts = models.IntegerField(default=0)
 
+    hq_sso_date = models.DateTimeField(null=True, blank=True)
+
     # removed from base class
     first_name = None
     last_name = None

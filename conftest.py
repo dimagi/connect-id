@@ -50,11 +50,10 @@ def auth_device(user, api_client):
 
 
 @pytest.fixture
-def oauth_app(user):
+def oauth_app(db):
     application = Application(
         name="Test Application HQ",
         redirect_uris="http://localhost",
-        user=user,
         client_type=Application.CLIENT_CONFIDENTIAL,
         authorization_grant_type=Application.GRANT_CLIENT_CREDENTIALS,
     )

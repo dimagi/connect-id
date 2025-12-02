@@ -1004,3 +1004,11 @@ class GenerateManualOTP(APIView):
         session_phone_device.session.save()
 
         return JsonResponse({"otp": session_phone_device.token})
+
+
+class FetchUserAnalytics(ClientProtectedResourceMixin, View):
+    required_scopes = ["user_fetch"]
+
+    def get(self, request, *args, **kwargs):
+        users = ConnectUser.objects.filter(is_active=True).values("username", "hq_sso_date")
+        return JsonResponse({"data": list(users)})
