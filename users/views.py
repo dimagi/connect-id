@@ -553,7 +553,7 @@ def confirm_backup_code(request):
                 user.is_active = False
                 user.is_locked = True
                 user.save()
-                return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=200)
+                return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=401)
 
             return JsonResponse({"attempts_left": user.backup_code_attempts_left}, status=200)
 
@@ -1011,11 +1011,7 @@ class FetchUserAnalytics(ClientProtectedResourceMixin, View):
     required_scopes = ["user_fetch"]
 
     def get(self, request, *args, **kwargs):
-        users = (
-            ConnectUser.objects.filter(is_active=True, is_staff=False)
-            .annotate(has_sso_on_hq_app=F("hq_sso_date"))
-            .values("username", "has_sso_on_hq_app")
-        )
+        users = ConnectUser.objects.filter(is_active=True, is_staff=False).values("username", "hq_sso_date")
         return JsonResponse({"data": list(users)})
 
 

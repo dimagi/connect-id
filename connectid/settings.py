@@ -30,6 +30,12 @@ env.read_env(str(BASE_DIR / ".env"))
 
 
 # Application definition
+LOCAL_APPS = [
+    "flags",
+    "messaging",
+    "payments",
+    "users.apps.UsersConfig",
+]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -39,16 +45,14 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "phonenumber_field",
-    "users.apps.UsersConfig",
-    "messaging",
     "oauth2_provider",
-    "payments",
     "rest_framework",
     "rest_framework.authtoken",
     "axes",
     "fcm_django",
     "django.contrib.sites",
-]
+    "waffle",
+] + LOCAL_APPS
 
 MIDDLEWARE = [
     "allow_cidr.middleware.AllowCIDRMiddleware",
@@ -63,6 +67,7 @@ MIDDLEWARE = [
     "axes.middleware.AxesMiddleware",
     "utils.middleware.CurrentVersionMiddleware",
     "utils.middleware.Log401ErrorsMiddleware",
+    "waffle.middleware.WaffleMiddleware",
 ]
 
 AUTHENTICATION_BACKENDS = [
@@ -261,6 +266,7 @@ ALLOWED_CIDR_NETS = env.list("DJANGO_ALLOWED_CIDR_NETS", default=[])
 
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
+# Twilio settings
 TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default=None)
 TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default=None)
 TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default=None)
@@ -323,6 +329,7 @@ OCS_CONFIG = {
     },
 }
 
+# Connect integration settings
 COMMCARE_CONNECT_CLIENT_ID = env("COMMCARE_CONNECT_CLIENT_ID", default="")
 COMMCARE_CONNECT_CLIENT_SECRET = env("COMMCARE_CONNECT_CLIENT_SECRET", default="")
 CONNECT_INVITED_USER_URL = "https://connect.dimagi.com/users/invited_user/"
@@ -331,3 +338,12 @@ CONNECT_RESEND_INVITES_URL = "https://connect.dimagi.com/users/resend_invites/"
 # List of countries that are blacklisted from using PersonalID
 # Example: ["us", "ca", "gb"] (Alpha-2 country codes)
 BLACKLISTED_COUNTRY_CODES = env.list("BLACKLISTED_COUNTRY_CODES", default=[])
+
+# Waffle settings
+WAFFLE_FLAG_MODEL = "flags.Flag"
+WAFFLE_CREATE_MISSING_FLAGS = True
+WAFFLE_CREATE_MISSING_SWITCHES = True
+
+# Google Analytics settings
+GA_API_SECRET = env("GA_API_SECRET", default="")
+FIREBASE_APP_ID = env("FIREBASE_APP_ID", default="")
