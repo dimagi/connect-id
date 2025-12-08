@@ -21,6 +21,7 @@ from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
+from waffle.models import Switch
 
 from services.ai.ocs import OpenChatStudio
 from utils import get_ip, get_sms_sender, send_sms
@@ -112,6 +113,8 @@ def start_device_configuration(request):
         "demo_user": is_demo_user,
         "token": token_session.key,
     }
+    if data.get("include_toggles", False):
+        response_data["toggles"] = {s.name: s.active for s in Switch.objects.all()}
 
     if request.version == settings.API_VERSION.V1:
         response_data["sms_method"] = SMSMethods.PERSONAL_ID if request.invited_user else SMSMethods.FIREBASE
