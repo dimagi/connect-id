@@ -13,6 +13,7 @@ from django.db.models import Count, Exists, F, OuterRef
 from django.db.models.functions import TruncMonth
 from django.db.utils import IntegrityError
 from django.http import HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404
 from django.utils.timezone import now
 from django.views import View
 from firebase_admin import auth
@@ -1010,5 +1011,20 @@ class FetchUserAnalytics(ClientProtectedResourceMixin, View):
     required_scopes = ["user_fetch"]
 
     def get(self, request, *args, **kwargs):
-        users = ConnectUser.objects.filter(is_active=True).values("username", "hq_sso_date")
+        users = ConnectUser.objects.filter(is_active=True, is_staff=False).values("username", "hq_sso_date")
         return JsonResponse({"data": list(users)})
+
+
+class AddUserAnalytics(APIView):
+    """This view gets called by CommCareHQ to add user analytics  for
+    a PersonalID User."""
+
+    authentication_classes = [ClientProtectedResourceAuth]
+
+    def post(self, request, *args, **kwargs):
+        username = request.data["username"]
+        hq_sso_date = request.data.get("hq_sso_date")
+        user = get_object_or_404(ConnectUser, username=username, is_active=True)
+        user.hq_sso_date = hq_sso_date
+        user.save()
+        return HttpResponse(status=200)
