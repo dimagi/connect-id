@@ -23,6 +23,7 @@ from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
 
+from flags.utils import get_user_toggles
 from services.ai.ocs import OpenChatStudio
 from utils import get_ip, get_sms_sender, send_sms
 from utils.app_integrity.decorators import require_app_integrity
@@ -108,10 +109,12 @@ def start_device_configuration(request):
 
     token_session.save()
 
+    toggles = get_user_toggles(phone_number=data["phone_number"])
     response_data = {
         "required_lock": ConnectUser.get_device_security_requirement(data["phone_number"], request.invited_user),
         "demo_user": is_demo_user,
         "token": token_session.key,
+        "toggles": toggles,
     }
 
     if request.version == settings.API_VERSION.V1:
