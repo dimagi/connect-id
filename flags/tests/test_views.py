@@ -28,8 +28,8 @@ class TestTogglesView:
 
         data = json.loads(response.content)
         assert "toggles" in data
-        assert data["toggles"]["A1"] is True
-        assert data["toggles"]["B2"] is False
+        assert data["toggles"]["A1"]["active"] is True
+        assert data["toggles"]["B2"]["active"] is False
 
     def test_no_toggles(self, client):
         response = client.get(self.endpoint)

@@ -5,7 +5,7 @@ from django.conf import settings
 def check_number_for_existing_invites(phone_number):
     url = settings.CONNECT_INVITED_USER_URL
     auth = (settings.COMMCARE_CONNECT_CLIENT_ID, settings.COMMCARE_CONNECT_CLIENT_SECRET)
-    response = requests.get(url, auth=auth, params={"phone_number": phone_number})
+    response = requests.get(url, auth=auth, params={"phone_number": phone_number}, timeout=60)
     data = response.json()
     return data.get("invited", False)
 
@@ -29,6 +29,13 @@ def get_connect_toggles(username=None, phone_number=None):
         params["username"] = username
     elif phone_number is not None:
         params["phone_number"] = phone_number
-    response = requests.get(url, auth=auth, params=params)
+    response = requests.get(url, auth=auth, params=params, timeout=60)
     data = response.json()
-    return {toggle["name"]: toggle["active"] for toggle in data.get("toggles", {})}
+    return {
+        toggle["name"]: {
+            "active": toggle["active"],
+            "created_at": toggle["created"],
+            "modified_at": toggle["modified"],
+        }
+        for toggle in data.get("toggles", {})
+    }
