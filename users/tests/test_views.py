@@ -1109,6 +1109,12 @@ class TestValidateFirebaseIDToken:
 
 @pytest.mark.django_db
 class TestStartConfigurationView:
+    @pytest.fixture(scope="class", autouse=True)
+    def mock_get_user_toggles(self):
+        with mock.patch("users.views.get_user_toggles") as mock_get_toggles:
+            mock_get_toggles.return_value = {}
+            yield mock_get_toggles
+
     @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
     def test_no_integrity_token(self, check_number_mock, client):
         check_number_mock.return_value = False
@@ -1200,6 +1206,7 @@ class TestStartConfigurationView:
         assert session.gps_location == gps_location
         assert not session.is_phone_validated
         assert session.device_id == "device_id"
+        assert "toggles" in response.json()
 
     @skip_app_integrity_check
     @patch("users.models.ConfigurationSession.country_code", new_callable=PropertyMock)
