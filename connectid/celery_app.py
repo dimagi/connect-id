@@ -2,6 +2,7 @@ import os
 from datetime import timedelta
 
 from celery import Celery
+from celery.schedules import crontab
 
 # set the default Django settings module for the 'celery' program.
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "connectid.settings")
@@ -25,5 +26,9 @@ app.conf.beat_schedule = {
     "resend_notifications_for_undelivered_messages": {
         "task": "messaging.task.resend_notifications_for_undelivered_messages",
         "schedule": timedelta(hours=1),
+    },
+    "upload_connect_users_to_superset": {
+        "task": "users.tasks.upload_connect_users_to_superset",
+        "schedule": crontab(hour=0, minute=0),
     },
 }
