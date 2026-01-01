@@ -377,7 +377,7 @@ class RetrieveNotificationView(ListAPIView):
         notifications_data = serializer.data
 
         # Get all channels for the user
-        user_channels = Channel.objects.filter(connect_user=request.user)
+        user_channels = Channel.objects.filter(connect_user=request.user).select_related("server")
         channels_data = []
 
         for channel in user_channels:

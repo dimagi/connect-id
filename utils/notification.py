@@ -1,3 +1,4 @@
+from django.db.models import Prefetch
 from fcm_django.models import FCMDevice
 from firebase_admin import messaging
 from firebase_admin.exceptions import FirebaseError
@@ -14,7 +15,9 @@ def send_bulk_notification(message: NotificationData):
         message_result["all_success"] = message_all_success
         return message_result
 
-    users = ConnectUser.objects.filter(username__in=message.usernames, is_active=True)
+    users = ConnectUser.objects.filter(username__in=message.usernames, is_active=True).prefetch_related(
+        Prefetch("fcmdevice_set", queryset=FCMDevice.objects.filter(active=True), to_attr="active_devices")
+    )
     missing_users = set(message.usernames) - {u.username for u in users}
 
     for user in users:
@@ -24,7 +27,7 @@ def send_bulk_notification(message: NotificationData):
         )
         notification.save()
 
-        fcm_device = FCMDevice.objects.filter(user=user, active=True).first()
+        fcm_device = user.active_devices[0] if user.active_devices else None
 
         result = {"username": user.username}
         message_result["responses"].append(result)
