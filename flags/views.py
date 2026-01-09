@@ -1,10 +1,13 @@
 from django.http import JsonResponse
 from django.views import View
-from waffle.models import Switch
+
+from .utils import get_user_toggles
 
 
 class TogglesView(View):
     def get(self, request):
-        switches = Switch.objects.all()
-        toggles = {switch.name: switch.active for switch in switches}
+        username = None
+        if request.user.is_authenticated:
+            username = request.user.username
+        toggles = get_user_toggles(username=username)
         return JsonResponse({"toggles": toggles})
