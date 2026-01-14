@@ -65,14 +65,20 @@ class ConnectUserSupersetExporter:
                 logger.warning("Failed to delete temporary file %s", csv_path, exc_info=True)
 
     def generate_csv(self) -> Path:
-        tmp = tempfile.NamedTemporaryFile(mode="w", newline="", suffix=".csv", delete=False)
-        writer = csv.DictWriter(tmp, fieldnames=CONNECT_USER_DUMP_FIELDS)
-        writer.writeheader()
         MAX_USER_UPLOAD_LIMIT = 100000
         if ConnectUser.objects.count() > MAX_USER_UPLOAD_LIMIT:
             raise SuperusetUserUploadException(f"ConnectUser count is greater than {MAX_USER_UPLOAD_LIMIT}")
-        for user in ConnectUser.objects.all().values(*CONNECT_USER_DUMP_FIELDS).iterator(chunk_size=500):
-            writer.writerow({k: self._serialize_value(user[k]) for k in CONNECT_USER_DUMP_FIELDS})
+
+        try:
+            tmp = tempfile.NamedTemporaryFile(mode="w", newline="", suffix=".csv", delete=False)
+            writer = csv.DictWriter(tmp, fieldnames=CONNECT_USER_DUMP_FIELDS)
+            writer.writeheader()
+            for user in ConnectUser.objects.all().values(*CONNECT_USER_DUMP_FIELDS).iterator(chunk_size=500):
+                writer.writerow({k: self._serialize_value(user[k]) for k in CONNECT_USER_DUMP_FIELDS})
+        except Exception:
+            tmp.close()
+            Path(tmp.name).unlink(missing_ok=True)
+            raise
         tmp.close()
         return Path(tmp.name)
 
