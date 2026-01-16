@@ -5,6 +5,7 @@ from secrets import token_hex
 from urllib.parse import urlencode, urlparse
 
 import requests
+import sentry_sdk
 from django.conf import settings
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
@@ -978,7 +979,8 @@ def report_integrity(request):
             request_id=request_id,
             device_id=device_id,
         )
-    except DuplicateSampleRequestError:
+    except DuplicateSampleRequestError as e:
+        sentry_sdk.capture_exception(e)
         return JsonResponse({"result_code": None}, status=200)
     except HttpError:
         return JsonResponse({"result_code": None}, status=500)
