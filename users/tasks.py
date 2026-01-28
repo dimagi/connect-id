@@ -51,18 +51,20 @@ class ConnectUserSupersetExporter:
             # Upload not configured
             return
 
-        csv_path = self.generate_csv()
+        csv_path = None
         try:
             self.authenticate()
+            csv_path = self.generate_csv()
             self.upload(csv_path)
             logger.info("Uploaded ConnectUser csv to Superset")
         finally:
-            try:
-                csv_path.unlink()
-            except FileNotFoundError:
-                pass
-            except Exception:
-                logger.warning("Failed to delete temporary file %s", csv_path, exc_info=True)
+            if csv_path:
+                try:
+                    csv_path.unlink()
+                except FileNotFoundError:
+                    pass
+                except Exception:
+                    logger.warning("Failed to delete temporary file %s", csv_path, exc_info=True)
 
     def generate_csv(self) -> Path:
         MAX_USER_UPLOAD_LIMIT = 100000
