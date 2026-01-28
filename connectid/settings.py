@@ -348,3 +348,13 @@ WAFFLE_CREATE_MISSING_SWITCHES = True
 # Google Analytics settings
 GA_API_SECRET = env("GA_API_SECRET", default="")
 FIREBASE_APP_ID = env("FIREBASE_APP_ID", default="")
+
+# Superset CSV upload settings
+SUPERSET_UPLOAD_CONFIG = {
+    "base_url": env("SUPERSET_UPLOAD_BASE_URL", default="https://connect-superset.dimagi.com"),
+    "username": env("SUPERSET_UPLOAD_USERNAME", default=""),
+    "password": env("SUPERSET_UPLOAD_PASSWORD", default=""),
+    "database_id": env.int("SUPERSET_UPLOAD_DATABASE_ID", default=1),
+    "table_name": env("SUPERSET_UPLOAD_TABLE_NAME", default="connect_user_dump"),
+    "table_schema": env("SUPERSET_UPLOAD_TABLE_SCHEMA", default=""),
+}
