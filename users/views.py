@@ -1022,7 +1022,7 @@ class AddUserAnalytics(APIView):
     """This view gets called by CommCareHQ to add user analytics  for
     a PersonalID User."""
 
-    authentication_classes = [ClientProtectedResourceAuth]
+    authentication_classes = [IssuingCredentialsAuth]
 
     def post(self, request, *args, **kwargs):
         username = request.data["username"]
