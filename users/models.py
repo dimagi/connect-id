@@ -15,7 +15,7 @@ from django.urls import reverse
 from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
 from django_otp.util import random_hex
-from geopy.exc import GeocoderUnavailable
+from geopy.exc import GeocoderServiceError, GeocoderUnavailable
 from geopy.geocoders import Nominatim
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 from phonenumber_field.modelfields import PhoneNumberField
@@ -296,10 +296,10 @@ class ConfigurationSession(models.Model):
         coords = self.gps_location.split()
         lat = coords[0]
         lon = coords[1]
-        geolocator = Nominatim(user_agent="PersonalID")
+        geolocator = Nominatim(user_agent="PersonalID__connect-devops@dimagi.com")
         try:
             location = geolocator.reverse(f"{lat} {lon}", language="en")
-        except GeocoderUnavailable as e:
+        except (GeocoderUnavailable, GeocoderServiceError) as e:
             sentry_sdk.capture_exception(e)
             return None
         address = location.raw.get("address", {})
