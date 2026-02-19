@@ -15,8 +15,7 @@ from django.urls import reverse
 from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
 from django_otp.util import random_hex
-from geopy.exc import GeocoderServiceError, GeocoderUnavailable
-from geopy.geocoders import Nominatim
+from geopy.geocoders import MapBox
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 from phonenumber_field.modelfields import PhoneNumberField
 
@@ -291,19 +290,36 @@ class ConfigurationSession(models.Model):
     def is_valid(self):
         return self.expires > now()
 
-    @property
     def country_code(self):
-        coords = self.gps_location.split()
-        lat = coords[0]
-        lon = coords[1]
-        geolocator = Nominatim(user_agent="PersonalID__connect-devops@dimagi.com")
+        if not settings.MAPBOX_ACCESS_TOKEN or not self.gps_location:
+            return None
+
         try:
-            location = geolocator.reverse(f"{lat} {lon}", language="en")
-        except (GeocoderUnavailable, GeocoderServiceError) as e:
+            coords = self.gps_location.split()
+            lat, lon = coords[0], coords[1]
+        except (ValueError, IndexError):
+            return None
+
+        geolocator = MapBox(api_key=settings.MAPBOX_ACCESS_TOKEN)
+        try:
+            location = geolocator.reverse(query=f"{lat} {lon}", exactly_one=True)
+        except Exception as e:
             sentry_sdk.capture_exception(e)
             return None
-        address = location.raw.get("address", {})
-        return address.get("country_code")
+
+        if not location or not location.raw:
+            return None
+
+        raw = location.raw
+        context = raw.get("context", [])
+        country_code = None
+        for item in context:
+            if "country" in item.get("id", ""):
+                country_code = item.get("short_code") or item.get("country_code")
+                break
+
+        if country_code:
+            return country_code.split("-")[0].lower()
 
 
 class SessionPhoneDevice(BasePhoneDevice):
