@@ -296,13 +296,13 @@ class ConfigurationSession(models.Model):
 
         try:
             coords = self.gps_location.split()
-            lat, lon = coords[0], coords[1]
+            lat, lon = float(coords[0]), float(coords[1])
         except (ValueError, IndexError):
             return None
 
         geolocator = MapBox(api_key=settings.MAPBOX_ACCESS_TOKEN)
         try:
-            location = geolocator.reverse(query=f"{lat} {lon}", exactly_one=True)
+            location = geolocator.reverse(query=(lat, lon), exactly_one=True)
         except Exception as e:
             sentry_sdk.capture_exception(e)
             return None
