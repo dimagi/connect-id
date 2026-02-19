@@ -340,6 +340,8 @@ CONNECT_TOGGLES_URL = "https://connect.dimagi.com/users/toggles/"
 # Example: ["us", "ca", "gb"] (Alpha-2 country codes)
 BLACKLISTED_COUNTRY_CODES = env.list("BLACKLISTED_COUNTRY_CODES", default=[])
 
+MAPBOX_ACCESS_TOKEN = env("MAPBOX_ACCESS_TOKEN", default="")
+
 # Waffle settings
 WAFFLE_FLAG_MODEL = "flags.Flag"
 WAFFLE_CREATE_MISSING_FLAGS = True
