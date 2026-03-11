@@ -272,6 +272,7 @@ class ConfigurationSession(models.Model):
     gps_location = models.CharField(max_length=100, blank=True, null=True)  # GPS coordinates in format "lat lon"
     invited_user = models.BooleanField(default=False)
     device_id = models.CharField(max_length=255, blank=True, null=True)
+    device = models.CharField(max_length=255, blank=True, null=True)
 
     def __str__(self):
         return self.key
@@ -347,6 +348,24 @@ class DeviceIntegritySample(models.Model):
 
     class Meta:
         ordering = ["-created"]
+
+
+class UserDeviceInfo(models.Model):
+    user = models.ForeignKey("ConnectUser", on_delete=models.CASCADE, related_name="devices")
+    device = models.CharField(max_length=255)
+    password = models.CharField(max_length=128)
+    configured_at = models.DateTimeField()
+    last_accessed = models.DateTimeField()
+    date_created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-last_accessed"]
+
+    def set_password(self, raw_password):
+        self.password = make_password(raw_password)
+
+    def check_password(self, raw_password):
+        return check_password(raw_password, self.password)
 
 
 class SessionUser(AnonymousUser):
