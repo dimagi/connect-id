@@ -575,14 +575,41 @@ def confirm_backup_code(request):
     user.reset_failed_backup_code_attempts()
     user.save()
 
-    return JsonResponse(
-        {
-            "username": user.username,
-            "db_key": UserKey.get_or_create_key_for_user(user).key,
-            "password": password,
-            "invited_user": session.invited_user,
-        }
-    )
+    response_data = {
+        "username": user.username,
+        "db_key": UserKey.get_or_create_key_for_user(user).key,
+        "password": password,
+        "invited_user": session.invited_user,
+    }
+
+    if session.device:
+        # Get the old device info before creating/updating
+        old_device = user.devices.first()
+
+        # Create or update device info
+        if old_device and old_device.device == session.device:
+            # Same device — update the existing record
+            old_device.set_password(password)
+            old_device.last_accessed = now()
+            old_device.save()
+        else:
+            # Different device — create a new record
+            new_device = UserDeviceInfo(
+                user=user,
+                device=session.device,
+                configured_at=now(),
+                last_accessed=now(),
+            )
+            new_device.set_password(password)
+            new_device.save()
+
+        # Check if old device is different and was recently accessed
+        if old_device and old_device.device != session.device:
+            if old_device.last_accessed > now() - timedelta(days=30):
+                response_data["old_device"] = old_device.device
+                response_data["old_device_last_accessed"] = old_device.last_accessed.isoformat()
+
+    return JsonResponse(response_data)
 
 
 @api_view(["GET"])

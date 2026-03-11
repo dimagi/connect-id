@@ -8,6 +8,7 @@ import factory
 import pytest
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
+from django.utils.timezone import now
 from faker import Faker
 from fcm_django.models import FCMDevice
 
@@ -22,6 +23,7 @@ from users.factories import (
     RecoveryStatusFactory,
     SessionPhoneDeviceFactory,
     UserCredentialFactory,
+    UserDeviceInfoFactory,
     UserFactory,
 )
 from users.fcm_utils import create_update_device
@@ -904,6 +906,97 @@ class TestConfirmBackupCodeApi:
         assert user.check_password(response_data["password"])
         assert UserKey.objects.filter(key=response_data.get("db_key")).exists()
         assert "invited_user" in response_data
+
+    def test_creates_user_device_info_new_device(self, authed_client_token, user, valid_token):
+        user.set_recovery_pin("1234")
+        user.save()
+        valid_token.device = "New Phone"
+        valid_token.save()
+
+        response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
+        assert response.status_code == 200
+
+        device_info = user.devices.first()
+        assert device_info is not None
+        assert device_info.device == "New Phone"
+        assert device_info.check_password(response.json()["password"])
+
+    def test_updates_existing_device_info_same_device(self, authed_client_token, user, valid_token):
+        user.set_recovery_pin("1234")
+        user.save()
+        valid_token.device = "Same Phone"
+        valid_token.save()
+
+        old_device = UserDeviceInfoFactory(
+            user=user,
+            raw_password="old_pass",
+            device="Same Phone",
+            last_accessed=now() - timedelta(days=5),
+        )
+
+        response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
+        assert response.status_code == 200
+
+        # Should have updated the existing record, not created a new one
+        assert user.devices.count() == 1
+        old_device.refresh_from_db()
+        assert old_device.check_password(response.json()["password"])
+
+    def test_returns_old_device_info_when_different_and_recent(self, authed_client_token, user, valid_token):
+        user.set_recovery_pin("1234")
+        user.save()
+        valid_token.device = "New Phone"
+        valid_token.save()
+
+        old_time = now() - timedelta(days=5)
+        UserDeviceInfoFactory(
+            user=user,
+            raw_password="old_pass",
+            device="Old Phone",
+            last_accessed=old_time,
+        )
+
+        response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["old_device"] == "Old Phone"
+        assert "old_device_last_accessed" in data
+
+    def test_no_old_device_info_when_same_device(self, authed_client_token, user, valid_token):
+        user.set_recovery_pin("1234")
+        user.save()
+        valid_token.device = "Same Phone"
+        valid_token.save()
+
+        UserDeviceInfoFactory(
+            user=user,
+            raw_password="old_pass",
+            device="Same Phone",
+            last_accessed=now(),
+        )
+
+        response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
+        assert response.status_code == 200
+        data = response.json()
+        assert "old_device" not in data
+
+    def test_no_old_device_info_when_accessed_over_30_days_ago(self, authed_client_token, user, valid_token):
+        user.set_recovery_pin("1234")
+        user.save()
+        valid_token.device = "New Phone"
+        valid_token.save()
+
+        UserDeviceInfoFactory(
+            user=user,
+            raw_password="old_pass",
+            device="Old Phone",
+            last_accessed=now() - timedelta(days=31),
+        )
+
+        response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
+        assert response.status_code == 200
+        data = response.json()
+        assert "old_device" not in data
 
 
 class TestChangePhone:
