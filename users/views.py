@@ -98,6 +98,7 @@ def start_device_configuration(request):
         gps_location=data.get("gps_location"),
         invited_user=request.invited_user,
         device_id=data.get("cc_device_id", ""),
+        device=data.get("device", ""),
     )
 
     if token_session.country_code() in settings.BLACKLISTED_COUNTRY_CODES:

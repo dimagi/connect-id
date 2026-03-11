@@ -1381,6 +1381,23 @@ class TestStartConfigurationView:
         assert sms_method == SMSMethods.FIREBASE
         assert response.json().get("otp_fallback")
 
+    @skip_app_integrity_check
+    @patch("users.models.ConfigurationSession.country_code")
+    def test_device_stored_on_session(self, mock_country_code, client):
+        mock_country_code.return_value = None
+        phone_number = Faker().phone_number()
+
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": phone_number, "device": "Google Pixel 7"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.status_code == 200
+        token = response.json().get("token")
+        session = ConfigurationSession.objects.get(key=token)
+        assert session.device == "Google Pixel 7"
+
 
 @pytest.mark.django_db
 class TestCheckUserSimilarity:
