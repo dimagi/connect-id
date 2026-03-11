@@ -1541,6 +1541,24 @@ class TestCompleteProfileView:
         assert new_user.username == user.username
         assert new_user.name != self.post_data["name"]
 
+    @patch("users.views.upload_photo_to_s3")
+    def test_creates_user_device_info(self, mock_upload_photo, authed_client_token, valid_token):
+        valid_token.phone_number = "+27729541235"
+        valid_token.device = "Samsung Galaxy S24"
+        valid_token.save()
+        mock_upload_photo.return_value = None
+
+        response = authed_client_token.post(self.url, data=self.post_data)
+        assert response.status_code == 200
+
+        user = ConnectUser.objects.get(phone_number=valid_token.phone_number)
+        device_info = user.devices.first()
+        assert device_info is not None
+        assert device_info.device == "Samsung Galaxy S24"
+        assert device_info.check_password(response.json()["password"])
+        assert device_info.configured_at is not None
+        assert device_info.last_accessed is not None
+
 
 @pytest.mark.django_db
 class TestSendSessionOtp:

@@ -44,6 +44,7 @@ from .models import (
     RecoveryStatus,
     SessionPhoneDevice,
     UserCredential,
+    UserDeviceInfo,
     UserKey,
 )
 from .serializers import CredentialSerializer
@@ -238,6 +239,15 @@ def complete_profile(request):
         return JsonResponse({"error": error_code}, status=500)
 
     user.save()
+    if session.device:
+        device_info = UserDeviceInfo(
+            user=user,
+            device=session.device,
+            configured_at=now(),
+            last_accessed=now(),
+        )
+        device_info.set_password(password)
+        device_info.save()
     db_key = UserKey.get_or_create_key_for_user(user)
     return JsonResponse(
         {
