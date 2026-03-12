@@ -959,8 +959,8 @@ class TestConfirmBackupCodeApi:
         response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
         assert response.status_code == 200
         data = response.json()
-        assert data["old_device"] == "Old Phone"
-        assert "old_device_last_accessed" in data
+        assert data["previous_device"] == "Old Phone"
+        assert "last_accessed" in data
 
     def test_no_old_device_info_when_same_device(self, authed_client_token, user, valid_token):
         user.set_recovery_pin("1234")
@@ -978,7 +978,7 @@ class TestConfirmBackupCodeApi:
         response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
         assert response.status_code == 200
         data = response.json()
-        assert "old_device" not in data
+        assert "previous_device" not in data
 
     def test_no_old_device_info_when_accessed_over_30_days_ago(self, authed_client_token, user, valid_token):
         user.set_recovery_pin("1234")
@@ -996,7 +996,7 @@ class TestConfirmBackupCodeApi:
         response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
         assert response.status_code == 200
         data = response.json()
-        assert "old_device" not in data
+        assert "previous_device" not in data
 
 
 class TestChangePhone:

@@ -2,6 +2,8 @@ from datetime import timedelta
 
 from django.utils.timezone import now
 
+DEVICE_RECENT_ACCESS_THRESHOLD = timedelta(days=30)
+
 
 def find_device_for_password(user, raw_password):
     """Iterate UserDeviceInfo records ordered by last_accessed desc.
@@ -42,4 +44,4 @@ def check_login_from_different_device(user, raw_password):
     if matched_device == latest_device:
         return False
 
-    return latest_device.last_accessed > now() - timedelta(days=30)
+    return latest_device.last_accessed > now() - DEVICE_RECENT_ACCESS_THRESHOLD

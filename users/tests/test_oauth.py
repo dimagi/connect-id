@@ -3,11 +3,10 @@ from unittest.mock import MagicMock
 
 import pytest
 from django.utils.timezone import now
-from oauthlib.oauth2.rfc6749.errors import CustomOAuth2Error
 
 from users.const import ErrorCodes
 from users.factories import UserDeviceInfoFactory, UserFactory
-from users.oauth import ConnectOAuth2Validator
+from users.oauth import ConnectOAuth2Validator, LoginFromDifferentDeviceError
 
 
 def _oauth_request_mock():
@@ -47,9 +46,10 @@ class TestConnectOAuth2ValidatorUser:
             last_accessed=now(),
         )
 
-        with pytest.raises(CustomOAuth2Error) as exc_info:
+        with pytest.raises(LoginFromDifferentDeviceError) as exc_info:
             self.validator.validate_user(user.username, "old_pass", client=MagicMock(), request=_oauth_request_mock())
         assert exc_info.value.error == ErrorCodes.LOGIN_FROM_DIFFERENT_DEVICE
+        assert dict(exc_info.value.twotuples)["error_code"] == ErrorCodes.LOGIN_FROM_DIFFERENT_DEVICE
 
     def test_failed_auth_no_device_match(self):
         user = UserFactory()

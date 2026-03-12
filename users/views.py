@@ -33,6 +33,7 @@ from utils.rest_framework import ClientProtectedResourceAuth
 
 from .auth import IssuingCredentialsAuth, SessionTokenAuthentication
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
+from .device_utils import DEVICE_RECENT_ACCESS_THRESHOLD
 from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
 from .models import (
@@ -603,9 +604,9 @@ def confirm_backup_code(request):
 
         # Check if old device is different and was recently accessed
         if old_device and old_device.device != session.device:
-            if old_device.last_accessed > now() - timedelta(days=30):
-                response_data["old_device"] = old_device.device
-                response_data["old_device_last_accessed"] = old_device.last_accessed.isoformat()
+            if old_device.last_accessed > now() - DEVICE_RECENT_ACCESS_THRESHOLD:
+                response_data["previous_device"] = old_device.device
+                response_data["last_accessed"] = old_device.last_accessed.isoformat()
 
     return JsonResponse(response_data)
 
