@@ -69,14 +69,12 @@ class TestCheckLoginFromDifferentDevice:
             raw_password="old_pass",
             device="Old Phone",
             last_accessed=now() - timedelta(days=5),
-            configured_at=now() - timedelta(days=60),
         )
         UserDeviceInfoFactory(
             user=user,
             raw_password="new_pass",
             device="New Phone",
             last_accessed=now(),
-            configured_at=now() - timedelta(days=10),
         )
         assert check_login_from_different_device(user, "old_pass") is True
 
@@ -88,14 +86,12 @@ class TestCheckLoginFromDifferentDevice:
             raw_password="old_pass",
             device="Old Phone",
             last_accessed=now() - timedelta(days=60),
-            configured_at=now() - timedelta(days=120),
         )
         UserDeviceInfoFactory(
             user=user,
             raw_password="new_pass",
             device="New Phone",
             last_accessed=now() - timedelta(days=35),
-            configured_at=now() - timedelta(days=45),
         )
         assert check_login_from_different_device(user, "old_pass") is False
 
@@ -107,7 +103,6 @@ class TestCheckLoginFromDifferentDevice:
             raw_password="current_pass",
             device="Current Phone",
             last_accessed=now(),
-            configured_at=now() - timedelta(days=5),
         )
         assert check_login_from_different_device(user, "current_pass") is False
 

@@ -108,7 +108,6 @@ class UserDeviceInfoFactory(DjangoModelFactory):
 
     user = factory.SubFactory(UserFactory)
     device = "Google Pixel 7"
-    configured_at = factory.LazyFunction(now)
     last_accessed = factory.LazyFunction(now)
     raw_password = "testpass"
 

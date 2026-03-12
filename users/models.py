@@ -354,7 +354,6 @@ class UserDeviceInfo(models.Model):
     user = models.ForeignKey("ConnectUser", on_delete=models.CASCADE, related_name="devices")
     device = models.CharField(max_length=255)
     password = models.CharField(max_length=128)
-    configured_at = models.DateTimeField()
     last_accessed = models.DateTimeField()
     date_created = models.DateTimeField(auto_now_add=True)
 

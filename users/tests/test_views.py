@@ -1649,7 +1649,6 @@ class TestCompleteProfileView:
         assert device_info is not None
         assert device_info.device == "Samsung Galaxy S24"
         assert device_info.check_password(response.json()["password"])
-        assert device_info.configured_at is not None
         assert device_info.last_accessed is not None
 
 

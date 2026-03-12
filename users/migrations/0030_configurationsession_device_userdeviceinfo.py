@@ -23,7 +23,6 @@ class Migration(migrations.Migration):
                 ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
                 ("device", models.CharField(max_length=255)),
                 ("password", models.CharField(max_length=128)),
-                ("configured_at", models.DateTimeField()),
                 ("last_accessed", models.DateTimeField()),
                 ("date_created", models.DateTimeField(auto_now_add=True)),
                 (

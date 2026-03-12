@@ -78,14 +78,12 @@ class TestDeviceBasicAuthentication:
             user=user,
             raw_password="old_pass",
             device="Old Phone",
-            configured_at=now() - timedelta(days=60),
             last_accessed=now() - timedelta(days=5),
         )
         UserDeviceInfoFactory(
             user=user,
             raw_password="new_pass",
             device="New Phone",
-            configured_at=now() - timedelta(days=10),
             last_accessed=now(),
         )
 
@@ -100,14 +98,12 @@ class TestDeviceBasicAuthentication:
             user=user,
             raw_password="old_pass",
             device="Old Phone",
-            configured_at=now() - timedelta(days=120),
             last_accessed=now() - timedelta(days=60),
         )
         UserDeviceInfoFactory(
             user=user,
             raw_password="new_pass",
             device="New Phone",
-            configured_at=now() - timedelta(days=45),
             last_accessed=now() - timedelta(days=35),
         )
 

@@ -20,6 +20,5 @@ class TestUserDeviceInfo:
         device_info = UserDeviceInfoFactory()
         assert device_info.user is not None
         assert device_info.device == "Google Pixel 7"
-        assert device_info.configured_at is not None
         assert device_info.last_accessed is not None
         assert device_info.date_created is not None

@@ -243,7 +243,6 @@ def complete_profile(request):
         device_info = UserDeviceInfo(
             user=user,
             device=session.device,
-            configured_at=now(),
             last_accessed=now(),
         )
         device_info.set_password(password)
@@ -597,7 +596,6 @@ def confirm_backup_code(request):
             new_device = UserDeviceInfo(
                 user=user,
                 device=session.device,
-                configured_at=now(),
                 last_accessed=now(),
             )
             new_device.set_password(password)
