@@ -61,7 +61,8 @@ def require_app_integrity(view):
         request_hash = request.headers.get(INTEGRITY_REQUEST_HASH_KEY)
         phone_number = request.data.get("phone_number", "")
 
-        invited = check_number_for_existing_invites(phone_number)
+        is_demo_user = phone_number.startswith(TEST_NUMBER_PREFIX)
+        invited = is_demo_user or check_number_for_existing_invites(phone_number)
         request.invited_user = invited
 
         app_package = request.data.get("application_id")
