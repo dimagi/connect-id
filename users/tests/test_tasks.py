@@ -73,7 +73,7 @@ def test_upload_posts_csv_to_superset(tmp_path, settings, superset_config):
     method, path = mock_request.call_args[0]
     kwargs = mock_request.call_args.kwargs
     assert method == "post"
-    assert path == f"/api/v1/database/{superset_config['database_id']}/upload/"
+    assert path == f"/api/v1/database/{superset_config['database_id']}/csv_upload/"
     assert kwargs["data"]["table_name"] == superset_config["table_name"]
     assert kwargs["data"]["schema"] == superset_config["table_schema"]
     assert kwargs["data"]["already_exists"] == "replace"
