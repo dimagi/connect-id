@@ -113,6 +113,7 @@ class ConnectUserSupersetExporter:
 
     def upload(self, csv_path: Path):
         payload = {
+            "type": "csv",
             "table_name": self.table_name,
             "already_exists": "replace",
         }
@@ -121,7 +122,7 @@ class ConnectUserSupersetExporter:
         with csv_path.open("rb") as csv_file:
             self._request(
                 "post",
-                f"/api/v1/database/{self.database_id}/csv_upload/",
+                f"/api/v1/database/{self.database_id}/upload/",
                 data=payload,
                 files={"file": (csv_path.name, csv_file, "text/csv")},
             )
