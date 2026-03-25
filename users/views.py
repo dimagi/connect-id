@@ -33,6 +33,7 @@ from utils.rest_framework import ClientProtectedResourceAuth
 
 from .auth import IssuingCredentialsAuth, SessionTokenAuthentication
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
+from .device_utils import DEVICE_RECENT_ACCESS_THRESHOLD
 from .exceptions import RecoveryPinNotSetError
 from .fcm_utils import create_update_device
 from .models import (
@@ -44,6 +45,7 @@ from .models import (
     RecoveryStatus,
     SessionPhoneDevice,
     UserCredential,
+    UserDeviceInfo,
     UserKey,
 )
 from .serializers import CredentialSerializer
@@ -98,6 +100,7 @@ def start_device_configuration(request):
         gps_location=data.get("gps_location"),
         invited_user=request.invited_user,
         device_id=data.get("cc_device_id", ""),
+        device=data.get("device", ""),
     )
 
     if token_session.country_code() in settings.BLACKLISTED_COUNTRY_CODES:
@@ -237,6 +240,14 @@ def complete_profile(request):
         return JsonResponse({"error": error_code}, status=500)
 
     user.save()
+    if session.device:
+        device_info = UserDeviceInfo(
+            user=user,
+            device=session.device,
+            last_accessed=now(),
+        )
+        device_info.set_password(password)
+        device_info.save()
     db_key = UserKey.get_or_create_key_for_user(user)
     return JsonResponse(
         {
@@ -564,14 +575,40 @@ def confirm_backup_code(request):
     user.reset_failed_backup_code_attempts()
     user.save()
 
-    return JsonResponse(
-        {
-            "username": user.username,
-            "db_key": UserKey.get_or_create_key_for_user(user).key,
-            "password": password,
-            "invited_user": session.invited_user,
-        }
-    )
+    response_data = {
+        "username": user.username,
+        "db_key": UserKey.get_or_create_key_for_user(user).key,
+        "password": password,
+        "invited_user": session.invited_user,
+    }
+
+    if session.device:
+        # Get the old device info before creating/updating
+        old_device = user.devices.first()
+
+        # Create or update device info
+        if old_device and old_device.device == session.device:
+            # Same device — update the existing record
+            old_device.set_password(password)
+            old_device.last_accessed = now()
+            old_device.save()
+        else:
+            # Different device — create a new record
+            new_device = UserDeviceInfo(
+                user=user,
+                device=session.device,
+                last_accessed=now(),
+            )
+            new_device.set_password(password)
+            new_device.save()
+
+        # Check if old device is different and was recently accessed
+        if old_device and old_device.device != session.device:
+            if old_device.last_accessed > now() - DEVICE_RECENT_ACCESS_THRESHOLD:
+                response_data["previous_device"] = old_device.device
+                response_data["last_accessed"] = old_device.last_accessed.isoformat()
+
+    return JsonResponse(response_data)
 
 
 @api_view(["GET"])

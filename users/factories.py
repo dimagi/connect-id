@@ -15,6 +15,7 @@ from users.models import (
     ServerKeys,
     SessionPhoneDevice,
     UserCredential,
+    UserDeviceInfo,
 )
 
 
@@ -98,6 +99,23 @@ class IssuingAuthorityFactory(DjangoModelFactory):
 
     issuing_authority = IssuingAuthority.IssuingAuthorityTypes.HQ
     issuer_environment = IssuingAuthority.IssuingAuthorityEnvironments.PRODUCTION
+
+
+class UserDeviceInfoFactory(DjangoModelFactory):
+    class Meta:
+        model = UserDeviceInfo
+        exclude = ["raw_password"]
+
+    user = factory.SubFactory(UserFactory)
+    device = "Google Pixel 7"
+    last_accessed = factory.LazyFunction(now)
+    raw_password = "testpass"
+
+    @factory.lazy_attribute
+    def password(self):
+        from django.contrib.auth.hashers import make_password
+
+        return make_password(self.raw_password)
 
 
 class ServerKeysFactory(DjangoModelFactory):

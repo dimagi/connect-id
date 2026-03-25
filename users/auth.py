@@ -2,6 +2,7 @@ from rest_framework import exceptions
 from rest_framework.authentication import BasicAuthentication, TokenAuthentication
 
 from users.const import ErrorCodes
+from users.device_utils import check_login_from_different_device, update_device_last_accessed
 from users.models import ConfigurationSession, ConnectUser, IssuingAuthority, SessionUser
 from utils.rest_framework import OauthClientUser
 
@@ -25,6 +26,24 @@ class SessionTokenAuthentication(TokenAuthentication):
             raise exceptions.AuthenticationFailed({"error_code": ErrorCodes.LOCKED_ACCOUNT})
         user = SessionUser()
         return (user, token)
+
+
+class DeviceBasicAuthentication(BasicAuthentication):
+    def authenticate_credentials(self, userid, password, request=None):
+        try:
+            result = super().authenticate_credentials(userid, password, request)
+        except exceptions.AuthenticationFailed as original_exc:
+            try:
+                user = ConnectUser.objects.get(username=userid, is_active=True)
+            except ConnectUser.DoesNotExist:
+                raise original_exc from None
+            if check_login_from_different_device(user, password):
+                raise exceptions.AuthenticationFailed({"error_code": ErrorCodes.LOGIN_FROM_DIFFERENT_DEVICE})
+            raise
+
+        user = result[0]
+        update_device_last_accessed(user, password)
+        return result
 
 
 class IssuingCredentialsAuth(BasicAuthentication):
