@@ -8,7 +8,6 @@ from django.db.models import Prefetch
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.timezone import now
-from psycopg2.errors import ForeignKeyViolation
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView
@@ -179,8 +178,8 @@ class SendServerConnectMessage(APIView):
         message = Message(**message_data)
         try:
             message.save()
-        except (IntegrityError, ForeignKeyViolation):
-            return JsonResponse({"errors": ErrorCodes.CHANNEL_DOES_NOT_EXIST}, status=status.HTTP_400_BAD_REQUEST)
+        except IntegrityError:
+            return JsonResponse({"errors": ErrorCodes.MESSAGE_ID_ALREADY_EXISTS}, status=status.HTTP_400_BAD_REQUEST)
 
         fcm_options = data.get("fcm_options", {})
         message_to_send = NotificationData(
