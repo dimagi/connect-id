@@ -8,7 +8,6 @@ from django.db.models import Prefetch
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.timezone import now
-from psycopg2.errors import ForeignKeyViolation
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView
@@ -163,8 +162,15 @@ class SendServerConnectMessage(APIView):
         for field in ("nonce", "tag", "ciphertext"):
             if not content[field]:
                 return JsonResponse({"errors": ErrorCodes.INVALID_MESSAGE_CONTENT}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            channel = Channel.objects.get(channel_id=data["channel"])
+        except Channel.DoesNotExist:
+            return JsonResponse({"errors": ErrorCodes.CHANNEL_DOES_NOT_EXIST}, status=status.HTTP_400_BAD_REQUEST)
+        if not channel.user_consent:
+            return JsonResponse({"errors": ErrorCodes.NO_USER_CONSENT}, status=status.HTTP_400_BAD_REQUEST)
+
         message_data = {
-            "channel_id": data["channel"],
+            "channel": channel,
             "content": data["content"],
             "message_id": data["message_id"],
             "direction": MessageDirection.MOBILE,
@@ -172,9 +178,9 @@ class SendServerConnectMessage(APIView):
         message = Message(**message_data)
         try:
             message.save()
-        except (IntegrityError, ForeignKeyViolation):
-            return JsonResponse({"errors": ErrorCodes.CHANNEL_DOES_NOT_EXIST}, status=status.HTTP_400_BAD_REQUEST)
-        channel = message.channel
+        except IntegrityError:
+            return JsonResponse({"errors": ErrorCodes.MESSAGE_ID_ALREADY_EXISTS}, status=status.HTTP_400_BAD_REQUEST)
+
         fcm_options = data.get("fcm_options", {})
         message_to_send = NotificationData(
             usernames=[channel.connect_user.username],

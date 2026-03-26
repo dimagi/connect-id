@@ -13,8 +13,17 @@ from firebase_admin import messaging
 from firebase_admin.exceptions import INVALID_ARGUMENT, InvalidArgumentError
 from rest_framework import status
 
+from messaging.const import ErrorCodes
 from messaging.factories import ChannelFactory, MessageFactory, NotificationFactory, ServerFactory
-from messaging.models import Channel, Message, MessageDirection, MessageStatus, Notification, NotificationTypes
+from messaging.models import (
+    Channel,
+    Message,
+    MessageDirection,
+    MessageServer,
+    MessageStatus,
+    Notification,
+    NotificationTypes,
+)
 from messaging.serializers import MessageSerializer, NotificationData
 from messaging.task import CommCareHQAPIException
 from users.factories import FCMDeviceFactory, ServerKeysFactory
@@ -247,28 +256,65 @@ class TestCreateChannelView:
 
 
 @pytest.mark.django_db
-def test_send_fcm_notification_view(client, channel, server):
+class TestSendMessageToMobile:
     url = reverse("messaging:send_fcm")
-    data = rest_message(channel.channel_id)
-    headers = make_basic_auth_header(server.server_credentials.client_id, server.server_credentials.secret_key)
 
-    with mock.patch("messaging.views.send_bulk_notification") as mock_send_bulk_message:
-        response = client.post(url, data=data, content_type=APPLICATION_JSON, **headers)
+    def test_send_message_with_consent(self, client, channel: Channel, server: MessageServer):
+        data = rest_message(channel.channel_id)
+        headers = make_basic_auth_header(server.server_credentials.client_id, server.server_credentials.secret_key)
+
+        with mock.patch("messaging.views.send_bulk_notification") as mock_send_bulk_message:
+            response = client.post(self.url, data=data, content_type=APPLICATION_JSON, **headers)
+            json_data = response.json()
+            assert response.status_code == status.HTTP_200_OK
+            assert "message_id" in json_data
+
+            message_id = json_data["message_id"]
+            db_msg = Message.objects.get(message_id=message_id)
+            assert db_msg
+
+            serialized_msg = MessageSerializer(db_msg).data
+            serialized_msg["channel"] = str(db_msg.channel.channel_id)
+            expected = NotificationData(
+                usernames=[channel.connect_user.username],
+                data=serialized_msg,
+            )
+            mock_send_bulk_message.assert_called_once_with(expected)
+
+    def test_send_to_nonexistent_channel(self, client, channel: Channel, server: MessageServer):
+        data = rest_message(channel.channel_id)
+        channel.delete()
+        headers = make_basic_auth_header(server.server_credentials.client_id, server.server_credentials.secret_key)
+
+        response = client.post(self.url, data=data, content_type=APPLICATION_JSON, **headers)
         json_data = response.json()
-        assert response.status_code == status.HTTP_200_OK
-        assert "message_id" in json_data
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "errors" in json_data
+        assert json_data["errors"] == ErrorCodes.CHANNEL_DOES_NOT_EXIST
 
-        message_id = json_data["message_id"]
-        db_msg = Message.objects.get(message_id=message_id)
-        assert db_msg
+    def test_send_with_no_consent(self, client, channel: Channel, server: MessageServer):
+        channel.user_consent = False
+        channel.save()
+        data = rest_message(channel.channel_id)
+        headers = make_basic_auth_header(server.server_credentials.client_id, server.server_credentials.secret_key)
 
-        serialized_msg = MessageSerializer(db_msg).data
-        serialized_msg["channel"] = str(db_msg.channel.channel_id)
-        expected = NotificationData(
-            usernames=[channel.connect_user.username],
-            data=serialized_msg,
-        )
-        mock_send_bulk_message.assert_called_once_with(expected)
+        response = client.post(self.url, data=data, content_type=APPLICATION_JSON, **headers)
+        json_data = response.json()
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "errors" in json_data
+        assert json_data["errors"] == ErrorCodes.NO_USER_CONSENT
+
+    def test_send_with_same_message_id(self, client, channel: Channel, server: MessageServer):
+        message = MessageFactory()
+        data = rest_message(channel.channel_id)
+        data["message_id"] = message.message_id
+        headers = make_basic_auth_header(server.server_credentials.client_id, server.server_credentials.secret_key)
+
+        response = client.post(self.url, data=data, content_type=APPLICATION_JSON, **headers)
+        json_data = response.json()
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "errors" in json_data
+        assert json_data["errors"] == ErrorCodes.MESSAGE_ID_ALREADY_EXISTS
 
 
 @pytest.mark.django_db
