@@ -163,8 +163,16 @@ class SendServerConnectMessage(APIView):
         for field in ("nonce", "tag", "ciphertext"):
             if not content[field]:
                 return JsonResponse({"errors": ErrorCodes.INVALID_MESSAGE_CONTENT}, status=status.HTTP_400_BAD_REQUEST)
+        channel_id = data["channel"]
+        try:
+            channel = Channel.objects.get(channel_id=channel_id)
+        except Channel.DoesNotExist:
+            return JsonResponse({"errors": ErrorCodes.CHANNEL_DOES_NOT_EXIST}, status=status.HTTP_400_BAD_REQUEST)
+        if not channel.user_consent:
+            return JsonResponse({"errors": ErrorCodes.NO_USER_CONSENT}, status=status.HTTP_400_BAD_REQUEST)
+
         message_data = {
-            "channel_id": data["channel"],
+            "channel": channel,
             "content": data["content"],
             "message_id": data["message_id"],
             "direction": MessageDirection.MOBILE,
@@ -174,7 +182,7 @@ class SendServerConnectMessage(APIView):
             message.save()
         except (IntegrityError, ForeignKeyViolation):
             return JsonResponse({"errors": ErrorCodes.CHANNEL_DOES_NOT_EXIST}, status=status.HTTP_400_BAD_REQUEST)
-        channel = message.channel
+
         fcm_options = data.get("fcm_options", {})
         message_to_send = NotificationData(
             usernames=[channel.connect_user.username],
