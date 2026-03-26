@@ -304,6 +304,18 @@ class TestSendMessageToMobile:
         assert "errors" in json_data
         assert json_data["errors"] == ErrorCodes.NO_USER_CONSENT
 
+    def test_send_with_same_message_id(self, client, channel: Channel, server: MessageServer):
+        message = MessageFactory()
+        data = rest_message(channel.channel_id)
+        data["message_id"] = message.message_id
+        headers = make_basic_auth_header(server.server_credentials.client_id, server.server_credentials.secret_key)
+
+        response = client.post(self.url, data=data, content_type=APPLICATION_JSON, **headers)
+        json_data = response.json()
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "errors" in json_data
+        assert json_data["errors"] == ErrorCodes.MESSAGE_ID_ALREADY_EXISTS
+
 
 @pytest.mark.django_db
 class TestSendMessageView:
