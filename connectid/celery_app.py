@@ -20,11 +20,11 @@ app.autodiscover_tasks()
 
 app.conf.beat_schedule = {
     "delete_old_messages": {
-        "task": "messaging.task.delete_old_messages",
+        "task": "messaging.tasks.delete_old_messages",
         "schedule": timedelta(hours=24),
     },
     "resend_notifications_for_undelivered_messages": {
-        "task": "messaging.task.resend_notifications_for_undelivered_messages",
+        "task": "messaging.tasks.resend_notifications_for_undelivered_messages",
         "schedule": timedelta(hours=1),
     },
     "upload_connect_users_to_superset": {
