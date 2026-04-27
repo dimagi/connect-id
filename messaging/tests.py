@@ -25,7 +25,7 @@ from messaging.models import (
     NotificationTypes,
 )
 from messaging.serializers import MessageSerializer, NotificationData
-from messaging.task import CommCareHQAPIException
+from messaging.tasks import CommCareHQAPIException
 from users.factories import FCMDeviceFactory, ServerKeysFactory
 from utils.notification import send_bulk_notification
 

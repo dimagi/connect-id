@@ -23,7 +23,7 @@ from messaging.serializers import (
     NotificationSerializer,
     SingleMessageSerializer,
 )
-from messaging.task import CommCareHQAPIException, make_request, send_messages_to_service_and_mark_status
+from messaging.tasks import CommCareHQAPIException, make_request, send_messages_to_service_and_mark_status
 from users.models import ConnectUser
 from utils.notification import send_bulk_notification
 from utils.rest_framework import ClientProtectedResourceAuth, MessagingServerAuth

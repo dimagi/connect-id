@@ -70,7 +70,7 @@ def send_messages_to_service_and_mark_status(channel_messages, status_to_be_upda
         Message.objects.filter(message_id__in=sent_message_ids).update(status=status_to_be_updated)
 
 
-@shared_task(name="delete_old_messages")
+@shared_task(name="messaging.tasks.delete_old_messages")
 def delete_old_messages():
     """
     Deletes messages that are older than 7 days.
@@ -79,7 +79,7 @@ def delete_old_messages():
     deleted_count, _ = Message.objects.filter(received__lte=cutoff_date).delete()
 
 
-@shared_task(name="resend_notifications_for_undelivered_messages")
+@shared_task(name="messaging.tasks.resend_notifications_for_undelivered_messages")
 def resend_notifications_for_undelivered_messages():
     undelivered_msgs = Message.objects.filter(received__isnull=True, direction=MessageDirection.MOBILE).select_related(
         "channel", "channel__connect_user"
