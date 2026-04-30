@@ -35,8 +35,12 @@ def get_connect_toggles(username=None, phone_number=None):
         params["username"] = username
     elif phone_number is not None:
         params["phone_number"] = phone_number
-    response = requests.get(url, auth=auth, params=params, timeout=60)
-    data = response.json()
+    try:
+        response = requests.get(url, auth=auth, params=params, timeout=CONNECT_REQUEST_TIMEOUT)
+        data = response.json()
+    except requests.exceptions.RequestException:
+        logger.exception("Failed to fetch toggles from connect.dimagi.com; returning empty toggles")
+        return {}
     return {
         toggle["name"]: {
             "active": toggle["active"],
