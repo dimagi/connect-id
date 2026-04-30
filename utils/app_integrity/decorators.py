@@ -65,9 +65,7 @@ def require_app_integrity(view):
         try:
             invited = check_number_for_existing_invites(phone_number)
         except requests.exceptions.RequestException:
-            logger.exception(
-                f"Failed to reach connect.dimagi.com to check existing invites for ...{phone_number[-6:]}"
-            )
+            logger.exception("Failed to reach connect.dimagi.com to check existing invites")
             return JsonResponse(
                 {"error_code": ErrorCodes.CONFIGURATION_TEMPORARILY_UNAVAILABLE},
                 status=503,
