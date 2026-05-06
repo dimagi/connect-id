@@ -95,7 +95,7 @@ For sign-up flow devices (session is set, user is null), test-number detection u
 
 - After creating the new `ConnectUser`, check `session.verified_email`; if set, copy it to `user.email` and `user.email_verified = True` before saving. No payload change required.
 
-**Modified view — `start_device_configuration`**:
+**Modified view — `start_configuration`**:
 
 - After building `response_data`, looks up whether a `ConnectUser` with this phone number has `email_verified = True`.
 - If so, adds `"email": user.email` to `response_data`.
@@ -109,7 +109,7 @@ None — this is a backend-only change. The mobile client consumes the updated `
 
 A simple plain-text email is sent:
 
-```
+```text
 Subject: Your CommCare Connect verification code
 Body:   Your email verification code is: {token}
         This code expires in 30 minutes.
@@ -208,7 +208,7 @@ Both flows:
 
 ### POST /users/send_email_otp
 
-**Auth:** `Authorization: Bearer <personal_id_token>` (OAuth2)
+**Auth:** `SessionTokenAuthentication` (sign-up/verification flow) or `OAuth2Authentication` (post-registration)
 
 **Request:**
 ```json
@@ -228,7 +228,7 @@ Both flows:
 
 ### POST /users/verify_email_otp
 
-**Auth:** `Authorization: Bearer <personal_id_token>` (OAuth2)
+**Auth:** `SessionTokenAuthentication` (sign-up/verification flow) or `OAuth2Authentication` (post-registration)
 
 **Request:**
 ```json
