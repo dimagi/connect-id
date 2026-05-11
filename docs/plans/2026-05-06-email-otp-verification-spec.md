@@ -63,6 +63,17 @@ class EmailOTPDevice(SideChannelDevice):
     email = models.EmailField()
     otp_last_sent = models.DateTimeField(null=True, blank=True)
     attempts = models.IntegerField(default=1)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(user__isnull=False, session__isnull=True)
+                    | models.Q(user__isnull=True, session__isnull=False)
+                ),
+                name="email_otp_device_exclusive_owner",
+            )
+        ]
 ```
 
 Exactly one of `user` or `session` will be set at any time. `generate_challenge()` will follow the same pattern as `BasePhoneDevice.generate_challenge()`: regenerate token if within 5 minutes of expiry, apply exponential backoff (`wait_time = 2**attempts` minutes) on resend requests, call `send_mail()` inline through the anymail/SES backend, and update `otp_last_sent` + `attempts`.
@@ -76,6 +87,8 @@ EMAIL_OTP_VALIDITY_SECONDS = int(os.environ.get("EMAIL_OTP_VALIDITY_SECONDS", 18
 `generate_challenge()` passes this value to `generate_token(valid_secs=settings.EMAIL_OTP_VALIDITY_SECONDS)`, mirroring the hardcoded `1800` in `BasePhoneDevice`.
 
 For sign-up flow devices (session is set, user is null), test-number detection uses the session's `phone_number` field to decide whether to skip actual email delivery.
+
+**Stale record cleanup**: Add a `@shared_task` in `users/tasks.py` that deletes `EmailOTPDevice` rows where `otp_last_sent` is older than `EMAIL_OTP_VALIDITY_SECONDS` (i.e., the token has certainly expired). Register it in `connectid/celery_app.py` under `beat_schedule` with a `timedelta(hours=24)` schedule, matching the `delete_old_messages` pattern. This covers abandoned verifications where the user never submitted an OTP.
 
 #### Django View Changes
 
@@ -140,7 +153,7 @@ An HTML template can be added in a follow-up; plain text is sufficient for MVP.
 ### Deployment and Release
 
 1. The feature is gated behind a **django-waffle flag** (`email_otp_verification`), defaulting to inactive.
-2. Add `django-anymail[amazon-ses]` to `requirements.txt`. New settings needed: `DJANGO_EMAIL_BACKEND` (production: `anymail.backends.amazon_ses.EmailBackend`, local: `django.core.mail.backends.console.EmailBackend`) and `DEFAULT_FROM_EMAIL` — both read from env vars following the commcare-connect pattern. `DEFAULT_FROM_EMAIL` will reuse commcare-connect's verified SES sender address to avoid domain verification work. If a connect-id-specific sending address is desired in future, the new domain/address will need to be verified in SES before use.
+2. Add `django-anymail[amazon-ses]` to `requirements.txt`. New Django settings needed: `EMAIL_BACKEND` (populated from env var `DJANGO_EMAIL_BACKEND`; production: `anymail.backends.amazon_ses.EmailBackend`, local: `django.core.mail.backends.console.EmailBackend`) and `DEFAULT_FROM_EMAIL` (populated from env var `DEFAULT_FROM_EMAIL`) — both read from env vars following the commcare-connect pattern. `DEFAULT_FROM_EMAIL` will reuse commcare-connect's verified SES sender address to avoid domain verification work. If a connect-id-specific sending address is desired in future, the new domain/address will need to be verified in SES before use.
 3. Migrations for the new `EmailOTPDevice` model and `ConnectUser.email_verified` field are applied as part of normal deployment.
 4. The flag is enabled per-environment once email credentials are confirmed working.
 5. Rollback: disable the flag — no data migration required. If `ConnectUser.email`/`email_verified` fields were populated, they persist harmlessly.
