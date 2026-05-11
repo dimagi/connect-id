@@ -140,7 +140,7 @@ An HTML template can be added in a follow-up; plain text is sufficient for MVP.
 ### Deployment and Release
 
 1. The feature is gated behind a **django-waffle flag** (`email_otp_verification`), defaulting to inactive.
-2. Add `django-anymail[amazon-ses]` to `requirements.txt`. New settings needed: `DJANGO_EMAIL_BACKEND` (production: `anymail.backends.amazon_ses.EmailBackend`, local: `django.core.mail.backends.console.EmailBackend`) and `DEFAULT_FROM_EMAIL` — both read from env vars following the commcare-connect pattern. SES uses the existing AWS IAM role; no new credentials required.
+2. Add `django-anymail[amazon-ses]` to `requirements.txt`. New settings needed: `DJANGO_EMAIL_BACKEND` (production: `anymail.backends.amazon_ses.EmailBackend`, local: `django.core.mail.backends.console.EmailBackend`) and `DEFAULT_FROM_EMAIL` — both read from env vars following the commcare-connect pattern. `DEFAULT_FROM_EMAIL` will reuse commcare-connect's verified SES sender address to avoid domain verification work. If a connect-id-specific sending address is desired in future, the new domain/address will need to be verified in SES before use.
 3. Migrations for the new `EmailOTPDevice` model and `ConnectUser.email_verified` field are applied as part of normal deployment.
 4. The flag is enabled per-environment once email credentials are confirmed working.
 5. Rollback: disable the flag — no data migration required. If `ConnectUser.email`/`email_verified` fields were populated, they persist harmlessly.
