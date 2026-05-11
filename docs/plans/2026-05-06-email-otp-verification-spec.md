@@ -44,7 +44,7 @@ In the sign-up flow, the verified email is held on `ConfigurationSession.verifie
 email_verified = models.BooleanField(default=False)
 ```
 
-The existing `email` field from `AbstractUser` (max 254 chars, blank by default) is used to persist the verified address. No uniqueness constraint is added at this stage (open question — see below).
+The existing `email` field from `AbstractUser` (max 254 chars, blank by default) is used to persist the verified address. A `UniqueConstraint` on `email` filtered to `is_active=True` will be added, consistent with how `phone_number` uniqueness is enforced on `ConnectUser`.
 
 **`ConfigurationSession`** — add one new field to hold a verified email during the sign-up flow:
 
