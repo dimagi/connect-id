@@ -30,7 +30,7 @@ Two new authenticated endpoints are added to the `users` app. They serve two dis
 
 Both flows use identical request/response payloads. The feature is gated behind a django-waffle flag (`email_otp_verification`) to allow a phased rollout.
 
-Email delivery uses **`django-anymail[amazon-ses]`** with Amazon SES as the backend in production — the same setup used by commcare-connect. In local/dev environments the backend falls back to Django's console email backend. Since connect-id already uses AWS (S3 for photo storage), SES reuses the same AWS credentials and IAM role without additional vendor setup. A new `send_email_otp_message()` utility will wrap Django's `send_mail()`, called as a Celery task (async, matching the commcare-connect pattern) to keep the API response fast regardless of SES latency.
+Email delivery uses **`django-anymail[amazon-ses]`** with Amazon SES as the backend in production — the same setup used by commcare-connect. In local/dev environments the backend falls back to Django's console email backend. Since connect-id already uses AWS (S3 for photo storage), SES reuses the same AWS credentials and IAM role without additional vendor setup. A new `send_email_otp_message()` utility will wrap Django's `send_mail()`, called inline within `generate_challenge()` so that delivery failures surface immediately as a request error rather than silently succeeding.
 
 The OTP mechanism mirrors the existing phone OTP pattern: a new `EmailOTPDevice` model extends `django-otp`'s `SideChannelDevice`, reusing its token generation and verification logic. Rate limiting follows the same exponential backoff strategy used by `BasePhoneDevice`.
 
@@ -65,7 +65,7 @@ class EmailOTPDevice(SideChannelDevice):
     attempts = models.IntegerField(default=1)
 ```
 
-Exactly one of `user` or `session` will be set at any time. `generate_challenge()` will follow the same pattern as `BasePhoneDevice.generate_challenge()`: regenerate token if within 5 minutes of expiry (30-minute validity), apply exponential backoff (`wait_time = 2**attempts` minutes) on resend requests, dispatch via a Celery task that calls `send_mail()` through the anymail/SES backend, and update `otp_last_sent` + `attempts`.
+Exactly one of `user` or `session` will be set at any time. `generate_challenge()` will follow the same pattern as `BasePhoneDevice.generate_challenge()`: regenerate token if within 5 minutes of expiry (30-minute validity), apply exponential backoff (`wait_time = 2**attempts` minutes) on resend requests, call `send_mail()` inline through the anymail/SES backend, and update `otp_last_sent` + `attempts`.
 
 For sign-up flow devices (session is set, user is null), test-number detection uses the session's `phone_number` field to decide whether to skip actual email delivery.
 
@@ -77,7 +77,7 @@ For sign-up flow devices (session is set, user is null), test-number detection u
 - Gated by `email_otp_verification` waffle flag; returns 404 if flag is inactive.
 - Validates `email` field in request body (uses `django.core.validators.validate_email`).
 - Gets or creates an `EmailOTPDevice` keyed on `(session, email)` or `(user, email)` depending on which auth type was used.
-- Calls `device.generate_challenge()` which dispatches the OTP email asynchronously via Celery.
+- Calls `device.generate_challenge()` which sends the OTP email inline via `send_mail()`.
 - Returns HTTP 200 on success, 400 on invalid/missing email, 429 if rate-limited (backoff not yet elapsed).
 
 **New view — `verify_email_otp`**:
@@ -166,7 +166,7 @@ Other providers offer comparable delivery analytics, but SES was chosen to align
 
 - **Correctness:** Users can successfully verify an email and have it reflected in `start_configuration` within one session.
 - **Security:** OTP codes expire after 30 minutes; exponential backoff prevents brute-force. Codes are single-use (device record deleted on success).
-- **Performance:** Email sending is dispatched asynchronously via Celery (matching the commcare-connect pattern), keeping API response times independent of SES latency.
+- **Performance:** Email sending is done inline via `send_mail()`; SES latency is consistently low and inline sending ensures delivery failures are surfaced immediately to the caller.
 - **Metric:** Track `COUNT(ConnectUser WHERE email_verified = TRUE)` over time to confirm adoption.
 
 ---
@@ -222,7 +222,7 @@ Both flows:
 | 200 | `{}` | OTP email sent (or queued if test user) |
 | 400 | `{"error_code": "MISSING_DATA"}` | Missing or invalid email |
 | 404 | — | Feature flag disabled |
-| 429 | `{"error_code": "RATE_LIMITED", "retry_after_seconds": N}` | Backoff window not elapsed |
+| 429 | `{"error_code": "EMAIL_RATE_LIMITED", "retry_after_seconds": N}` | Backoff window not elapsed |
 
 ---
 
@@ -268,6 +268,6 @@ No change to request. Response now conditionally includes `email`:
 ## Implementation Tickets
 
 1. **CCCT-XXXX** — Add `EmailOTPDevice` model, `ConnectUser.email_verified` field, and `ConfigurationSession.verified_email` field + migrations
-2. **CCCT-XXXX** — Add `send_email_otp` and `verify_email_otp` views, URL routes, and async email sending utility (Celery task)
+2. **CCCT-XXXX** — Add `send_email_otp` and `verify_email_otp` views, URL routes, and `send_email_otp_message()` utility
 3. **CCCT-XXXX** — Update `complete_profile` to copy `session.verified_email` onto new user, and update `start_configuration` to include verified email in response
 4. **CCCT-XXXX** — Add `django-anymail[amazon-ses]`, configure `DJANGO_EMAIL_BACKEND` / `DEFAULT_FROM_EMAIL` env vars, and enable `email_otp_verification` waffle flag per environment
