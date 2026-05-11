@@ -65,7 +65,15 @@ class EmailOTPDevice(SideChannelDevice):
     attempts = models.IntegerField(default=1)
 ```
 
-Exactly one of `user` or `session` will be set at any time. `generate_challenge()` will follow the same pattern as `BasePhoneDevice.generate_challenge()`: regenerate token if within 5 minutes of expiry (30-minute validity), apply exponential backoff (`wait_time = 2**attempts` minutes) on resend requests, call `send_mail()` inline through the anymail/SES backend, and update `otp_last_sent` + `attempts`.
+Exactly one of `user` or `session` will be set at any time. `generate_challenge()` will follow the same pattern as `BasePhoneDevice.generate_challenge()`: regenerate token if within 5 minutes of expiry, apply exponential backoff (`wait_time = 2**attempts` minutes) on resend requests, call `send_mail()` inline through the anymail/SES backend, and update `otp_last_sent` + `attempts`.
+
+Token validity is controlled by a Django setting:
+
+```python
+EMAIL_OTP_VALIDITY_SECONDS = int(os.environ.get("EMAIL_OTP_VALIDITY_SECONDS", 1800))  # default: 30 minutes
+```
+
+`generate_challenge()` passes this value to `generate_token(valid_secs=settings.EMAIL_OTP_VALIDITY_SECONDS)`, mirroring the hardcoded `1800` in `BasePhoneDevice`.
 
 For sign-up flow devices (session is set, user is null), test-number detection uses the session's `phone_number` field to decide whether to skip actual email delivery.
 
@@ -112,7 +120,7 @@ A simple plain-text email is sent:
 ```text
 Subject: Your CommCare Connect verification code
 Body:   Your email verification code is: {token}
-        This code expires in 30 minutes.
+        This code expires in {validity_minutes} minutes.
 ```
 
 An HTML template can be added in a follow-up; plain text is sufficient for MVP.
