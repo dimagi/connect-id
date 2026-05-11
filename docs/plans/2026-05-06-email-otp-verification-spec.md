@@ -230,7 +230,7 @@ Both flows:
 | 200 | `{}` | OTP email sent (or queued if test user) |
 | 400 | `{"error_code": "MISSING_DATA"}` | Missing or invalid email |
 | 404 | — | Feature flag disabled |
-| 429 | `{"error_code": "EMAIL_RATE_LIMITED", "retry_after_seconds": N}` | Backoff window not elapsed |
+| 429 | `{"error_code": "RATE_LIMITED", "retry_after_seconds": N}` | Backoff window not elapsed |
 
 ---
 
