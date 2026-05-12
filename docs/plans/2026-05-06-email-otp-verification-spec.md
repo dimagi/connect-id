@@ -69,7 +69,7 @@ class EmailOTPDevice(SideChannelDevice):
     user = models.ForeignKey(ConnectUser, on_delete=models.CASCADE, null=True, blank=True)
     session = models.ForeignKey(ConfigurationSession, on_delete=models.CASCADE, null=True, blank=True)
     email = models.EmailField()
-    otp_last_sent = models.DateTimeField(null=True, blank=True)
+    otp_last_sent = models.DateTimeField(null=True, blank=True)  # tracks last send time for backoff; distinct from valid_until which tracks expiry
     attempts = models.IntegerField(default=1)
 
     class Meta:
@@ -96,7 +96,7 @@ EMAIL_OTP_VALIDITY_SECONDS = int(os.environ.get("EMAIL_OTP_VALIDITY_SECONDS", 18
 
 For sign-up flow devices (session is set, user is null), test-number detection uses the session's `phone_number` field to decide whether to skip actual email delivery.
 
-**Stale record cleanup**: Add a `@shared_task` in `users/tasks.py` that deletes `EmailOTPDevice` rows where `otp_last_sent` is older than `EMAIL_OTP_VALIDITY_SECONDS` (i.e., the token has certainly expired). Register it in `connectid/celery_app.py` under `beat_schedule` with a `timedelta(hours=24)` schedule, matching the `delete_old_messages` pattern. This covers abandoned verifications where the user never submitted an OTP.
+**Stale record cleanup**: Add a `@shared_task` in `users/tasks.py` that deletes `EmailOTPDevice` rows where `valid_until` is in the past (i.e., `valid_until__lt=now()`). `SideChannelDevice.valid_until` is set to `now() + valid_secs` on each `generate_token()` call and reset to `now()` on successful verification, so `valid_until < now()` reliably identifies expired or already-verified records. Register it in `connectid/celery_app.py` under `beat_schedule` with a `timedelta(hours=24)` schedule, matching the `delete_old_messages` pattern. This covers abandoned verifications where the user never submitted an OTP.
 
 #### Django View Changes
 
