@@ -102,7 +102,8 @@ For sign-up flow devices (session is set, user is null), test-number detection u
 
 **New view — `send_email_otp`**:
 
-- Accepts both `SessionTokenAuthentication` (sign-up flow) and `OAuth2Authentication` (post-registration flow); set `authentication_classes` explicitly on the view.
+- Accepts both `OAuth2Authentication` (sign-up flow) and `SessionTokenAuthentication` (post-registration flow); set `authentication_classes` explicitly on the view.
+  - `OAuth2Authentication` should be listed before `SessionTokenAuthentication` in the class definition. This is because the latter will raise an exception on failure which will prevent the former from ever running.
 - Gated by `email_otp_verification` waffle flag; returns 404 if flag is inactive.
 - Validates `email` field in request body (uses `django.core.validators.validate_email`).
 - Gets or creates an `EmailOTPDevice` keyed on `(session, email)` or `(user, email)` depending on which auth type was used.
@@ -203,7 +204,7 @@ Other providers offer comparable delivery analytics, but SES was chosen to align
 ## Open Questions
 
 1. ~~**Email uniqueness:** Should a verified email address be unique across active users (i.e. prevent two users from verifying the same address)? A unique constraint would add integrity but could cause friction if a user re-registers with the same email.~~ **Resolved:** Add a `UniqueConstraint` on `email` filtered to `is_active=True`, consistent with how `phone_number` uniqueness is enforced on `ConnectUser`.
-2. **Email re-verification:** Can a user verify a different email address and overwrite their existing verified email?
+2. ~~**Email re-verification:** Can a user verify a different email address and overwrite their existing verified email?~~ **Resolved:** This will be addressed in a future mobile release where users will be allowed to change their email address, most likely in the `update_profile` endpoint.
 3. **Test email bypass:** The design skips email delivery for users whose phone starts with `TEST_NUMBER_PREFIX`. Should a hardcoded test OTP (e.g. `"123456"`) be returned for test users, similar to any existing test-number shortcuts?
 4. ~~**Rate limit response code:** Should `send_email_otp` return `HTTP 429 Too Many Requests` with a `Retry-After` header when backoff is active, or a `400` with an error code?~~ **Resolved:** Use `429 Too Many Requests` with a `Retry-After` header — more semantically correct and aligns with RFC 6585.
 
