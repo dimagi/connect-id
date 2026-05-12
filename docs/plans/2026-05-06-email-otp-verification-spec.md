@@ -140,7 +140,7 @@ None — this is a backend-only change. The mobile client consumes the updated `
 A simple plain-text email is sent:
 
 ```text
-Subject: Your CommCare Connect verification code
+Subject: Your Connect verification code
 Body:   Your email verification code is: {token}
         This code expires in {validity_minutes} minutes.
 ```
