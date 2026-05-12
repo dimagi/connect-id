@@ -34,17 +34,11 @@ Email delivery uses **`django-anymail[amazon-ses]`** with Amazon SES as the back
 
 The OTP mechanism mirrors the existing phone OTP pattern: a new `EmailOTPDevice` model extends `django-otp`'s `SideChannelDevice`, reusing its token generation and verification logic. Rate limiting follows the same exponential backoff strategy used by `BasePhoneDevice`.
 
-In the sign-up flow, the verified email is held on `ConfigurationSession.verified_email` until `complete_profile` creates the `ConnectUser` and copies it across. In the post-registration flow, it is stored directly on `ConnectUser.email` (the currently unused `AbstractUser` field) with `email_verified = True`.
+In the sign-up flow, the verified email is held on `ConfigurationSession.verified_email` until `complete_profile` creates the `ConnectUser` and copies it across. In the post-registration flow, it is stored directly on `ConnectUser.email` (the currently unused `AbstractUser` field). A non-blank `email` on `ConnectUser` implies it was verified.
 
 #### Model Changes
 
-**`ConnectUser`** — add one new field:
-
-```python
-email_verified = models.BooleanField(default=False)
-```
-
-The existing `email` field from `AbstractUser` (max 254 chars, blank by default) is used to persist the verified address. A `UniqueConstraint` on `email` filtered to `is_active=True` and `email != ""` will be added — the extra condition is required because existing users have blank emails and a unique index on empty strings would immediately conflict. The constraint mirrors how `phone_number` uniqueness is enforced but adds the non-empty guard:
+**`ConnectUser`** — no new fields. The existing `email` field from `AbstractUser` (max 254 chars, blank by default) is used to persist the verified address. A non-blank `email` implies it was verified — there is no separate `email_verified` flag because `email` is only ever set through the OTP verification flow. A `UniqueConstraint` on `email` filtered to `is_active=True` and `email != ""` will be added — the extra condition is required because existing users have blank emails and a unique index on empty strings would immediately conflict. The constraint mirrors how `phone_number` uniqueness is enforced but adds the non-empty guard:
 
 ```python
 models.UniqueConstraint(
@@ -118,18 +112,18 @@ For sign-up flow devices (session is set, user is null), test-number detection u
 - Retrieves the `EmailOTPDevice` for `(session, email)` or `(user, email)`; returns 400 if none found.
 - Calls `device.verify_token(otp)`; returns 401 with `INCORRECT_OTP` error code on failure.
 - On success (sign-up flow): sets `session.verified_email = email`, saves session, deletes `EmailOTPDevice` record.
-- On success (post-registration flow): sets `user.email = email`, `user.email_verified = True`, saves user, deletes `EmailOTPDevice` record.
+- On success (post-registration flow): sets `user.email = email`, saves user, deletes `EmailOTPDevice` record.
 - Returns HTTP 200 on success.
 
 **Modified view — `complete_profile`**:
 
-- After creating the new `ConnectUser`, check `session.verified_email`; if set, copy it to `user.email` and `user.email_verified = True` before saving. No payload change required.
+- After creating the new `ConnectUser`, check `session.verified_email`; if set, copy it to `user.email` before saving. No payload change required.
 
 **Modified view — `start_configuration`**:
 
-- After building `response_data`, looks up whether a `ConnectUser` with this phone number has `email_verified = True`.
+- After building `response_data`, looks up whether a `ConnectUser` with this phone number has a non-blank `email`.
 - If so, adds `"email": user.email` to `response_data`.
-- If no such user exists (new registration flow) or `email_verified` is False, the key is omitted entirely.
+- If no such user exists (new registration flow) or `email` is blank, the key is omitted entirely.
 
 #### Frontend Changes
 
@@ -163,9 +157,9 @@ An HTML template can be added in a follow-up; plain text is sufficient for MVP.
 
 1. The feature is gated behind a **django-waffle flag** (`email_otp_verification`), defaulting to inactive.
 2. Add `django-anymail[amazon-ses]` to `requirements.txt`. New Django settings needed: `EMAIL_BACKEND` (populated from env var `DJANGO_EMAIL_BACKEND`; production: `anymail.backends.amazon_ses.EmailBackend`, local: `django.core.mail.backends.console.EmailBackend`) and `DEFAULT_FROM_EMAIL` (populated from env var `DEFAULT_FROM_EMAIL`) — both read from env vars following the commcare-connect pattern. `DEFAULT_FROM_EMAIL` will reuse commcare-connect's verified SES sender address to avoid domain verification work. If a connect-id-specific sending address is desired in future, the new domain/address will need to be verified in SES before use.
-3. Migrations for the new `EmailOTPDevice` model and `ConnectUser.email_verified` field are applied as part of normal deployment.
+3. Migrations for the new `EmailOTPDevice` model and `ConfigurationSession.verified_email` field are applied as part of normal deployment.
 4. The flag is enabled per-environment once email credentials are confirmed working.
-5. Rollback: disable the flag — no data migration required. If `ConnectUser.email`/`email_verified` fields were populated, they persist harmlessly.
+5. Rollback: disable the flag — no data migration required. If `ConnectUser.email` was populated, it persists harmlessly.
 
 ---
 
@@ -197,7 +191,7 @@ Other providers offer comparable delivery analytics, but SES was chosen to align
 - **Correctness:** Users can successfully verify an email and have it reflected in `start_configuration` within one session.
 - **Security:** OTP codes expire after 30 minutes; exponential backoff prevents brute-force. Codes are single-use (device record deleted on success).
 - **Performance:** Email sending is done inline via `send_mail()`; SES latency is consistently low and inline sending ensures delivery failures are surfaced immediately to the caller.
-- **Metric:** Track `COUNT(ConnectUser WHERE email_verified = TRUE)` over time to confirm adoption.
+- **Metric:** Track `COUNT(ConnectUser WHERE email != "")` over time to confirm adoption.
 
 ---
 
@@ -215,12 +209,12 @@ Other providers offer comparable delivery analytics, but SES was chosen to align
 Key workflows to test:
 
 Sign-up flow (session token):
-- Happy path: send OTP (session token) → receive email → verify correct code → `complete_profile` → new user has `email` and `email_verified = True`.
+- Happy path: send OTP (session token) → receive email → verify correct code → `complete_profile` → new user has `email` set.
 - `start_configuration` returns `email` field on subsequent login.
-- Skipping email verification during sign-up creates user without email fields set.
+- Skipping email verification during sign-up creates user without email set.
 
 Post-registration flow (OAuth2 token):
-- Happy path: send OTP (OAuth2 token) → receive email → verify correct code → user has `email` and `email_verified = True`.
+- Happy path: send OTP (OAuth2 token) → receive email → verify correct code → user has `email` set.
 - `start_configuration` returns `email` field after verification.
 
 Both flows:
@@ -228,7 +222,7 @@ Both flows:
 - Verify OTP with expired token returns 401.
 - OTP resend before backoff window returns rate-limit error.
 - OTP resend after backoff window sends a new email.
-- `start_configuration` omits `email` key for users with no verified email or `email_verified = False`.
+- `start_configuration` omits `email` key for users with no verified email (blank `email`).
 - Endpoints return 404 when the `email_otp_verification` waffle flag is disabled.
 - Test-number users skip email delivery (OTP still generated and verifiable).
 
@@ -289,7 +283,7 @@ No change to request. Response now conditionally includes `email`:
   "toggles": {},
   "sms_method": "firebase",
   "otp_fallback": false,
-  "email": "user@example.com"   // only present if user has email_verified = True
+  "email": "user@example.com"   // only present if user has a non-blank email
 }
 ```
 
@@ -297,7 +291,7 @@ No change to request. Response now conditionally includes `email`:
 
 ## Implementation Tickets
 
-1. **CCCT-XXXX** — Add `EmailOTPDevice` model, `ConnectUser.email_verified` field, and `ConfigurationSession.verified_email` field + migrations
+1. **CCCT-XXXX** — Add `EmailOTPDevice` model and `ConfigurationSession.verified_email` field + migrations
 2. **CCCT-XXXX** — Add `send_email_otp` and `verify_email_otp` views, URL routes, and `send_email_otp_message()` utility
 3. **CCCT-XXXX** — Update `complete_profile` to copy `session.verified_email` onto new user, and update `start_configuration` to include verified email in response
 4. **CCCT-XXXX** — Add `django-anymail[amazon-ses]`, configure `DJANGO_EMAIL_BACKEND` / `DEFAULT_FROM_EMAIL` env vars, and enable `email_otp_verification` waffle flag per environment
