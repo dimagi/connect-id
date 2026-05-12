@@ -74,7 +74,9 @@ class EmailOTPDevice(SideChannelDevice):
                     | models.Q(user__isnull=True, session__isnull=False)
                 ),
                 name="email_otp_device_exclusive_owner",
-            )
+            ),
+            models.UniqueConstraint(fields=["user", "email"], condition=models.Q(user__isnull=False), name="email_otp_device_user_email"),
+            models.UniqueConstraint(fields=["session", "email"], condition=models.Q(session__isnull=False), name="email_otp_device_session_email"),
         ]
 ```
 
