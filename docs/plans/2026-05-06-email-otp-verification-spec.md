@@ -90,7 +90,7 @@ EMAIL_OTP_VALIDITY_SECONDS = int(os.environ.get("EMAIL_OTP_VALIDITY_SECONDS", 18
 
 `generate_challenge()` passes this value to `generate_token(valid_secs=settings.EMAIL_OTP_VALIDITY_SECONDS)`, mirroring the hardcoded `1800` in `BasePhoneDevice`.
 
-For sign-up flow devices (session is set, user is null), test-number detection uses the session's `phone_number` field to decide whether to skip actual email delivery.
+Demo/test-number users go through the same email delivery flow as normal users — no special bypass is applied.
 
 **Stale record cleanup**: Add a `@shared_task` in `users/tasks.py` that deletes `EmailOTPDevice` rows where `valid_until` is in the past (i.e., `valid_until__lt=now()`). `SideChannelDevice.valid_until` is set to `now() + valid_secs` on each `generate_token()` call and reset to `now()` on successful verification, so `valid_until < now()` reliably identifies expired or already-verified records. Register it in `connectid/celery_app.py` under `beat_schedule` with a `timedelta(hours=24)` schedule, matching the `delete_old_messages` pattern. This covers abandoned verifications where the user never submitted an OTP.
 
@@ -98,7 +98,7 @@ For sign-up flow devices (session is set, user is null), test-number detection u
 
 **New view — `send_email_otp`**:
 
-- Accepts both `OAuth2Authentication` (sign-up flow) and `SessionTokenAuthentication` (post-registration flow); set `authentication_classes` explicitly on the view.
+- Accepts both `OAuth2Authentication` (post-registration flow) and `SessionTokenAuthentication` (sign-up flow); set `authentication_classes` explicitly on the view.
   - `OAuth2Authentication` should be listed before `SessionTokenAuthentication` in the class definition. This is because the latter will raise an exception on failure which will prevent the former from ever running.
 - Gated by `email_otp_verification` waffle flag; returns 404 if flag is inactive.
 - Validates `email` field in request body (uses `django.core.validators.validate_email`).
@@ -226,7 +226,7 @@ Both flows:
 - OTP resend after backoff window sends a new email.
 - `start_configuration` omits `email` key for users with no verified email (blank `email`).
 - Endpoints return 404 when the `email_otp_verification` waffle flag is disabled.
-- Test-number users skip email delivery (OTP still generated and verifiable).
+- Demo/test-number users go through the same email verification flow as real users (no delivery bypass).
 
 ---
 
