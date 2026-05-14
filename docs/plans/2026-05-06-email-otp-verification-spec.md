@@ -201,7 +201,7 @@ Other providers offer comparable delivery analytics, but SES was chosen to align
 
 1. ~~**Email uniqueness:** Should a verified email address be unique across active users (i.e. prevent two users from verifying the same address)? A unique constraint would add integrity but could cause friction if a user re-registers with the same email.~~ **Resolved:** Add a `UniqueConstraint` on `email` filtered to `is_active=True`, consistent with how `phone_number` uniqueness is enforced on `ConnectUser`.
 2. ~~**Email re-verification:** Can a user verify a different email address and overwrite their existing verified email?~~ **Resolved:** This will be addressed in a future mobile release where users will be allowed to change their email address, most likely in the `update_profile` endpoint.
-3. **Test email bypass:** The design skips email delivery for users whose phone starts with `TEST_NUMBER_PREFIX`. Should a hardcoded test OTP (e.g. `"123456"`) be returned for test users, similar to any existing test-number shortcuts?
+3. ~~**Test email bypass:** The design skips email delivery for users whose phone starts with `TEST_NUMBER_PREFIX`. Should a hardcoded test OTP (e.g. `"123456"`) be returned for test users, similar to any existing test-number shortcuts?~~ **Resolved:** No special bypass will be given to demo users. These accounts will go through the same normal email verification flow as real accounts.
 4. ~~**Rate limit response code:** Should `send_email_otp` return `HTTP 429 Too Many Requests` with a `Retry-After` header when backoff is active, or a `400` with an error code?~~ **Resolved:** Use `429 Too Many Requests` with a `Retry-After` header — more semantically correct and aligns with RFC 6585.
 
 ---
