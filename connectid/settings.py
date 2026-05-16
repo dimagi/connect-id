@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     "fcm_django",
     "django.contrib.sites",
     "waffle",
+    "django_celery_beat",
 ] + LOCAL_APPS
 
 MIDDLEWARE = [
