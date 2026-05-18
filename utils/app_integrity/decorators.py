@@ -1,5 +1,6 @@
 import logging
 
+import requests
 from django.http import HttpResponseBadRequest, HttpResponseForbidden, HttpResponseServerError, JsonResponse
 from googleapiclient.errors import HttpError
 
@@ -61,7 +62,14 @@ def require_app_integrity(view):
         request_hash = request.headers.get(INTEGRITY_REQUEST_HASH_KEY)
         phone_number = request.data.get("phone_number", "")
 
-        invited = check_number_for_existing_invites(phone_number)
+        try:
+            invited = check_number_for_existing_invites(phone_number)
+        except requests.exceptions.RequestException:
+            logger.exception("Failed to reach connect.dimagi.com to check existing invites")
+            return JsonResponse(
+                {"error_code": ErrorCodes.CONFIGURATION_TEMPORARILY_UNAVAILABLE},
+                status=503,
+            )
         request.invited_user = invited
 
         app_package = request.data.get("application_id")
