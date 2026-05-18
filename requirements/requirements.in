@@ -1,5 +1,4 @@
 celery
-django-celery-beat
 Django
 django-axes[ipware]
 django-allow-cidr
