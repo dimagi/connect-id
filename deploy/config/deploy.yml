@@ -21,6 +21,8 @@ servers:
     cmd: /start_celery
     labels:
       traefik.enable: false
+    volumes:
+      - 'connectid-celerybeat:/var/run/celery'
 
 registry:
   server: 037129986032.dkr.ecr.us-east-1.amazonaws.com
