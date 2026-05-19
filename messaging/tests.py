@@ -394,6 +394,29 @@ class TestSendMessageView:
         assert response.status_code == status.HTTP_201_CREATED
         assert json_data["message_id"] == [pending_msg.message_id]
 
+    def test_status_advances_to_sent_to_service_after_successful_dispatch(self, auth_device, channel):
+        data = rest_message(channel.channel_id)
+
+        fake_response = Mock(status_code=200)
+        fake_response.raise_for_status = Mock()
+        with patch("messaging.tasks.requests.post", return_value=fake_response):
+            response = auth_device.post(self.url, json.dumps(data), content_type=APPLICATION_JSON)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        msg = Message.objects.get(message_id=data["message_id"])
+        assert msg.status == MessageStatus.SENT_TO_SERVICE
+
+    def test_resubmitting_same_message_does_not_redispatch_to_delivery_url(self, auth_device, channel):
+        data = rest_message(channel.channel_id)
+
+        fake_response = Mock(status_code=200)
+        fake_response.raise_for_status = Mock()
+        with patch("messaging.tasks.requests.post", return_value=fake_response) as mock_post:
+            auth_device.post(self.url, json.dumps(data), content_type=APPLICATION_JSON)
+            auth_device.post(self.url, json.dumps(data), content_type=APPLICATION_JSON)
+
+        assert mock_post.call_count == 1
+
 
 @pytest.mark.django_db
 class TestRetrieveMessagesView:
