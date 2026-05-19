@@ -59,7 +59,7 @@ def send_messages_to_service_and_mark_status(channel_messages, status_to_be_upda
                 },
                 secret=channel.server.server_credentials.secret_key,
             )
-            if response == status.HTTP_200_OK:
+            if response.status_code == status.HTTP_200_OK:
                 sent_message_ids.extend(msg["message_id"] for msg in messages)
 
         except CommCareHQAPIException:

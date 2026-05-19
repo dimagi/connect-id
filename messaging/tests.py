@@ -394,6 +394,29 @@ class TestSendMessageView:
         assert response.status_code == status.HTTP_201_CREATED
         assert json_data["message_id"] == [pending_msg.message_id]
 
+    def test_status_advances_to_sent_to_service_after_successful_dispatch(self, auth_device, channel):
+        data = rest_message(channel.channel_id)
+
+        fake_response = Mock(status_code=200)
+        fake_response.raise_for_status = Mock()
+        with patch("messaging.tasks.requests.post", return_value=fake_response):
+            response = auth_device.post(self.url, json.dumps(data), content_type=APPLICATION_JSON)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        msg = Message.objects.get(message_id=data["message_id"])
+        assert msg.status == MessageStatus.SENT_TO_SERVICE
+
+    def test_resubmitting_same_message_does_not_redispatch_to_delivery_url(self, auth_device, channel):
+        data = rest_message(channel.channel_id)
+
+        fake_response = Mock(status_code=200)
+        fake_response.raise_for_status = Mock()
+        with patch("messaging.tasks.requests.post", return_value=fake_response) as mock_post:
+            auth_device.post(self.url, json.dumps(data), content_type=APPLICATION_JSON)
+            auth_device.post(self.url, json.dumps(data), content_type=APPLICATION_JSON)
+
+        assert mock_post.call_count == 1
+
 
 @pytest.mark.django_db
 class TestRetrieveMessagesView:
@@ -580,6 +603,22 @@ class TestUpdateReceivedView:
             all(msg["received_on"] for msg in data[str(ch.channel_id)]["messages"]) for ch in [channel1, channel2]
         )
         assert msg_status == MessageStatus.CONFIRMED_RECEIVED
+
+    @patch("messaging.views.send_messages_to_service_and_mark_status")
+    def test_reack_of_confirmed_message_does_not_downgrade_or_redispatch(
+        self, mock_send_messages, auth_device, channel
+    ):
+        message = MessageFactory.create(channel=channel, status=MessageStatus.CONFIRMED_RECEIVED)
+
+        auth_device.post(
+            self.url,
+            json.dumps({"messages": [str(message.message_id)]}),
+            content_type=APPLICATION_JSON,
+        )
+
+        message.refresh_from_db()
+        assert message.status == MessageStatus.CONFIRMED_RECEIVED
+        mock_send_messages.assert_not_called()
 
 
 @pytest.mark.django_db
