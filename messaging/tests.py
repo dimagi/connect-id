@@ -604,6 +604,22 @@ class TestUpdateReceivedView:
         )
         assert msg_status == MessageStatus.CONFIRMED_RECEIVED
 
+    @patch("messaging.views.send_messages_to_service_and_mark_status")
+    def test_reack_of_confirmed_message_does_not_downgrade_or_redispatch(
+        self, mock_send_messages, auth_device, channel
+    ):
+        message = MessageFactory.create(channel=channel, status=MessageStatus.CONFIRMED_RECEIVED)
+
+        auth_device.post(
+            self.url,
+            json.dumps({"messages": [str(message.message_id)]}),
+            content_type=APPLICATION_JSON,
+        )
+
+        message.refresh_from_db()
+        assert message.status == MessageStatus.CONFIRMED_RECEIVED
+        mock_send_messages.assert_not_called()
+
 
 @pytest.mark.django_db
 class TestRetrieveNotificationsView:
