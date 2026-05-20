@@ -172,7 +172,7 @@ Expected: same list of migrations, **all marked `[ ]`** (unapplied). No `[X]` ro
 
 ```bash
 kamal app exec --roles web --version $ROLLBACK_SHA \
-  "./manage.py shell -c 'from django_celery_beat.models import PeriodicTask; print(PeriodicTask.objects.count())'"
+'./manage.py shell -c "from django_celery_beat.models import PeriodicTask; print(PeriodicTask.objects.count())"'
 ```
 Expected: an error like `django.db.utils.ProgrammingError: relation "django_celery_beat_periodictask" does not exist`. That's the desired state — the table is gone.
 
@@ -198,8 +198,8 @@ If anything unexpected shows up, investigate before considering the plan complet
 Quick check that nothing django_celery_beat-related remains as applied:
 
 ```bash
-kamal app exec --roles web --version $ROLLBACK_SHA \
-  "./manage.py shell -c 'from django.db.migrations.recorder import MigrationRecorder; print(list(MigrationRecorder.Migration.objects.filter(app=\"django_celery_beat\").values_list(\"name\", flat=True)))'"
+kamal app exec --roles web --version $ROLLBACK_SHA -- \
+'./manage.py shell -c "from django.db.migrations.recorder import MigrationRecorder; print(list(MigrationRecorder.Migration.objects.filter(app=\"django_celery_beat\").values_list(\"name\", flat=True)))"'
 ```
 Expected: `[]` (empty list).
 
@@ -207,7 +207,7 @@ Expected: `[]` (empty list).
 
 ```bash
 kamal app exec --roles web --version $ROLLBACK_SHA \
-  "./manage.py shell -c 'from django.db.migrations.recorder import MigrationRecorder; print(list(MigrationRecorder.Migration.objects.filter(app=\"messaging\", name__startswith=\"0008\").values_list(\"name\", flat=True)))'"
+'./manage.py shell -c "from django.db.migrations.recorder import MigrationRecorder; print(list(MigrationRecorder.Migration.objects.filter(app=\"messaging\", name__startswith=\"0008\").values_list(\"name\", flat=True)))"'
 ```
 Expected: `[]` (empty list).
 
