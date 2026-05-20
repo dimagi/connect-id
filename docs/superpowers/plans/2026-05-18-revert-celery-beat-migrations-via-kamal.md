@@ -66,7 +66,7 @@ If you get `ImageNotFoundException`, STOP — the image must be present. Rebuild
 - [ ] **Step 1: Confirm django_celery_beat migrations are recorded as applied**
 
 ```bash
-kamal app exec --version $ROLLBACK_SHA "./manage.py showmigrations django_celery_beat"
+kamal app exec --roles web --version $ROLLBACK_SHA "./manage.py showmigrations django_celery_beat"
 ```
 Expected: a list of migrations, **all marked with `[X]`** (applied). Typically ~18 migrations ending around `0018_*` or `0019_*` depending on the django-celery-beat version pinned in `requirements.txt`.
 
@@ -75,7 +75,7 @@ If any are `[ ]` (unapplied), the database state is partial — record exactly w
 - [ ] **Step 2: Confirm messaging migrations include the orphan 0008**
 
 ```bash
-kamal app exec --version $ROLLBACK_SHA "./manage.py showmigrations messaging"
+kamal app exec --roles web --version $ROLLBACK_SHA "./manage.py showmigrations messaging"
 ```
 Expected: migrations `0001_initial` through `0008_*` all marked `[X]`. The `0008_*` line is the orphan we are going to remove.
 
@@ -84,7 +84,7 @@ Record the exact name of the `0008_*` migration shown — it should match the da
 - [ ] **Step 3: Confirm the PeriodicTask row count matches the incident notes (3 rows)**
 
 ```bash
-kamal app exec --version $ROLLBACK_SHA \
+kamal app exec --roles web --version $ROLLBACK_SHA \
   "./manage.py shell -c 'from django_celery_beat.models import PeriodicTask; print(PeriodicTask.objects.count())'"
 ```
 Expected: `3`.
@@ -102,14 +102,14 @@ If the count differs, pause and reconcile with the incident notes before continu
 - [ ] **Step 1: Plan the messaging reversal**
 
 ```bash
-kamal app exec --version $ROLLBACK_SHA "./manage.py migrate messaging 0007 --plan"
+kamal app exec --roles web --version $ROLLBACK_SHA "./manage.py migrate messaging 0007 --plan"
 ```
 Expected: a single line — `Unapply messaging.0008_periodic_tasks`. **Only one migration.** If the plan shows more than one unapply (e.g., it tries to unapply 0007 too), STOP — the target `0007` was misspecified.
 
 - [ ] **Step 2: Plan the django_celery_beat reversal**
 
 ```bash
-kamal app exec --version $ROLLBACK_SHA "./manage.py migrate django_celery_beat zero --plan"
+kamal app exec --roles web --version $ROLLBACK_SHA "./manage.py migrate django_celery_beat zero --plan"
 ```
 Expected: an ordered list of `Unapply django_celery_beat.<NNNN>_<name>` lines, starting from the highest-numbered migration and walking down to `0001_initial`. Every migration name shown as `[X]` in Task 2 Step 1 must appear here. **No `messaging.0008` should appear in the plan** — if it does, Task 4 didn't take effect or wasn't run yet.
 
@@ -126,14 +126,14 @@ Expected: an ordered list of `Unapply django_celery_beat.<NNNN>_<name>` lines, s
 - [ ] **Step 1: Execute**
 
 ```bash
-kamal app exec --version $ROLLBACK_SHA "./manage.py migrate messaging 0007"
+kamal app exec --roles web --version $ROLLBACK_SHA "./manage.py migrate messaging 0007"
 ```
 Expected: a single line `Unapplying messaging.0008_periodic_tasks... OK`. Exit 0.
 
 - [ ] **Step 2: Verify**
 
 ```bash
-kamal app exec --version $ROLLBACK_SHA "./manage.py showmigrations messaging"
+kamal app exec --roles web --version $ROLLBACK_SHA "./manage.py showmigrations messaging"
 ```
 Expected: migrations `0001_initial` through `0007_notification` marked `[X]`, and `0008_periodic_tasks` marked `[ ]` (or absent — depends on Django version). The important property: `0008_*` is no longer recorded as applied.
 
@@ -148,14 +148,14 @@ Expected: migrations `0001_initial` through `0007_notification` marked `[X]`, an
 - [ ] **Step 1: Re-confirm there is no cross-app cascade**
 
 ```bash
-kamal app exec --version $ROLLBACK_SHA "./manage.py migrate django_celery_beat zero --plan"
+kamal app exec --roles web --version $ROLLBACK_SHA "./manage.py migrate django_celery_beat zero --plan"
 ```
 Expected: ONLY `Unapply django_celery_beat.*` lines, no `messaging.*` lines. If `messaging.0008` shows up here, Task 4 didn't take effect — go back and re-run Task 4 Step 1.
 
 - [ ] **Step 2: Execute**
 
 ```bash
-kamal app exec --version $ROLLBACK_SHA "./manage.py migrate django_celery_beat zero"
+kamal app exec --roles web --version $ROLLBACK_SHA "./manage.py migrate django_celery_beat zero"
 ```
 Expected: a sequence of `Unapplying django_celery_beat.<NNNN>_<name>... OK` lines, finishing without errors. Exit 0.
 
@@ -164,14 +164,14 @@ If it fails partway, do NOT immediately rerun. Run `showmigrations django_celery
 - [ ] **Step 3: Verify migrations cleared**
 
 ```bash
-kamal app exec --version $ROLLBACK_SHA "./manage.py showmigrations django_celery_beat"
+kamal app exec --roles web --version $ROLLBACK_SHA "./manage.py showmigrations django_celery_beat"
 ```
 Expected: same list of migrations, **all marked `[ ]`** (unapplied). No `[X]` rows remain.
 
 - [ ] **Step 4: Verify the PeriodicTask table is actually gone**
 
 ```bash
-kamal app exec --version $ROLLBACK_SHA \
+kamal app exec --roles web --version $ROLLBACK_SHA \
   "./manage.py shell -c 'from django_celery_beat.models import PeriodicTask; print(PeriodicTask.objects.count())'"
 ```
 Expected: an error like `django.db.utils.ProgrammingError: relation "django_celery_beat_periodictask" does not exist`. That's the desired state — the table is gone.
@@ -187,7 +187,7 @@ Expected: an error like `django.db.utils.ProgrammingError: relation "django_cele
 - [ ] **Step 1: Show the full migration plan**
 
 ```bash
-kamal app exec --version $ROLLBACK_SHA "./manage.py showmigrations --plan" | grep -E "^\[ \]|^\?" | head -50
+kamal app exec --roles web --version $ROLLBACK_SHA "./manage.py showmigrations --plan" | grep -E "^\[ \]|^\?" | head -50
 ```
 Expected: any `[ ]` (unapplied) lines should be limited to `django_celery_beat.*` and `messaging.0008_*` — both intentional. No other unapplied migrations should appear for apps we didn't touch (e.g., `users`, `oauth2_provider` should still be fully `[X]`).
 
@@ -198,7 +198,7 @@ If anything unexpected shows up, investigate before considering the plan complet
 Quick check that nothing django_celery_beat-related remains as applied:
 
 ```bash
-kamal app exec --version $ROLLBACK_SHA \
+kamal app exec --roles web --version $ROLLBACK_SHA \
   "./manage.py shell -c 'from django.db.migrations.recorder import MigrationRecorder; print(list(MigrationRecorder.Migration.objects.filter(app=\"django_celery_beat\").values_list(\"name\", flat=True)))'"
 ```
 Expected: `[]` (empty list).
@@ -206,7 +206,7 @@ Expected: `[]` (empty list).
 - [ ] **Step 3: Confirm the orphan messaging.0008 row is gone**
 
 ```bash
-kamal app exec --version $ROLLBACK_SHA \
+kamal app exec --roles web --version $ROLLBACK_SHA \
   "./manage.py shell -c 'from django.db.migrations.recorder import MigrationRecorder; print(list(MigrationRecorder.Migration.objects.filter(app=\"messaging\", name__startswith=\"0008\").values_list(\"name\", flat=True)))'"
 ```
 Expected: `[]` (empty list).
