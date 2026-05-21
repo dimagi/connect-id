@@ -31,4 +31,8 @@ app.conf.beat_schedule = {
         "task": "users.tasks.upload_connect_users_to_superset",
         "schedule": crontab(hour=0, minute=0),
     },
+    "upload_configuration_sessions_to_bigquery": {
+        "task": "users.tasks.upload_configuration_sessions_to_bigquery",
+        "schedule": crontab(hour=0, minute=0),
+    },
 }

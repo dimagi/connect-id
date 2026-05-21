@@ -8,9 +8,12 @@ import requests
 import sentry_sdk
 from celery import shared_task
 from django.conf import settings
+from google.auth.exceptions import GoogleAuthError
+from google.cloud import bigquery
+from google.oauth2 import service_account
 from phonenumber_field.phonenumber import PhoneNumber
 
-from users.models import ConnectUser
+from users.models import ConfigurationSession, ConnectUser
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +145,101 @@ class ConnectUserSupersetExporter:
         if isinstance(value, (datetime, date)):
             return value.isoformat()
         return value
+
+
+CONFIGURATION_SESSION_DUMP_FIELDS = [
+    "key",
+    "created",
+    "expires",
+    "phone_number",
+    "is_phone_validated",
+    "gps_location",
+    "invited_user",
+    "device_id",
+    "device",
+]
+
+
+class ConfigurationSessionBigQueryExporter:
+    def __init__(self):
+        self.dataset_id = settings.BIGQUERY_DATASET_ID
+        self.table_name = settings.BIGQUERY_CONFIGURATION_SESSION_TABLE
+
+    def run(self):
+        if not self.dataset_id:
+            return
+
+        csv_path = None
+        try:
+            csv_path = self.generate_csv()
+            self.upload(csv_path)
+            logger.info("Uploaded ConfigurationSession csv to BigQuery")
+        finally:
+            if csv_path:
+                try:
+                    csv_path.unlink()
+                except FileNotFoundError:
+                    pass
+                except Exception:
+                    logger.warning("Failed to delete temporary file %s", csv_path, exc_info=True)
+
+    def generate_csv(self) -> Path:
+        try:
+            tmp = tempfile.NamedTemporaryFile(mode="w", newline="", suffix=".csv", delete=False)
+            writer = csv.DictWriter(tmp, fieldnames=CONFIGURATION_SESSION_DUMP_FIELDS)
+            writer.writeheader()
+            for session in (
+                ConfigurationSession.objects.all().values(*CONFIGURATION_SESSION_DUMP_FIELDS).iterator(chunk_size=500)
+            ):
+                writer.writerow({k: self._serialize_value(session[k]) for k in CONFIGURATION_SESSION_DUMP_FIELDS})
+        except Exception:
+            tmp.close()
+            Path(tmp.name).unlink(missing_ok=True)
+            raise
+        tmp.close()
+        return Path(tmp.name)
+
+    def upload(self, csv_path: Path):
+        try:
+            credentials = service_account.Credentials.from_service_account_info(
+                settings.GOOGLE_APPLICATION_CREDENTIALS
+            )
+        except GoogleAuthError:
+            logger.error("Error in Google credentials configuration", exc_info=True)
+            return
+        project_id = settings.GOOGLE_APPLICATION_CREDENTIALS["project_id"]
+        client = bigquery.Client(project=project_id, credentials=credentials)
+        table_ref = f"{project_id}.{self.dataset_id}.{self.table_name}"
+        job_config = bigquery.LoadJobConfig(
+            autodetect=True,
+            write_disposition="WRITE_TRUNCATE",
+            source_format=bigquery.SourceFormat.CSV,
+            skip_leading_rows=1,
+        )
+        with csv_path.open("rb") as f:
+            job = client.load_table_from_file(f, table_ref, job_config=job_config)
+        job.result()
+
+    @staticmethod
+    def _serialize_value(value):
+        if value is None:
+            return ""
+        if isinstance(value, PhoneNumber):
+            return value.as_e164
+        if isinstance(value, (datetime, date)):
+            return value.isoformat()
+        return value
+
+
+@shared_task(name="users.tasks.upload_configuration_sessions_to_bigquery")
+def upload_configuration_sessions_to_bigquery():
+    exporter = ConfigurationSessionBigQueryExporter()
+    try:
+        exporter.run()
+    except Exception as exc:
+        sentry_sdk.capture_exception(exc)
+        logger.exception("Failed to upload ConfigurationSession dump to BigQuery")
+        raise
 
 
 @shared_task(name="users.tasks.upload_connect_users_to_superset")

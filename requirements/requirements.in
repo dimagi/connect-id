@@ -18,6 +18,7 @@ zxcvbn
 django-environ
 google-auth
 google-api-python-client
+google-cloud-bigquery
 boto3
 geopy
 whitenoise
