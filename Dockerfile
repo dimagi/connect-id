@@ -32,6 +32,8 @@ RUN chown django /entrypoint /start*
 RUN python /app/manage.py collectstatic --noinput
 RUN chown django:django -R staticfiles
 
+RUN mkdir -p /var/run/celery && chown django:django /var/run/celery
+
 USER django
 
 EXPOSE 8000
