@@ -176,6 +176,7 @@ def upload_configuration_sessions():
             ConfigurationSession.objects.all(), CONFIGURATION_SESSION_DUMP_FIELDS, max_rows=500000
         ) as csv_path:
             BigQueryUploader(table_name).upload(csv_path)
+            SupersetUploader(table_name).upload(csv_path)
         logger.info("Uploaded ConfigurationSession csv")
     except Exception as exc:
         sentry_sdk.capture_exception(exc)
