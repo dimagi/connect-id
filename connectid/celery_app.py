@@ -33,6 +33,6 @@ app.conf.beat_schedule = {
     },
     "upload_configuration_sessions": {
         "task": "users.tasks.upload_configuration_sessions",
-        "schedule": crontab(hour=0, minute=0),
+        "schedule": crontab(hour=2, minute=0),
     },
 }
