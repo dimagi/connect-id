@@ -12,7 +12,6 @@ https://docs.djangoproject.com/en/4.1/ref/settings/
 
 import json
 import logging
-import os
 from pathlib import Path
 
 import environ
@@ -341,7 +340,8 @@ GA_API_SECRET = env("GA_API_SECRET", default="")
 FIREBASE_APP_ID = env("FIREBASE_APP_ID", default="")
 
 # Bigquery upload settings
-GOOGLE_APPLICATION_CREDENTIALS = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
+_google_credentials_json = env("GOOGLE_CREDENTIALS_JSON", default="")
+GOOGLE_APPLICATION_CREDENTIALS = json.loads(_google_credentials_json) if _google_credentials_json else {}
 BIGQUERY_DATASET_ID = env("BIGQUERY_DATASET_ID", default="")
 BIGQUERY_CONFIGURATION_SESSION_TABLE = env(
     "BIGQUERY_CONFIGURATION_SESSION_TABLE", default="personalid_configuration_session"

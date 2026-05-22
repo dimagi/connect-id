@@ -56,7 +56,7 @@ def test_csv_generator_outputs_expected_rows():
 @pytest.mark.django_db
 def test_csv_generator_raises_when_max_rows_exceeded():
     UserFactory.create_batch(3)
-    with pytest.raises(Exception, match="exceeds limit"):
+    with pytest.raises(ValueError, match="exceeds limit"):
         with CSVGenerator(ConnectUser.objects.all(), CONNECT_USER_DUMP_FIELDS, max_rows=2):
             pass
 
