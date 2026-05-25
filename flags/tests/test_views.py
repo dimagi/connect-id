@@ -5,6 +5,8 @@ import pytest
 import requests
 from django.urls import reverse
 
+from utils.app_integrity.const import ErrorCodes
+
 from ..factories import SwitchFactory
 
 
@@ -43,3 +45,4 @@ class TestTogglesView:
         mock_get_user_toggles.side_effect = requests.exceptions.ConnectionError("upstream unreachable")
         response = client.get(self.endpoint)
         assert response.status_code == 503
+        assert response.json() == {"error_code": ErrorCodes.CONFIGURATION_TEMPORARILY_UNAVAILABLE}

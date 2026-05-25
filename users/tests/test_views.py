@@ -1511,6 +1511,21 @@ class TestStartConfigurationView:
         assert response.status_code == 503
         assert response.json() == {"error_code": AppIntegrityErrorCodes.CONFIGURATION_TEMPORARILY_UNAVAILABLE}
 
+    @skip_app_integrity_check
+    @patch("users.models.ConfigurationSession.country_code")
+    @patch("users.views.get_user_toggles")
+    def test_returns_503_when_toggle_fetch_fails(self, mock_get_toggles, mock_country_code, client):
+        mock_country_code.return_value = "US"
+        mock_get_toggles.side_effect = requests.exceptions.ConnectionError("upstream unreachable")
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": Faker().phone_number(), "gps_location": "1.2 3.4"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.status_code == 503
+        assert response.json() == {"error_code": ErrorCodes.CONFIGURATION_TEMPORARILY_UNAVAILABLE}
+
 
 @pytest.mark.django_db
 class TestCheckUserSimilarity:

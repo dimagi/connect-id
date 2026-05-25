@@ -111,7 +111,7 @@ def start_device_configuration(request):
     try:
         toggles = get_user_toggles(phone_number=data["phone_number"])
     except requests.exceptions.RequestException:
-        return JsonResponse({"error": "Failed to fetch toggles"}, status=503)
+        return JsonResponse({"error_code": ErrorCodes.CONFIGURATION_TEMPORARILY_UNAVAILABLE}, status=503)
     response_data = {
         "required_lock": ConnectUser.get_device_security_requirement(data["phone_number"], request.invited_user),
         "demo_user": is_demo_user,
