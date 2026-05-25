@@ -40,6 +40,7 @@ class TestGetConnectToggles:
         ],
     )
     @mock.patch("utils.connect.requests.get")
-    def test_returns_empty_dict_when_upstream_fails(self, mock_get, exc):
+    def test_raises_when_upstream_fails(self, mock_get, exc):
         mock_get.side_effect = exc
-        assert get_connect_toggles(username="alice") == {}
+        with pytest.raises(requests.exceptions.RequestException):
+            get_connect_toggles(username="alice")

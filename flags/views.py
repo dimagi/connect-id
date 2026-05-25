@@ -1,3 +1,4 @@
+import requests
 from django.http import JsonResponse
 from django.views import View
 
@@ -9,5 +10,8 @@ class TogglesView(View):
         username = None
         if request.user.is_authenticated:
             username = request.user.username
-        toggles = get_user_toggles(username=username)
+        try:
+            toggles = get_user_toggles(username=username)
+        except requests.exceptions.RequestException:
+            return JsonResponse({"error": "Failed to fetch toggles"}, status=503)
         return JsonResponse({"toggles": toggles})

@@ -2,6 +2,7 @@ import json
 from unittest import mock
 
 import pytest
+import requests
 from django.urls import reverse
 
 from ..factories import SwitchFactory
@@ -37,3 +38,8 @@ class TestTogglesView:
         assert response.status_code == 200
         data = json.loads(response.content)
         assert data == {"toggles": {}}
+
+    def test_upstream_failure_returns_503(self, client, mock_get_user_toggles):
+        mock_get_user_toggles.side_effect = requests.exceptions.ConnectionError("upstream unreachable")
+        response = client.get(self.endpoint)
+        assert response.status_code == 503
