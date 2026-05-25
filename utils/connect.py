@@ -12,6 +12,7 @@ def check_number_for_existing_invites(phone_number):
     url = settings.CONNECT_INVITED_USER_URL
     auth = (settings.COMMCARE_CONNECT_CLIENT_ID, settings.COMMCARE_CONNECT_CLIENT_SECRET)
     response = requests.get(url, auth=auth, params={"phone_number": phone_number}, timeout=CONNECT_REQUEST_TIMEOUT)
+    response.raise_for_status()
     data = response.json()
     return data.get("invited", False)
 
@@ -37,6 +38,7 @@ def get_connect_toggles(username=None, phone_number=None):
         params["phone_number"] = phone_number
     try:
         response = requests.get(url, auth=auth, params=params, timeout=CONNECT_REQUEST_TIMEOUT)
+        response.raise_for_status()
         data = response.json()
     except requests.exceptions.RequestException:
         logger.exception("Failed to fetch toggles from connect.dimagi.com")
