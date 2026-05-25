@@ -361,3 +361,10 @@ SUPERSET_UPLOAD_CONFIG = {
     "table_name": env("SUPERSET_UPLOAD_TABLE_NAME", default="connect_user_dump"),
     "table_schema": env("SUPERSET_UPLOAD_TABLE_SCHEMA", default=""),
 }
+
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "global_keyprefix": "{connectid-celery}",
+}
+CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS = {
+    "global_keyprefix": "{connectid-celery-results}",
+}
