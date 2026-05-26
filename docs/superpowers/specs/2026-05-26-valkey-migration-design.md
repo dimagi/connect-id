@@ -6,6 +6,8 @@
 ## TL;DR
 We're moving from one Valkey instance (which has clustering enabled) to another (which does not have clustering enabled) for ConnectID's celery broker. This is to fix an issue that currently exist with ConnectID celery on production.  
 
+We'll simply flip `CELERY_BROKER_URL` to the new endpoint, redeploy, run a smoke test, done. No drain, no parallel-run, no pre-cutover verification dance — there is nothing in the broker to preserve and no live traffic to protect during the swap.
+
 ## Context
 
 **Error observed**
@@ -16,8 +18,6 @@ Disabling clustering would solve this issue.
 
 **Solution proposal**
 Connect's Redis instance does not have clustering enabled so it makes sense that we also disable clustering for ConnectID's Valkey instance, but simply disabling it is not possible - we should create a new instance and migrate from the old instance.
-
-We'll simply flip `CELERY_BROKER_URL` to the new endpoint, redeploy, run a smoke test, done. No drain, no parallel-run, no pre-cutover verification dance — there is nothing in the broker to preserve and no live traffic to protect during the swap.
 
 **Where Valkey is used**
 Valkey is used for exactly one purpose: the Celery broker (`CELERY_BROKER_URL` in `connectid/settings.py:228`). There is:
