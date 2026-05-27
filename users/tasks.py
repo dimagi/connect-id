@@ -5,7 +5,6 @@ from datetime import date, datetime
 from pathlib import Path
 
 import requests
-import sentry_sdk
 from celery import shared_task
 from django.conf import settings
 from google.auth.exceptions import GoogleAuthError
@@ -46,6 +45,10 @@ CONFIGURATION_SESSION_DUMP_FIELDS = [
 ]
 
 
+class SupersetUploadException(Exception):
+    pass
+
+
 class CSVGenerator:
     def __init__(self, queryset, fields, max_rows=None):
         self.queryset = queryset
@@ -78,7 +81,7 @@ class CSVGenerator:
                 self._path.unlink()
             except FileNotFoundError:
                 pass
-            except Exception:
+            except OSError:
                 logger.warning("Failed to delete temporary file %s", self._path, exc_info=True)
 
     @staticmethod
@@ -104,7 +107,7 @@ class SupersetUploader:
         self.table_name = table_name
 
     def upload(self, csv_path: Path) -> bool:
-        if not self.base_url or not self.username or not self.password:
+        if not (self.base_url and self.username and self.password):
             return False
         self._authenticate()
         payload = {"type": "csv", "table_name": self.table_name, "already_exists": "replace"}
@@ -127,13 +130,13 @@ class SupersetUploader:
         )
         token = data.get("access_token")
         if not token:
-            raise Exception("Superset login failed: missing access_token")
+            raise SupersetUploadException("Superset login failed: missing access_token")
         self.session.headers.update({"Authorization": f"Bearer {token}"})
 
         data = self._request("get", "/api/v1/security/csrf_token/")
         csrf = data.get("result")
         if not csrf:
-            raise Exception("Superset CSRF token missing")
+            raise SupersetUploadException("Superset CSRF token missing")
         self.session.headers.update({"X-CSRFToken": csrf, "Referer": f"{self.base_url}/"})
 
     def _request(self, method, path, **kwargs):
@@ -175,28 +178,17 @@ class BigQueryUploader:
 @shared_task(name="users.tasks.upload_configuration_sessions")
 def upload_configuration_sessions():
     table_name = settings.BIGQUERY_CONFIGURATION_SESSION_TABLE
-    try:
-        with CSVGenerator(
-            ConfigurationSession.objects.all(), CONFIGURATION_SESSION_DUMP_FIELDS, max_rows=500000
-        ) as csv_path:
-            bq_uploaded = BigQueryUploader(table_name).upload(csv_path)
-            superset_uploaded = SupersetUploader(table_name).upload(csv_path)
-        logger.info("ConfigurationSession upload finished (bigquery=%s, superset=%s)", bq_uploaded, superset_uploaded)
-    except Exception as exc:
-        sentry_sdk.capture_exception(exc)
-        logger.exception("Failed to upload ConfigurationSession dump")
-        raise
+    with CSVGenerator(
+        ConfigurationSession.objects.all(), CONFIGURATION_SESSION_DUMP_FIELDS, max_rows=500000
+    ) as csv_path:
+        bq_uploaded = BigQueryUploader(table_name).upload(csv_path)
+        superset_uploaded = SupersetUploader(table_name).upload(csv_path)
+    logger.info("ConfigurationSession upload finished (bigquery=%s, superset=%s)", bq_uploaded, superset_uploaded)
 
 
 @shared_task(name="users.tasks.upload_connect_users_to_superset")
 def upload_connect_users_to_superset():
-    config = getattr(settings, "SUPERSET_UPLOAD_CONFIG", {})
-    table_name = config.get("table_name", "connect_user_dump")
-    try:
-        with CSVGenerator(ConnectUser.objects.all(), CONNECT_USER_DUMP_FIELDS, max_rows=100000) as csv_path:
-            uploaded = SupersetUploader(table_name).upload(csv_path)
-        logger.info("ConnectUser upload to Superset finished (uploaded=%s)", uploaded)
-    except Exception as exc:
-        sentry_sdk.capture_exception(exc)
-        logger.exception("Failed to upload ConnectUser dump to Superset")
-        raise
+    table_name = settings.SUPERSET_UPLOAD_CONFIG["table_name"]
+    with CSVGenerator(ConnectUser.objects.all(), CONNECT_USER_DUMP_FIELDS, max_rows=100000) as csv_path:
+        uploaded = SupersetUploader(table_name).upload(csv_path)
+    logger.info("ConnectUser upload to Superset finished (uploaded=%s)", uploaded)
