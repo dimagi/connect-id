@@ -96,4 +96,4 @@ def resend_notifications_for_undelivered_messages():
                 f"Error occurred while sending undelivered notification "
                 f"to user :{username} for channel: {channel.channel_id} : {str(e)}"
             )
-            sentry_sdk.capture_message(msg=error_msg, level="error")
+            sentry_sdk.capture_message(message=error_msg, level="error")
