@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "fcm_django",
     "django.contrib.sites",
     "waffle",
+    "django_celery_beat",
 ] + LOCAL_APPS
 
 MIDDLEWARE = [
@@ -226,6 +227,7 @@ CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
 CELERY_TASK_EAGER_PROPAGATES = env.bool("CELERY_TASK_EAGER_PROPAGATES", default=False)
 
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
 if SENTRY_DSN:
     ignore_logger("django.security.DisallowedHost")
