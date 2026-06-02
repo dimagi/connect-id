@@ -114,6 +114,11 @@ class ConnectUser(AbstractUser):
                 name="phone_number_active_user",
             ),
             models.UniqueConstraint(Lower("username"), name="unique_lower_user"),
+            models.UniqueConstraint(
+                fields=["email"],
+                condition=models.Q(is_active=True) & ~models.Q(email=""),
+                name="email_active_user",
+            ),
         ]
 
 
@@ -295,6 +300,7 @@ class ConfigurationSession(models.Model):
     invited_user = models.BooleanField(default=False)
     device_id = models.CharField(max_length=255, blank=True, null=True)
     device = models.CharField(max_length=255, blank=True, null=True)
+    verified_email = models.EmailField(blank=True, null=True)
 
     def __str__(self):
         return self.key
@@ -354,6 +360,42 @@ class SessionPhoneDevice(BasePhoneDevice):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["phone_number", "session"], name="phone_number_session")]
+
+
+class BaseEmailOTPDevice(BaseOTPDevice):
+    email = models.EmailField()
+
+    class Meta:
+        abstract = True
+
+    def _send_otp(self):
+        from users.email_utils import send_email_otp_message
+
+        validity_minutes = settings.EMAIL_OTP_VALIDITY_SECONDS // 60
+        send_email_otp_message(self.email, self.token, validity_minutes)
+
+    def generate_challenge(self):
+        self._attempt_send(valid_secs=settings.EMAIL_OTP_VALIDITY_SECONDS)
+
+
+class UserEmailOTPDevice(BaseEmailOTPDevice):
+    user = models.ForeignKey(ConnectUser, on_delete=models.CASCADE)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "email"], name="user_email_otp_device_user_email"),
+        ]
+
+
+class SessionEmailOTPDevice(BaseEmailOTPDevice):
+    session = models.ForeignKey(ConfigurationSession, on_delete=models.CASCADE)
+    # non-nullable on the base SideChannelDevice — override to nullable for session-owned devices
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["session", "email"], name="session_email_otp_device_session_email"),
+        ]
 
 
 class DeviceIntegritySample(models.Model):
