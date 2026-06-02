@@ -342,10 +342,18 @@ class UpdateReceivedView(APIView):
             return JsonResponse({}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
-            messages = Message.objects.select_for_update().filter(message_id__in=message_ids).select_related("channel")
+            messages = (
+                Message.objects.select_for_update()
+                .filter(message_id__in=message_ids)
+                .exclude(status=MessageStatus.CONFIRMED_RECEIVED)
+                .select_related("channel")
+            )
+
+            if not Message.objects.filter(message_id__in=message_ids).exists():
+                return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
 
             if not messages.exists():
-                return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
+                return JsonResponse({}, status=status.HTTP_200_OK)
 
             current_time = now()
             messages.update(received=current_time, status=MessageStatus.DELIVERED)
