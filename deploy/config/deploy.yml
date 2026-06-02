@@ -19,8 +19,15 @@ servers:
       - i-090b0c432298694c5
     options:
       env-file: '/home/connect/www/docker.env'
-      volume: 'connectid-celerybeat:/var/run/celery'
     cmd: /start_celery
+    labels:
+      traefik.enable: false
+  celery-beat:
+    hosts:
+      - i-090b0c432298694c5
+    options:
+      env-file: '/home/connect/www/docker.env'
+    cmd: /start_celery_beat
     labels:
       traefik.enable: false
 
