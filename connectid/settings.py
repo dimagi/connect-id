@@ -276,7 +276,7 @@ TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default=None)
 TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default=None)
 
 EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
-DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="CommCare Connect <noreply@commcare-connect.org>")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Connect <noreply@commcare-connect.org>")
 EMAIL_OTP_VALIDITY_SECONDS = env.int("EMAIL_OTP_VALIDITY_SECONDS", default=1800)
 
 OAUTH2_PROVIDER = {
