@@ -20,10 +20,12 @@ constraints = [
     { name = "click-plugins", specifier = "==1.1.1" },
     { name = "click-repl", specifier = "==0.3.0" },
     { name = "coverage", specifier = "==7.8.0" },
+    { name = "cron-descriptor", specifier = "==1.4.5" },
     { name = "cryptography", specifier = "==41.0.2" },
     { name = "deprecated", specifier = "==1.2.14" },
     { name = "distlib", specifier = "==0.3.9" },
     { name = "django-ipware", specifier = "==5.0.0" },
+    { name = "django-timezone-field", specifier = "==7.2.1" },
     { name = "faker", specifier = "==19.6.2" },
     { name = "filelock", specifier = "==3.16.1" },
     { name = "firebase-admin", specifier = "==6.2.0" },
@@ -65,6 +67,7 @@ constraints = [
     { name = "pyflakes", specifier = "==3.2.0" },
     { name = "pyjwt", specifier = "==2.6.0" },
     { name = "pyparsing", specifier = "==3.1.1" },
+    { name = "python-crontab", specifier = "==3.3.0" },
     { name = "python-dateutil", specifier = "==2.9.0.post0" },
     { name = "pytz", specifier = "==2022.7.1" },
     { name = "pyyaml", specifier = "==6.0.2" },
@@ -343,6 +346,7 @@ dependencies = [
     { name = "django" },
     { name = "django-allow-cidr" },
     { name = "django-axes", extra = ["ipware"] },
+    { name = "django-celery-beat" },
     { name = "django-environ" },
     { name = "django-oauth-toolkit" },
     { name = "django-otp" },
@@ -382,6 +386,7 @@ requires-dist = [
     { name = "django", specifier = "==4.1.7" },
     { name = "django-allow-cidr", specifier = "==0.7.1" },
     { name = "django-axes", extras = ["ipware"], specifier = "==6.0.3" },
+    { name = "django-celery-beat", specifier = "==2.9.0" },
     { name = "django-environ", specifier = "==0.11.2" },
     { name = "django-oauth-toolkit", specifier = "==2.3.0" },
     { name = "django-otp", specifier = "==1.1.6" },
@@ -437,6 +442,15 @@ wheels = [
 [package.optional-dependencies]
 toml = [
     { name = "tomli", marker = "python_full_version <= '3.11'" },
+]
+
+[[package]]
+name = "cron-descriptor"
+version = "1.4.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/02/83/70bd410dc6965e33a5460b7da84cf0c5a7330a68d6d5d4c3dfdb72ca117e/cron_descriptor-1.4.5.tar.gz", hash = "sha256:f51ce4ffc1d1f2816939add8524f206c376a42c87a5fca3091ce26725b3b1bca", size = 30666 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/88/20/2cfe598ead23a715a00beb716477cfddd3e5948cf203c372d02221e5b0c6/cron_descriptor-1.4.5-py3-none-any.whl", hash = "sha256:736b3ae9d1a99bc3dbfc5b55b5e6e7c12031e7ba5de716625772f8b02dcd6013", size = 50370 },
 ]
 
 [[package]]
@@ -527,6 +541,23 @@ ipware = [
 ]
 
 [[package]]
+name = "django-celery-beat"
+version = "2.9.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "celery" },
+    { name = "cron-descriptor" },
+    { name = "django" },
+    { name = "django-timezone-field" },
+    { name = "python-crontab" },
+    { name = "tzdata" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/05/45/fc97bc1d9af8e7dc07f1e37044d9551a30e6793249864cef802341e2e3a8/django_celery_beat-2.9.0.tar.gz", hash = "sha256:92404650f52fcb44cf08e2b09635cb1558327c54b1a5d570f0e2d3a22130934c", size = 177667 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/71/ae/9befa7ae37f5e5c41be636a254fcf47ff30dd5c88bd115070e252f6b9162/django_celery_beat-2.9.0-py3-none-any.whl", hash = "sha256:4a9e5ebe26d6f8d7215e1fc5c46e466016279dc102435a28141108649bdf2157", size = 105013 },
+]
+
+[[package]]
 name = "django-environ"
 version = "0.11.2"
 source = { registry = "https://pypi.org/simple" }
@@ -581,6 +612,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/dd/4a/d93f47acd7a16eb6fdf9405cf608375c8d13a2e5d96064f771e72fcded1b/django-phonenumber-field-7.0.2.tar.gz", hash = "sha256:de3e47b986b4959949762c16fd8fe26b3e462ef3e5531ed00950bd20c698576a", size = 40893 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7f/fc/0d1ce00eb25075c89efe441b450398587c5bc41d7eddefc79e2b803b7a81/django_phonenumber_field-7.0.2-py3-none-any.whl", hash = "sha256:9edad2b2602af25f2aefc73c4cf53eaf7abf9e17d73c1c4372bd3052bebb26f9", size = 65850 },
+]
+
+[[package]]
+name = "django-timezone-field"
+version = "7.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/da/05/9b93a66452cdb8a08ab26f08d5766d2332673e659a8b2aeb73f2a904d421/django_timezone_field-7.2.1.tar.gz", hash = "sha256:def846f9e7200b7b8f2a28fcce2b78fb2d470f6a9f272b07c4e014f6ba4c6d2e", size = 13096 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/41/7f/d885667401515b467f84569c56075bc9add72c9fd425fca51a25f4c997e1/django_timezone_field-7.2.1-py3-none-any.whl", hash = "sha256:276915b72c5816f57c3baf9e43f816c695ef940d1b21f91ebf6203c09bf4ad44", size = 13284 },
 ]
 
 [[package]]
@@ -1264,6 +1307,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/9b/42/6d6563165b82289d4a30ea477f85c04386303e51cf4e4e4651d4f9910830/pytest-django-4.5.2.tar.gz", hash = "sha256:d9076f759bb7c36939dbdd5ae6633c18edfc2902d1a69fdbefd2426b970ce6c2", size = 79949 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4b/21/b65ecd6686da400e2f6e3c49c2a428325abd979c9670cd97e1671f53296e/pytest_django-4.5.2-py3-none-any.whl", hash = "sha256:c60834861933773109334fe5a53e83d1ef4828f2203a1d6a0fa9972f4f75ab3e", size = 20752 },
+]
+
+[[package]]
+name = "python-crontab"
+version = "3.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/99/7f/c54fb7e70b59844526aa4ae321e927a167678660ab51dda979955eafb89a/python_crontab-3.3.0.tar.gz", hash = "sha256:007c8aee68dddf3e04ec4dce0fac124b93bd68be7470fc95d2a9617a15de291b", size = 57626 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/47/42/bb4afa5b088f64092036221843fc989b7db9d9d302494c1f8b024ee78a46/python_crontab-3.3.0-py3-none-any.whl", hash = "sha256:739a778b1a771379b75654e53fd4df58e5c63a9279a63b5dfe44c0fcc3ee7884", size = 27533 },
 ]
 
 [[package]]
