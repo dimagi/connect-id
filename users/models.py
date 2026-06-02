@@ -19,7 +19,7 @@ from geopy.geocoders import MapBox
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 from phonenumber_field.modelfields import PhoneNumberField
 
-from users.exceptions import RecoveryPinNotSetError
+from users.exceptions import RateLimitedError, RecoveryPinNotSetError
 from users.services import get_user_photo_base64
 from utils import get_sms_sender, send_sms
 
@@ -134,8 +134,9 @@ class UserKey(models.Model):
         return user_key
 
 
-class BasePhoneDevice(SideChannelDevice):
-    phone_number = PhoneNumberField()
+class BaseOTPDevice(SideChannelDevice):
+    """Abstract base for OTP devices with exponential backoff."""
+
     otp_last_sent = models.DateTimeField(null=True, blank=True)
     attempts = models.IntegerField(default=1)
 
@@ -144,29 +145,50 @@ class BasePhoneDevice(SideChannelDevice):
 
     @property
     def is_otp_close_to_expiry(self):
+        if self.valid_until is None:
+            return True  # no token yet — regenerate immediately
         return self.valid_until - now() <= timedelta(minutes=5)
 
-    def generate_challenge(self):
-        # generate and send new token if the old token is valid for less than 5 minutes
-        # set he otp_last_sent to None to send the new OTP immediately
+    def _send_otp(self):
+        raise NotImplementedError
+
+    def _attempt_send(self, valid_secs):
         if self.is_otp_close_to_expiry:
             self.otp_last_sent = None
-            self.generate_token(valid_secs=1800)
+            self.generate_token(valid_secs=valid_secs)
             self.attempts = 0
-        message = f"Your verification token from commcare connect is {self.token}"
-        # backoff attempts exponentially
         wait_time = 2**self.attempts
-        if self.otp_last_sent is None or (
-            self.otp_last_sent and now() - self.otp_last_sent >= timedelta(minutes=wait_time)
-        ):
-            if not self.phone_number.raw_input.startswith(TEST_NUMBER_PREFIX):
-                sender = get_sms_sender(self.phone_number.country_code)
-                send_sms(self.phone_number.as_e164, message, sender)
+        if self.otp_last_sent is None or now() - self.otp_last_sent >= timedelta(minutes=wait_time):
+            self._send_otp()
             self.otp_last_sent = now()
             self.attempts += 1
             self.save()
+        else:
+            retry_after = int((timedelta(minutes=wait_time) - (now() - self.otp_last_sent)).total_seconds())
+            raise RateLimitedError(retry_after)
 
-        return message
+
+class BasePhoneDevice(BaseOTPDevice):
+    phone_number = PhoneNumberField()
+
+    class Meta:
+        abstract = True
+
+    @property
+    def otp_message(self):
+        return f"Your verification token from commcare connect is {self.token}"
+
+    def _send_otp(self):
+        if not self.phone_number.raw_input.startswith(TEST_NUMBER_PREFIX):
+            sender = get_sms_sender(self.phone_number.country_code)
+            send_sms(self.phone_number.as_e164, self.otp_message, sender)
+
+    def generate_challenge(self):
+        try:
+            self._attempt_send(valid_secs=1800)
+        except RateLimitedError:
+            pass
+        return self.otp_message
 
 
 class PhoneDevice(BasePhoneDevice):
