@@ -2172,3 +2172,61 @@ class TestFetchUserCounts:
 
         assert total_users_response[current_month] == 1
         assert non_invited_users_response == {}
+
+
+@pytest.mark.django_db
+class TestCompleteProfileCopiesEmail:
+    @patch("users.views.upload_photo_to_s3")
+    @pytest.mark.parametrize(
+        "verified_email,expected_email",
+        [
+            ("carried@example.com", "carried@example.com"),
+            (None, ""),
+        ],
+    )
+    def test_email_copied_from_session(self, mock_upload, session_client, verified_email, expected_email):
+        mock_upload.return_value = None
+        session = ConfigurationSessionFactory(is_phone_validated=True, verified_email=verified_email)
+        response = session_client(session).post(
+            reverse("complete_profile"),
+            data={"name": "Test User", "recovery_pin": "1234", "photo": "base64data"},
+            format="json",
+        )
+        assert response.status_code == 200
+        user = ConnectUser.objects.get(phone_number=session.phone_number)
+        assert user.email == expected_email
+
+
+@pytest.mark.django_db
+class TestStartConfigurationEmailField:
+    @skip_app_integrity_check
+    @patch("users.views.get_user_toggles", return_value={})
+    @pytest.mark.parametrize(
+        "email,expected",
+        [
+            ("known@example.com", "known@example.com"),
+            ("", None),
+        ],
+    )
+    def test_email_in_response_when_user_exists(self, mock_toggles, client, email, expected):
+        user = UserFactory(phone_number="+27821234567", email=email, is_active=True)
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": str(user.phone_number)},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.status_code == 200
+        assert response.json().get("email") == expected
+
+    @skip_app_integrity_check
+    @patch("users.views.get_user_toggles", return_value={})
+    def test_email_omitted_when_no_user_exists(self, mock_toggles, client):
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": "+27821234569"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.status_code == 200
+        assert "email" not in response.json()
