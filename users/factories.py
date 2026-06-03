@@ -13,9 +13,11 @@ from users.models import (
     PhoneDevice,
     RecoveryStatus,
     ServerKeys,
+    SessionEmailOTPDevice,
     SessionPhoneDevice,
     UserCredential,
     UserDeviceInfo,
+    UserEmailOTPDevice,
 )
 
 
@@ -123,3 +125,21 @@ class ServerKeysFactory(DjangoModelFactory):
         model = ServerKeys
 
     name = factory.Faker("name")
+
+
+class UserEmailOTPDeviceFactory(DjangoModelFactory):
+    class Meta:
+        model = UserEmailOTPDevice
+
+    user = factory.SubFactory(UserFactory)
+    email = factory.Faker("email")
+    token = factory.Faker("bothify", text="######")
+
+
+class SessionEmailOTPDeviceFactory(DjangoModelFactory):
+    class Meta:
+        model = SessionEmailOTPDevice
+
+    session = factory.SubFactory(ConfigurationSessionFactory)
+    email = factory.Faker("email")
+    token = factory.Faker("bothify", text="######")
