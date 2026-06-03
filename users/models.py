@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import AbstractUser, AnonymousUser
 from django.contrib.sites.models import Site
-from django.db import models
+from django.db import models, transaction
 from django.db.models.functions import Lower
 from django.urls import reverse
 from django.utils.timezone import now
@@ -158,19 +158,28 @@ class BaseOTPDevice(SideChannelDevice):
         raise NotImplementedError
 
     def _attempt_send(self, valid_secs):
-        if self.is_otp_close_to_expiry:
-            self.otp_last_sent = None
-            self.generate_token(valid_secs=valid_secs)
-            self.attempts = 0
-        wait_time = 2**self.attempts
-        if self.otp_last_sent is None or now() - self.otp_last_sent >= timedelta(minutes=wait_time):
-            self._send_otp()
-            self.otp_last_sent = now()
-            self.attempts += 1
-            self.save()
-        else:
-            retry_after = int((timedelta(minutes=wait_time) - (now() - self.otp_last_sent)).total_seconds())
-            raise RateLimitedError(retry_after)
+        with transaction.atomic():
+            # Lock this device's row and read its persisted state under the lock,
+            # so two concurrent generate_challenge() calls cannot both pass the
+            # resend gate.
+            locked = self.__class__.objects.select_for_update().get(pk=self.pk)
+            self.otp_last_sent = locked.otp_last_sent
+            self.attempts = locked.attempts
+            self.token = locked.token
+            self.valid_until = locked.valid_until
+            if self.is_otp_close_to_expiry:
+                self.otp_last_sent = None
+                self.generate_token(valid_secs=valid_secs)
+                self.attempts = 0
+            wait_time = 2**self.attempts
+            if self.otp_last_sent is None or now() - self.otp_last_sent >= timedelta(minutes=wait_time):
+                self._send_otp()
+                self.otp_last_sent = now()
+                self.attempts += 1
+                self.save()
+            else:
+                retry_after = int((timedelta(minutes=wait_time) - (now() - self.otp_last_sent)).total_seconds())
+                raise RateLimitedError(retry_after)
 
 
 class BasePhoneDevice(BaseOTPDevice):
