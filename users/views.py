@@ -130,6 +130,14 @@ def start_device_configuration(request):
         response_data["sms_method"] = SMSMethods.FIREBASE
         response_data["otp_fallback"] = token_session.invited_user
 
+    email = (
+        ConnectUser.objects.filter(phone_number=data["phone_number"], is_active=True)
+        .values_list("email", flat=True)
+        .first()
+    )
+    if email:
+        response_data["email"] = email
+
     return JsonResponse(response_data)
 
 
@@ -242,6 +250,8 @@ def complete_profile(request):
     user.set_recovery_pin(recovery_pin)
     password = token_hex()
     user.set_password(password)
+    if session.verified_email:
+        user.email = session.verified_email
 
     error_code = upload_photo_to_s3(photo, user.username)
     if error_code:
