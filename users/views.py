@@ -130,14 +130,6 @@ def start_device_configuration(request):
         response_data["sms_method"] = SMSMethods.FIREBASE
         response_data["otp_fallback"] = token_session.invited_user
 
-    email = (
-        ConnectUser.objects.filter(phone_number=data["phone_number"], is_active=True)
-        .values_list("email", flat=True)
-        .first()
-    )
-    if email:
-        response_data["email"] = email
-
     return JsonResponse(response_data)
 
 
@@ -625,6 +617,9 @@ def confirm_backup_code(request):
             if old_device.last_accessed > now() - DEVICE_RECENT_ACCESS_THRESHOLD:
                 response_data["previous_device"] = old_device.device
                 response_data["last_accessed"] = old_device.last_accessed.isoformat()
+
+    if user.email:
+        response_data["email"] = user.email
 
     return JsonResponse(response_data)
 
