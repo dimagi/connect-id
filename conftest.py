@@ -3,7 +3,7 @@ from datetime import timedelta
 
 import pytest
 from django.utils.timezone import now
-from oauth2_provider.models import Application
+from oauth2_provider.models import AccessToken, Application
 from rest_framework.test import APIClient
 
 from users.auth import SessionTokenAuthentication
@@ -125,3 +125,29 @@ def valid_token(user):
 def expired_token():
     expires = now() - timedelta(days=2)
     return ConfigurationSessionFactory(expires=expires)
+
+
+@pytest.fixture
+def user_bearer_client(user, oauth_app, api_client):
+    """APIClient authenticated with an OAuth2 Bearer token for the test user."""
+    token = AccessToken.objects.create(
+        user=user,
+        application=oauth_app,
+        token="test-access-token",
+        expires=now() + timedelta(hours=1),
+        scope="read write",
+    )
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.token}")
+    return api_client
+
+
+@pytest.fixture
+def session_client():
+    """Factory fixture — call with a ConfigurationSession to get an authenticated client."""
+
+    def _make(session):
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {session.key}")
+        return client
+
+    return _make

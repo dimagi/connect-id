@@ -8,7 +8,10 @@ import requests
 from django.conf import settings
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ObjectDoesNotExist, ValidationError
+from django.core.exceptions import ObjectDoesNotExist
+from django.core.exceptions import ValidationError
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import validate_email
 from django.db.models import Count, Exists, F, OuterRef
 from django.db.models.functions import TruncMonth
 from django.db.utils import IntegrityError
@@ -18,11 +21,14 @@ from django.utils.timezone import now
 from django.views import View
 from firebase_admin import auth
 from googleapiclient.errors import HttpError
+from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
+from waffle.decorators import waffle_switch
 
+from flags.const import EMAIL_OTP_VERIFICATION
 from flags.utils import get_user_toggles
 from services.ai.ocs import OpenChatStudio
 from utils import get_ip, get_sms_sender, send_sms
@@ -34,7 +40,7 @@ from utils.rest_framework import ClientProtectedResourceAuth
 from .auth import IssuingCredentialsAuth, SessionTokenAuthentication
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
 from .device_utils import DEVICE_RECENT_ACCESS_THRESHOLD
-from .exceptions import RecoveryPinNotSetError
+from .exceptions import RateLimitedError, RecoveryPinNotSetError
 from .fcm_utils import create_update_device
 from .models import (
     ConfigurationSession,
@@ -43,9 +49,11 @@ from .models import (
     IssuingAuthority,
     PhoneDevice,
     RecoveryStatus,
+    SessionEmailOTPDevice,
     SessionPhoneDevice,
     UserCredential,
     UserDeviceInfo,
+    UserEmailOTPDevice,
     UserKey,
 )
 from .serializers import CredentialSerializer
@@ -975,6 +983,71 @@ def confirm_session_otp(request):
         return JsonResponse({"error": ErrorCodes.INCORRECT_OTP}, status=401)
     request.auth.is_phone_validated = True
     request.auth.save()
+    return HttpResponse()
+
+
+@api_view(["POST"])
+@authentication_classes([OAuth2Authentication, SessionTokenAuthentication])
+@waffle_switch(EMAIL_OTP_VERIFICATION)
+def send_email_otp(request):
+    if isinstance(request.auth, ConfigurationSession) and not request.auth.is_phone_validated:
+        return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
+
+    email = request.data.get("email", "").strip()
+    if not email:
+        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+    try:
+        validate_email(email)
+    except DjangoValidationError:
+        return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
+
+    if isinstance(request.auth, ConfigurationSession):
+        device, _ = SessionEmailOTPDevice.objects.get_or_create(session=request.auth, email=email)
+    else:
+        device, _ = UserEmailOTPDevice.objects.get_or_create(user=request.user, email=email)
+
+    try:
+        device.generate_challenge()
+    except RateLimitedError as e:
+        logger.warning("Rate limit hit for email OTP request for email %s***", email.split("@")[0][:3])
+        return JsonResponse(
+            {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": e.retry_after_seconds}, status=429
+        )
+
+    return HttpResponse()
+
+
+@api_view(["POST"])
+@authentication_classes([OAuth2Authentication, SessionTokenAuthentication])
+@waffle_switch(EMAIL_OTP_VERIFICATION)
+def verify_email_otp(request):
+    if isinstance(request.auth, ConfigurationSession) and not request.auth.is_phone_validated:
+        return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
+
+    email = request.data.get("email", "").strip()
+    otp = request.data.get("otp", "").strip()
+    if not email or not otp:
+        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+
+    try:
+        if isinstance(request.auth, ConfigurationSession):
+            device = SessionEmailOTPDevice.objects.get(session=request.auth, email=email)
+        else:
+            device = UserEmailOTPDevice.objects.get(user=request.user, email=email)
+    except (SessionEmailOTPDevice.DoesNotExist, UserEmailOTPDevice.DoesNotExist):
+        return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
+
+    if not device.verify_token(otp):
+        logger.warning("Failed email OTP verification for email %s***", email.split("@")[0][:3])
+        return JsonResponse({"error_code": ErrorCodes.INCORRECT_OTP}, status=401)
+
+    if isinstance(request.auth, ConfigurationSession):
+        request.auth.verified_email = email
+        request.auth.save()
+    else:
+        request.user.email = email
+        request.user.save()
+
     return HttpResponse()
 
 
