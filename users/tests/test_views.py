@@ -913,6 +913,17 @@ class TestConfirmBackupCodeApi:
         assert user.check_password(response_data["password"])
         assert UserKey.objects.filter(key=response_data.get("db_key")).exists()
         assert "invited_user" in response_data
+        # No email is set on the user, so the key should be omitted entirely
+        assert "email" not in response_data
+
+    def test_includes_email_when_set(self, authed_client_token, valid_token, user):
+        user.set_recovery_pin("1234")
+        user.email = "user@example.com"
+        user.save()
+
+        response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
+        assert response.status_code == 200
+        assert response.json()["email"] == "user@example.com"
 
     def test_creates_user_device_info_new_device(self, authed_client_token, user, valid_token):
         user.set_recovery_pin("1234")
@@ -2202,41 +2213,6 @@ class TestCompleteProfileCopiesEmail:
         assert response.status_code == 200
         user = ConnectUser.objects.get(phone_number=session.phone_number)
         assert user.email == expected_email
-
-
-@pytest.mark.django_db
-class TestStartConfigurationEmailField:
-    @skip_app_integrity_check
-    @patch("users.views.get_user_toggles", return_value={})
-    @pytest.mark.parametrize(
-        "email,expected",
-        [
-            ("known@example.com", "known@example.com"),
-            ("", None),
-        ],
-    )
-    def test_email_in_response_when_user_exists(self, mock_toggles, client, email, expected):
-        user = UserFactory(phone_number="+27821234567", email=email, is_active=True)
-        response = client.post(
-            reverse("start_device_configuration"),
-            data={"phone_number": str(user.phone_number)},
-            HTTP_CC_INTEGRITY_TOKEN="token",
-            HTTP_CC_REQUEST_HASH="hash",
-        )
-        assert response.status_code == 200
-        assert response.json().get("email") == expected
-
-    @skip_app_integrity_check
-    @patch("users.views.get_user_toggles", return_value={})
-    def test_email_omitted_when_no_user_exists(self, mock_toggles, client):
-        response = client.post(
-            reverse("start_device_configuration"),
-            data={"phone_number": "+27821234569"},
-            HTTP_CC_INTEGRITY_TOKEN="token",
-            HTTP_CC_REQUEST_HASH="hash",
-        )
-        assert response.status_code == 200
-        assert "email" not in response.json()
 
 
 @pytest.mark.django_db
