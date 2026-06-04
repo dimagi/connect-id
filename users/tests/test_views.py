@@ -7,23 +7,28 @@ from unittest.mock import patch
 import factory
 import pytest
 from django.http import HttpResponse, JsonResponse
-from django.urls import reverse
+from django.urls import reverse, reverse_lazy
 from django.utils.timezone import now
 from faker import Faker
 from fcm_django.models import FCMDevice
+from waffle.testutils import override_switch
 
+from flags.const import EMAIL_OTP_VERIFICATION
 from payments.models import PaymentProfile
 from services.ai.ocs import OpenChatStudio
 from test_utils.decorators import skip_app_integrity_check
 from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
+from users.exceptions import RateLimitedError
 from users.factories import (
     ConfigurationSessionFactory,
     CredentialFactory,
     PhoneDeviceFactory,
     RecoveryStatusFactory,
+    SessionEmailOTPDeviceFactory,
     SessionPhoneDeviceFactory,
     UserCredentialFactory,
     UserDeviceInfoFactory,
+    UserEmailOTPDeviceFactory,
     UserFactory,
 )
 from users.fcm_utils import create_update_device
@@ -34,8 +39,10 @@ from users.models import (
     DeviceIntegritySample,
     PhoneDevice,
     RecoveryStatus,
+    SessionEmailOTPDevice,
     SessionPhoneDevice,
     UserCredential,
+    UserEmailOTPDevice,
     UserKey,
 )
 from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
@@ -2172,15 +2179,6 @@ class TestFetchUserCounts:
 
         assert total_users_response[current_month] == 1
         assert non_invited_users_response == {}
-
-
-from django.urls import reverse_lazy  # noqa: E402
-from waffle.testutils import override_switch  # noqa: E402
-
-from flags.const import EMAIL_OTP_VERIFICATION  # noqa: E402
-from users.exceptions import RateLimitedError  # noqa: E402
-from users.factories import SessionEmailOTPDeviceFactory, UserEmailOTPDeviceFactory  # noqa: E402
-from users.models import SessionEmailOTPDevice, UserEmailOTPDevice  # noqa: E402
 
 
 @pytest.mark.django_db

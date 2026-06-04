@@ -5,7 +5,6 @@ from secrets import token_hex
 from urllib.parse import urlencode, urlparse
 
 import requests
-import waffle
 from django.conf import settings
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
@@ -27,6 +26,7 @@ from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
+from waffle.decorators import waffle_switch
 
 from flags.const import EMAIL_OTP_VERIFICATION
 from flags.utils import get_user_toggles
@@ -988,10 +988,8 @@ def confirm_session_otp(request):
 
 @api_view(["POST"])
 @authentication_classes([OAuth2Authentication, SessionTokenAuthentication])
+@waffle_switch(EMAIL_OTP_VERIFICATION)
 def send_email_otp(request):
-    if not waffle.switch_is_active(EMAIL_OTP_VERIFICATION):
-        return HttpResponse(status=404)
-
     if isinstance(request.auth, ConfigurationSession) and not request.auth.is_phone_validated:
         return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
 
@@ -1011,23 +1009,18 @@ def send_email_otp(request):
     try:
         device.generate_challenge()
     except RateLimitedError as e:
+        logger.warning("Rate limit hit for email OTP request for email %s***", email.split("@")[0][:3])
         return JsonResponse(
             {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": e.retry_after_seconds}, status=429
         )
 
-    if isinstance(request.auth, ConfigurationSession):
-        logger.info("Email OTP sent for session %s", request.auth.pk)
-    else:
-        logger.info("Email OTP sent for user %s", request.user.pk)
     return HttpResponse()
 
 
 @api_view(["POST"])
 @authentication_classes([OAuth2Authentication, SessionTokenAuthentication])
+@waffle_switch(EMAIL_OTP_VERIFICATION)
 def verify_email_otp(request):
-    if not waffle.switch_is_active(EMAIL_OTP_VERIFICATION):
-        return HttpResponse(status=404)
-
     if isinstance(request.auth, ConfigurationSession) and not request.auth.is_phone_validated:
         return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
 
@@ -1055,7 +1048,6 @@ def verify_email_otp(request):
         request.user.email = email
         request.user.save()
 
-    logger.info("Email OTP verified successfully")
     return HttpResponse()
 
 
