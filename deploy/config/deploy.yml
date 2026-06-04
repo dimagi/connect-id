@@ -15,9 +15,7 @@ servers:
     options:
       env-file: '/home/connect/www/docker.env'
     logging:
-      driver: awslogs
       options:
-        awslogs-region: 'us-east-1'
         awslogs-group: 'connect-id-web'
   celery:
     hosts:
@@ -28,9 +26,7 @@ servers:
     labels:
       traefik.enable: false
     logging:
-      driver: awslogs
       options:
-        awslogs-region: 'us-east-1'
         awslogs-group: 'connect-id-celery'
   celery-beat:
     hosts:
@@ -41,9 +37,7 @@ servers:
     labels:
       traefik.enable: false
     logging:
-      driver: awslogs
       options:
-        awslogs-region: 'us-east-1'
         awslogs-group: 'connect-id-celery'
 
 registry:
@@ -55,7 +49,6 @@ logging:
   driver: awslogs
   options:
     awslogs-region: 'us-east-1'
-    awslogs-group: 'connect-id'
 
 builder:
   multiarch: false
