@@ -388,7 +388,7 @@ class BaseEmailOTPDevice(BaseOTPDevice):
 
 
 class UserEmailOTPDevice(BaseEmailOTPDevice):
-    user = models.ForeignKey(ConnectUser, on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
 
     class Meta:
         constraints = [

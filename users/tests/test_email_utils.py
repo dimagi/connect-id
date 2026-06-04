@@ -23,3 +23,18 @@ class TestSendEmailOtpMessage:
         mock_send_mail.side_effect = SMTPException("connection refused")
         with pytest.raises(SMTPException):
             send_email_otp_message("user@example.com", "654321", 30)
+
+    @pytest.mark.parametrize(
+        "bad_email",
+        [
+            "notanemail",
+            "@nodomain.com",
+            "missingdomain@",
+            "double@@example.com",
+            "spaces in@email.com",
+        ],
+    )
+    @patch("users.email_utils.send_mail")
+    def test_invalid_email_skips_send(self, mock_send_mail, bad_email):
+        send_email_otp_message(bad_email, "123456", 30)
+        mock_send_mail.assert_not_called()
