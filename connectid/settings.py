@@ -279,6 +279,12 @@ EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.c
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Connect <noreply@commcare-connect.org>")
 EMAIL_OTP_VALIDITY_SECONDS = env.int("EMAIL_OTP_VALIDITY_SECONDS", default=1800)
 
+ANYMAIL = {
+    "AMAZON_SES_CLIENT_PARAMS": {
+        "region_name": env("AWS_DEFAULT_REGION", default="us-east-1"),
+    },
+}
+
 OAUTH2_PROVIDER = {
     "OIDC_ENABLED": True,
     "OIDC_RSA_PRIVATE_KEY": env.str("OIDC_RSA_PRIVATE_KEY", multiline=True, default=""),
