@@ -155,12 +155,12 @@ class BigQueryUploader:
             return False
         try:
             credentials = service_account.Credentials.from_service_account_info(
-                settings.GOOGLE_APPLICATION_CREDENTIALS
+                settings.BIGQUERY_GOOGLE_APPLICATION_CREDENTIALS
             )
         except GoogleAuthError:
             logger.error("Error in Google credentials configuration", exc_info=True)
             return False
-        project_id = settings.GOOGLE_APPLICATION_CREDENTIALS["project_id"]
+        project_id = settings.BIGQUERY_GOOGLE_APPLICATION_CREDENTIALS["project_id"]
         client = bigquery.Client(project=project_id, credentials=credentials)
         table_ref = f"{project_id}.{self.dataset_id}.{self.table_name}"
         job_config = bigquery.LoadJobConfig(

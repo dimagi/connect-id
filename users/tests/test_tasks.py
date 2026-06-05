@@ -97,7 +97,7 @@ def test_superset_authenticate_sets_session_headers(settings, superset_config):
 
 def test_bigquery_uploader_loads_csv(tmp_path, settings):
     settings.BIGQUERY_DATASET_ID = "my_dataset"
-    settings.GOOGLE_APPLICATION_CREDENTIALS = {"project_id": "my_project", "type": "service_account"}
+    settings.BIGQUERY_GOOGLE_APPLICATION_CREDENTIALS = {"project_id": "my_project", "type": "service_account"}
     uploader = BigQueryUploader("configuration_session_dump")
     csv_path = tmp_path / "dump.csv"
     csv_path.write_text("key,created\nabc,2024-01-01")
