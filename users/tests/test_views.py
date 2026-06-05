@@ -2263,6 +2263,14 @@ class TestSendEmailOtp:
         assert SessionEmailOTPDevice.objects.filter(session=session, email="user@example.com").exists()
         mock_challenge.assert_called_once()
 
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.UserEmailOTPDevice.generate_challenge")
+    def test_basic_auth_flow_creates_device_and_sends_otp(self, mock_challenge, auth_device, user):
+        response = auth_device.post(self.url, data={"email": "user@example.com"}, format="json")
+        assert response.status_code == 200
+        assert UserEmailOTPDevice.objects.filter(user=user, email="user@example.com").exists()
+        mock_challenge.assert_called_once()
+
 
 @pytest.mark.django_db
 class TestVerifyEmailOtp:
@@ -2318,3 +2326,13 @@ class TestVerifyEmailOtp:
         assert response.status_code == 200
         session.refresh_from_db()
         assert session.verified_email == "verified@example.com"
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.UserEmailOTPDevice.verify_token")
+    def test_basic_auth_success_sets_user_email(self, mock_verify, auth_device, user):
+        mock_verify.return_value = True
+        UserEmailOTPDeviceFactory(user=user, email="verified@example.com")
+        response = auth_device.post(self.url, data={"email": "verified@example.com", "otp": "123456"}, format="json")
+        assert response.status_code == 200
+        user.refresh_from_db()
+        assert user.email == "verified@example.com"
