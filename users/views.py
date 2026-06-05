@@ -37,7 +37,7 @@ from utils.app_integrity.exceptions import DuplicateSampleRequestError
 from utils.app_integrity.google_play_integrity import AppIntegrityService
 from utils.rest_framework import ClientProtectedResourceAuth
 
-from .auth import IssuingCredentialsAuth, SessionTokenAuthentication
+from .auth import DeviceBasicAuthentication, IssuingCredentialsAuth, SessionTokenAuthentication
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
 from .device_utils import DEVICE_RECENT_ACCESS_THRESHOLD
 from .exceptions import RateLimitedError, RecoveryPinNotSetError
@@ -992,7 +992,7 @@ def confirm_session_otp(request):
 
 
 @api_view(["POST"])
-@authentication_classes([OAuth2Authentication, SessionTokenAuthentication])
+@authentication_classes([DeviceBasicAuthentication, OAuth2Authentication, SessionTokenAuthentication])
 @waffle_switch(EMAIL_OTP_VERIFICATION)
 def send_email_otp(request):
     if isinstance(request.auth, ConfigurationSession) and not request.auth.is_phone_validated:
@@ -1023,7 +1023,7 @@ def send_email_otp(request):
 
 
 @api_view(["POST"])
-@authentication_classes([OAuth2Authentication, SessionTokenAuthentication])
+@authentication_classes([DeviceBasicAuthentication, OAuth2Authentication, SessionTokenAuthentication])
 @waffle_switch(EMAIL_OTP_VERIFICATION)
 def verify_email_otp(request):
     if isinstance(request.auth, ConfigurationSession) and not request.auth.is_phone_validated:
@@ -1047,11 +1047,19 @@ def verify_email_otp(request):
         return JsonResponse({"error_code": ErrorCodes.INCORRECT_OTP}, status=401)
 
     if isinstance(request.auth, ConfigurationSession):
-        request.auth.verified_email = email
-        request.auth.save()
+        user = ConnectUser.objects.filter(phone_number=request.auth.phone_number, is_active=True).first()
+        if not user:
+            request.auth.verified_email = email
+            request.auth.save()
+            return HttpResponse()
     else:
-        request.user.email = email
-        request.user.save()
+        user = request.user
+
+    user.email = email
+    try:
+        user.save()
+    except IntegrityError:
+        return JsonResponse({"error_code": ErrorCodes.EMAIL_ALREADY_IN_USE}, status=400)
 
     return HttpResponse()
 
