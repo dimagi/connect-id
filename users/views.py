@@ -1048,15 +1048,18 @@ def verify_email_otp(request):
 
     if isinstance(request.auth, ConfigurationSession):
         user = ConnectUser.objects.filter(phone_number=request.auth.phone_number, is_active=True).first()
-        if user:
-            user.email = email
-            user.save()
-        else:
+        if not user:
             request.auth.verified_email = email
             request.auth.save()
+            return HttpResponse()
     else:
-        request.user.email = email
-        request.user.save()
+        user = request.user
+
+    user.email = email
+    try:
+        user.save()
+    except IntegrityError:
+        return JsonResponse({"error_code": ErrorCodes.EMAIL_ALREADY_IN_USE}, status=400)
 
     return HttpResponse()
 

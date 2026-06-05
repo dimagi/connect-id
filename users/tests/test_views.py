@@ -2358,6 +2358,21 @@ class TestVerifyEmailOtp:
         inactive_user.refresh_from_db()
         assert not inactive_user.email
 
+    @pytest.mark.django_db(transaction=True)
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.UserEmailOTPDevice.verify_token")
+    def test_duplicate_active_email_returns_400(self, mock_verify, user_bearer_client, user):
+        mock_verify.return_value = True
+        UserFactory(email="taken@example.com")
+        UserEmailOTPDeviceFactory(user=user, email="taken@example.com")
+        response = user_bearer_client.post(
+            self.url, data={"email": "taken@example.com", "otp": "123456"}, format="json"
+        )
+        assert response.status_code == 400
+        assert response.json()["error_code"] == "EMAIL_ALREADY_IN_USE"
+        user.refresh_from_db()
+        assert not user.email
+
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
     @patch("users.models.UserEmailOTPDevice.verify_token")
     def test_basic_auth_success_sets_user_email(self, mock_verify, auth_device, user):
