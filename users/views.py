@@ -1047,8 +1047,13 @@ def verify_email_otp(request):
         return JsonResponse({"error_code": ErrorCodes.INCORRECT_OTP}, status=401)
 
     if isinstance(request.auth, ConfigurationSession):
-        request.auth.verified_email = email
-        request.auth.save()
+        user = ConnectUser.objects.filter(phone_number=request.auth.phone_number, is_active=True).first()
+        if user:
+            user.email = email
+            user.save()
+        else:
+            request.auth.verified_email = email
+            request.auth.save()
     else:
         request.user.email = email
         request.user.save()

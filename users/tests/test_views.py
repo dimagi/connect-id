@@ -2316,7 +2316,7 @@ class TestVerifyEmailOtp:
 
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
     @patch("users.models.SessionEmailOTPDevice.verify_token")
-    def test_session_success_sets_verified_email(self, mock_verify, session_client):
+    def test_session_success_without_active_user_sets_verified_email(self, mock_verify, session_client):
         mock_verify.return_value = True
         session = ConfigurationSessionFactory(is_phone_validated=True)
         SessionEmailOTPDeviceFactory(session=session, email="verified@example.com")
@@ -2326,6 +2326,37 @@ class TestVerifyEmailOtp:
         assert response.status_code == 200
         session.refresh_from_db()
         assert session.verified_email == "verified@example.com"
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.verify_token")
+    def test_session_success_with_active_user_updates_user_email(self, mock_verify, session_client, user):
+        mock_verify.return_value = True
+        session = ConfigurationSessionFactory(phone_number=user.phone_number, is_phone_validated=True)
+        SessionEmailOTPDeviceFactory(session=session, email="verified@example.com")
+        response = session_client(session).post(
+            self.url, data={"email": "verified@example.com", "otp": "123456"}, format="json"
+        )
+        assert response.status_code == 200
+        user.refresh_from_db()
+        assert user.email == "verified@example.com"
+        session.refresh_from_db()
+        assert not session.verified_email
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.verify_token")
+    def test_session_success_with_inactive_user_sets_verified_email(self, mock_verify, session_client):
+        mock_verify.return_value = True
+        inactive_user = UserFactory(is_active=False)
+        session = ConfigurationSessionFactory(phone_number=inactive_user.phone_number, is_phone_validated=True)
+        SessionEmailOTPDeviceFactory(session=session, email="verified@example.com")
+        response = session_client(session).post(
+            self.url, data={"email": "verified@example.com", "otp": "123456"}, format="json"
+        )
+        assert response.status_code == 200
+        session.refresh_from_db()
+        assert session.verified_email == "verified@example.com"
+        inactive_user.refresh_from_db()
+        assert not inactive_user.email
 
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
     @patch("users.models.UserEmailOTPDevice.verify_token")
