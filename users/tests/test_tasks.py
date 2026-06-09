@@ -85,9 +85,10 @@ def test_authenticate_sets_session_headers(settings, superset_config):
     settings.SUPERSET_UPLOAD_CONFIG = superset_config
     exporter = ConnectUserSupersetExporter()
 
-    with mock.patch.object(exporter, "_login", return_value="token") as mock_login, mock.patch.object(
-        exporter, "_get_csrf_token", return_value="csrf-token"
-    ) as mock_csrf:
+    with (
+        mock.patch.object(exporter, "_login", return_value="token") as mock_login,
+        mock.patch.object(exporter, "_get_csrf_token", return_value="csrf-token") as mock_csrf,
+    ):
         exporter.authenticate()
 
     mock_login.assert_called_once()
