@@ -10,7 +10,6 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.1/ref/settings/
 """
 
-import json
 import logging
 from pathlib import Path
 
@@ -280,6 +279,12 @@ EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.c
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Connect <noreply@commcare-connect.org>")
 EMAIL_OTP_VALIDITY_SECONDS = env.int("EMAIL_OTP_VALIDITY_SECONDS", default=1800)
 
+ANYMAIL = {
+    "AMAZON_SES_CLIENT_PARAMS": {
+        "region_name": env("AWS_DEFAULT_REGION", default="us-east-1"),
+    },
+}
+
 OAUTH2_PROVIDER = {
     "OIDC_ENABLED": True,
     "OIDC_RSA_PRIVATE_KEY": env.str("OIDC_RSA_PRIVATE_KEY", multiline=True, default=""),
@@ -312,13 +317,27 @@ if FCM_PRIVATE_KEY:
     default_app = initialize_app(credential=creds)
 
 
+GOOGLE_APPLICATION_CREDENTIALS = {
+    "type": "service_account",
+    "project_id": env("GOOGLE_PROJECT_ID", default=""),
+    "private_key_id": env("GOOGLE_PRIVATE_KEY_ID", default=""),
+    "private_key": env.str("GOOGLE_PRIVATE_KEY", multiline=True, default=""),
+    "client_email": env("GOOGLE_CLIENT_EMAIL", default=""),
+    "client_id": env("GOOGLE_CLIENT_ID", default=""),
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "client_x509_cert_url": env("GOOGLE_CLIENT_X509_CERT_URL", default=""),
+    "universe_domain": "googleapis.com",
+}
+
 # Bucket where user photos are stored on S3
 AWS_S3_PHOTO_BUCKET_NAME = env("AWS_S3_PHOTO_BUCKET_NAME", default="personalid-user-photos")
 
 # Open Chat Studio (OCS) configuration
 OCS_CONFIG = {
     "api_key": env("OCS_API_KEY", default=""),
-    "api_base_url": "https://chatbots.dimagi.com/api",
+    "api_base_url": "https://www.openchatstudio.com/api",
     "bots": {
         "cultural_name_similarity": env("OCS_CULTURAL_NAME_BOT_ID", default=""),
     },
@@ -345,14 +364,6 @@ WAFFLE_CREATE_MISSING_SWITCHES = True
 # Google Analytics settings
 GA_API_SECRET = env("GA_API_SECRET", default="")
 FIREBASE_APP_ID = env("FIREBASE_APP_ID", default="")
-
-# Bigquery upload settings
-_google_credentials_json = env("GOOGLE_CREDENTIALS_JSON", default="")
-GOOGLE_APPLICATION_CREDENTIALS = json.loads(_google_credentials_json) if _google_credentials_json else {}
-BIGQUERY_DATASET_ID = env("BIGQUERY_DATASET_ID", default="")
-BIGQUERY_CONFIGURATION_SESSION_TABLE = env(
-    "BIGQUERY_CONFIGURATION_SESSION_TABLE", default="personalid_configuration_session"
-)
 
 # Superset CSV upload settings
 SUPERSET_UPLOAD_CONFIG = {
