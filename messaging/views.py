@@ -131,6 +131,9 @@ class CreateChannelView(APIView):
         channel, created = Channel.objects.get_or_create(
             server=server, connect_user=user, channel_source=channel_source, defaults={"channel_name": channel_name}
         )
+        if not created and channel_name and channel.channel_name != channel_name:
+            channel.channel_name = channel_name
+            channel.save(update_fields=["channel_name"])
         response_dict = {"channel_id": str(channel.channel_id), "consent": channel.user_consent}
         if created:
             message = NotificationData(
@@ -140,7 +143,7 @@ class CreateChannelView(APIView):
                     "body": f"A new messaging channel is available from {channel.visible_name}, press here to view",
                     "key_url": str(server.key_url),
                     "action": CCC_MESSAGE_ACTION,
-                    "channel_source": channel_source,
+                    "channel_source": channel.visible_name,
                     "channel_id": str(channel.channel_id),
                     "consent": str(channel.user_consent),
                     "channel_name": channel.visible_name,
