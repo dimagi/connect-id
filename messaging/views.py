@@ -128,12 +128,11 @@ class CreateChannelView(APIView):
         channel_name = data.get("channel_name")
         server = get_current_message_server(request)
         user = get_object_or_404(ConnectUser, username__iexact=connect_id)
-        channel, created = Channel.objects.get_or_create(
-            server=server, connect_user=user, channel_source=channel_source, defaults={"channel_name": channel_name}
+        # only update channel_name if one was provided so an absent name doesn't wipe a stored one
+        defaults = {"channel_name": channel_name} if channel_name else {}
+        channel, created = Channel.objects.update_or_create(
+            server=server, connect_user=user, channel_source=channel_source, defaults=defaults
         )
-        if not created and channel_name and channel.channel_name != channel_name:
-            channel.channel_name = channel_name
-            channel.save(update_fields=["channel_name"])
         response_dict = {"channel_id": str(channel.channel_id), "consent": channel.user_consent}
         if created:
             message = NotificationData(
