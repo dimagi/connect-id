@@ -674,9 +674,6 @@ class GetDemoUsers(ClientProtectedResourceMixin, View):
         )
 
         demo_users = list(demo_phone_devices) + list(demo_connect_users)
-        # phonenumber-field 8 returns PhoneNumber objects from .values(); coerce to str for JSON.
-        for demo_user in demo_users:
-            demo_user["phone_number"] = str(demo_user["phone_number"])
         sorted_demo_users = sorted(
             demo_users,
             key=lambda x: x["phone_number"],
