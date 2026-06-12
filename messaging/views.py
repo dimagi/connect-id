@@ -142,6 +142,8 @@ class CreateChannelView(APIView):
                     "body": f"A new messaging channel is available from {channel.visible_name}, press here to view",
                     "key_url": str(server.key_url),
                     "action": CCC_MESSAGE_ACTION,
+                    # Mobile uses 'channel_source' for display.
+                    # See https://dimagi.atlassian.net/browse/CCCT-2509
                     "channel_source": channel.visible_name,
                     "channel_id": str(channel.channel_id),
                     "consent": str(channel.user_consent),
