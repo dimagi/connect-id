@@ -2,17 +2,27 @@
 
 ## Steps to Set Up the Project Locally:
 
-1. **Create and activate a Python virtual environment using Python 3.11:**
+1. **Install [uv](https://docs.astral.sh/uv/) to manage Python and dependencies:**
 
    ```bash
-   python3.11 -m venv <virtual-env-path>
-   source <virtual-env-path>/bin/activate  # On Windows, use <virtual-env-path>\Scripts\activate
+   curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-2. **Install the required dependencies:**
+2. **Create the virtual environment and install dependencies (including dev):**
 
    ```bash
-   pip install -r requirements-dev.txt
+   uv sync
+   ```
+
+   This creates a virtual environment in `.venv` (using Python 3.11) and installs
+   all dependencies from `uv.lock`. Activate it with `source .venv/bin/activate`,
+   or prefix commands with `uv run` (e.g. `uv run ./manage.py runserver`).
+
+   To add a new dependency:
+
+   ```bash
+   uv add <pkg>           # runtime dependency
+   uv add --dev <pkg>     # dev-only dependency
    ```
 
 3. **Install Git hooks:**

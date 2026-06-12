@@ -8,9 +8,14 @@ Django REST API backend for personal identity and digital credential management,
 # Dev setup
 cp .env_template .env              # then fill in values
 docker compose up                  # PostgreSQL on :5433, Redis on :6379
-pip install -r requirements-dev.txt
-./manage.py migrate
-./manage.py runserver
+uv sync                            # create .venv and install deps (incl. dev) from uv.lock
+uv run ./manage.py migrate         # or activate: source .venv/bin/activate
+uv run ./manage.py runserver
+
+# Dependencies (uv)
+uv add <pkg>                       # add a runtime dependency
+uv add --dev <pkg>                 # add a dev dependency
+uv lock                            # re-resolve uv.lock after editing pyproject.toml
 
 # Tests
 pytest                             # all tests (uses --reuse-db by default)
