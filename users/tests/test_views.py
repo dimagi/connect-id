@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import factory
 import pytest
+import requests
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse, reverse_lazy
 from django.utils.timezone import now
@@ -1508,6 +1509,40 @@ class TestStartConfigurationView:
         token = response.json().get("token")
         session = ConfigurationSession.objects.get(key=token)
         assert session.device == "Google Pixel 7"
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            requests.exceptions.Timeout("upstream timed out"),
+            requests.exceptions.ConnectionError("upstream unreachable"),
+        ],
+    )
+    @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
+    def test_returns_503_when_invite_check_fails(self, check_number_mock, exc, client):
+        check_number_mock.side_effect = exc
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": Faker().phone_number(), "gps_location": "1.2 3.4"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.status_code == 503
+        assert response.json() == {"error_code": AppIntegrityErrorCodes.CONFIGURATION_TEMPORARILY_UNAVAILABLE}
+
+    @skip_app_integrity_check
+    @patch("users.models.ConfigurationSession.country_code")
+    @patch("users.views.get_user_toggles")
+    def test_returns_503_when_toggle_fetch_fails(self, mock_get_toggles, mock_country_code, client):
+        mock_country_code.return_value = "US"
+        mock_get_toggles.side_effect = requests.exceptions.ConnectionError("upstream unreachable")
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": Faker().phone_number(), "gps_location": "1.2 3.4"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.status_code == 503
+        assert response.json() == {"error_code": AppIntegrityErrorCodes.CONFIGURATION_TEMPORARILY_UNAVAILABLE}
 
 
 @pytest.mark.django_db
