@@ -8,6 +8,8 @@
 *.log*
 /staticfiles/
 /.idea
+/.venv/
+/venv/
 /.direnv
 /.envrc
 .coverage

@@ -1,12 +1,13 @@
-# pull official base image
-FROM python:3.11.4-slim-bookworm
+# pull official base image (includes uv)
+FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim
 
 
 # set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONUSERBASE=/app \
-    PATH=/app/bin:$PATH
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PATH=/app/.venv/bin:$PATH
 
 
 WORKDIR /app
@@ -18,13 +19,12 @@ RUN apt-get update && apt-get -y install libpq-dev gcc curl
 RUN addgroup --system django \
     && adduser --system --ingroup django django
 
-# install dependencies
-RUN pip install --upgrade pip
-RUN /bin/bash
+# install dependencies (cached unless pyproject.toml / uv.lock change)
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 # copy project
 COPY --chown=django:django . /app/
-RUN pip install -r requirements.txt
 
 COPY ./docker/* /
 RUN chmod +x /entrypoint /start*
