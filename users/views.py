@@ -32,6 +32,7 @@ from flags.const import EMAIL_OTP_VERIFICATION
 from flags.utils import get_user_toggles
 from services.ai.ocs import OpenChatStudio
 from utils import get_ip, get_sms_sender, send_sms
+from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
 from utils.app_integrity.decorators import require_app_integrity
 from utils.app_integrity.exceptions import DuplicateSampleRequestError
 from utils.app_integrity.google_play_integrity import AppIntegrityService
@@ -119,7 +120,7 @@ def start_device_configuration(request):
     try:
         toggles = get_user_toggles(phone_number=data["phone_number"])
     except requests.exceptions.RequestException:
-        return JsonResponse({"error_code": ErrorCodes.CONFIGURATION_TEMPORARILY_UNAVAILABLE}, status=503)
+        return JsonResponse({"error_code": AppIntegrityErrorCodes.CONFIGURATION_TEMPORARILY_UNAVAILABLE}, status=503)
     response_data = {
         "required_lock": ConnectUser.get_device_security_requirement(data["phone_number"], request.invited_user),
         "demo_user": is_demo_user,

@@ -1542,7 +1542,7 @@ class TestStartConfigurationView:
             HTTP_CC_REQUEST_HASH="hash",
         )
         assert response.status_code == 503
-        assert response.json() == {"error_code": ErrorCodes.CONFIGURATION_TEMPORARILY_UNAVAILABLE}
+        assert response.json() == {"error_code": AppIntegrityErrorCodes.CONFIGURATION_TEMPORARILY_UNAVAILABLE}
 
 
 @pytest.mark.django_db
