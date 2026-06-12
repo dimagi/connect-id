@@ -9,6 +9,7 @@ https://docs.djangoproject.com/en/4.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.1/ref/settings/
 """
+
 import logging
 from pathlib import Path
 
@@ -44,6 +45,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django_celery_beat",
     "phonenumber_field",
     "oauth2_provider",
     "rest_framework",
@@ -52,6 +54,7 @@ INSTALLED_APPS = [
     "fcm_django",
     "django.contrib.sites",
     "waffle",
+    "anymail",
 ] + LOCAL_APPS
 
 MIDDLEWARE = [
@@ -225,6 +228,7 @@ CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
 CELERY_TASK_EAGER_PROPAGATES = env.bool("CELERY_TASK_EAGER_PROPAGATES", default=False)
 
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
 if SENTRY_DSN:
     ignore_logger("django.security.DisallowedHost")
@@ -270,6 +274,16 @@ CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default=None)
 TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default=None)
 TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default=None)
+
+EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Connect <noreply@commcare-connect.org>")
+EMAIL_OTP_VALIDITY_SECONDS = env.int("EMAIL_OTP_VALIDITY_SECONDS", default=1800)
+
+ANYMAIL = {
+    "AMAZON_SES_CLIENT_PARAMS": {
+        "region_name": env("AWS_DEFAULT_REGION", default="us-east-1"),
+    },
+}
 
 OAUTH2_PROVIDER = {
     "OIDC_ENABLED": True,
@@ -323,7 +337,7 @@ AWS_S3_PHOTO_BUCKET_NAME = env("AWS_S3_PHOTO_BUCKET_NAME", default="personalid-u
 # Open Chat Studio (OCS) configuration
 OCS_CONFIG = {
     "api_key": env("OCS_API_KEY", default=""),
-    "api_base_url": "https://chatbots.dimagi.com/api",
+    "api_base_url": "https://www.openchatstudio.com/api",
     "bots": {
         "cultural_name_similarity": env("OCS_CULTURAL_NAME_BOT_ID", default=""),
     },

@@ -5,20 +5,29 @@ image: connectid
 
 ssh:
   user: connect
+  proxy_command: "aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p'"
 
 # Deploy to these servers.
 servers:
   web:
     hosts:
-      - 54.160.64.28
+      - i-01d4755cad044dcae
     options:
       env-file: '/home/connect/www/docker.env'
   celery:
     hosts:
-      - 54.160.64.28
+      - i-090b0c432298694c5
     options:
       env-file: '/home/connect/www/docker.env'
     cmd: /start_celery
+    labels:
+      traefik.enable: false
+  celery-beat:
+    hosts:
+      - i-090b0c432298694c5
+    options:
+      env-file: '/home/connect/www/docker.env'
+    cmd: /start_celery_beat
     labels:
       traefik.enable: false
 

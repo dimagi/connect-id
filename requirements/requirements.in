@@ -1,7 +1,9 @@
 celery
 Django
+django-anymail[amazon-ses]
 django-axes[ipware]
 django-allow-cidr
+django-celery-beat
 django-oauth-toolkit
 django-otp
 django-phonenumber-field

@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import AbstractUser, AnonymousUser
 from django.contrib.sites.models import Site
-from django.db import models
+from django.db import models, transaction
 from django.db.models.functions import Lower
 from django.urls import reverse
 from django.utils.timezone import now
@@ -19,7 +19,7 @@ from geopy.geocoders import MapBox
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 from phonenumber_field.modelfields import PhoneNumberField
 
-from users.exceptions import RecoveryPinNotSetError
+from users.exceptions import RateLimitedError, RecoveryPinNotSetError
 from users.services import get_user_photo_base64
 from utils import get_sms_sender, send_sms
 
@@ -114,6 +114,11 @@ class ConnectUser(AbstractUser):
                 name="phone_number_active_user",
             ),
             models.UniqueConstraint(Lower("username"), name="unique_lower_user"),
+            models.UniqueConstraint(
+                fields=["email"],
+                condition=models.Q(is_active=True) & ~models.Q(email=""),
+                name="email_active_user",
+            ),
         ]
 
 
@@ -134,8 +139,9 @@ class UserKey(models.Model):
         return user_key
 
 
-class BasePhoneDevice(SideChannelDevice):
-    phone_number = PhoneNumberField()
+class BaseOTPDevice(SideChannelDevice):
+    """Abstract base for OTP devices with exponential backoff."""
+
     otp_last_sent = models.DateTimeField(null=True, blank=True)
     attempts = models.IntegerField(default=1)
 
@@ -144,29 +150,59 @@ class BasePhoneDevice(SideChannelDevice):
 
     @property
     def is_otp_close_to_expiry(self):
+        if self.valid_until is None:
+            return True  # no token yet — regenerate immediately
         return self.valid_until - now() <= timedelta(minutes=5)
 
-    def generate_challenge(self):
-        # generate and send new token if the old token is valid for less than 5 minutes
-        # set he otp_last_sent to None to send the new OTP immediately
-        if self.is_otp_close_to_expiry:
-            self.otp_last_sent = None
-            self.generate_token(valid_secs=1800)
-            self.attempts = 0
-        message = f"Your verification token from commcare connect is {self.token}"
-        # backoff attempts exponentially
-        wait_time = 2**self.attempts
-        if self.otp_last_sent is None or (
-            self.otp_last_sent and now() - self.otp_last_sent >= timedelta(minutes=wait_time)
-        ):
-            if not self.phone_number.raw_input.startswith(TEST_NUMBER_PREFIX):
-                sender = get_sms_sender(self.phone_number.country_code)
-                send_sms(self.phone_number.as_e164, message, sender)
-            self.otp_last_sent = now()
-            self.attempts += 1
-            self.save()
+    def _send_otp(self):
+        raise NotImplementedError
 
-        return message
+    def _attempt_send(self, valid_secs):
+        with transaction.atomic():
+            # Lock this device's row and read its persisted state under the lock,
+            # so two concurrent generate_challenge() calls cannot both pass the
+            # resend gate.
+            locked = self.__class__.objects.select_for_update().get(pk=self.pk)
+            self.otp_last_sent = locked.otp_last_sent
+            self.attempts = locked.attempts
+            self.token = locked.token
+            self.valid_until = locked.valid_until
+            if self.is_otp_close_to_expiry:
+                self.otp_last_sent = None
+                self.generate_token(valid_secs=valid_secs)
+                self.attempts = 0
+            wait_time = 2**self.attempts
+            if self.otp_last_sent is None or now() - self.otp_last_sent >= timedelta(minutes=wait_time):
+                self._send_otp()
+                self.otp_last_sent = now()
+                self.attempts += 1
+                self.save()
+            else:
+                retry_after = int((timedelta(minutes=wait_time) - (now() - self.otp_last_sent)).total_seconds())
+                raise RateLimitedError(retry_after)
+
+
+class BasePhoneDevice(BaseOTPDevice):
+    phone_number = PhoneNumberField()
+
+    class Meta:
+        abstract = True
+
+    @property
+    def otp_message(self):
+        return f"Your verification token from commcare connect is {self.token}"
+
+    def _send_otp(self):
+        if not self.phone_number.raw_input.startswith(TEST_NUMBER_PREFIX):
+            sender = get_sms_sender(self.phone_number.country_code)
+            send_sms(self.phone_number.as_e164, self.otp_message, sender)
+
+    def generate_challenge(self):
+        try:
+            self._attempt_send(valid_secs=1800)
+        except RateLimitedError:
+            pass
+        return self.otp_message
 
 
 class PhoneDevice(BasePhoneDevice):
@@ -273,6 +309,7 @@ class ConfigurationSession(models.Model):
     invited_user = models.BooleanField(default=False)
     device_id = models.CharField(max_length=255, blank=True, null=True)
     device = models.CharField(max_length=255, blank=True, null=True)
+    verified_email = models.EmailField(blank=True, null=True)
 
     def __str__(self):
         return self.key
@@ -332,6 +369,42 @@ class SessionPhoneDevice(BasePhoneDevice):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["phone_number", "session"], name="phone_number_session")]
+
+
+class BaseEmailOTPDevice(BaseOTPDevice):
+    email = models.EmailField()
+
+    class Meta:
+        abstract = True
+
+    def _send_otp(self):
+        from users.email_utils import send_email_otp_message
+
+        validity_minutes = settings.EMAIL_OTP_VALIDITY_SECONDS // 60
+        send_email_otp_message(self.email, self.token, validity_minutes)
+
+    def generate_challenge(self):
+        self._attempt_send(valid_secs=settings.EMAIL_OTP_VALIDITY_SECONDS)
+
+
+class UserEmailOTPDevice(BaseEmailOTPDevice):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "email"], name="user_email_otp_device_user_email"),
+        ]
+
+
+class SessionEmailOTPDevice(BaseEmailOTPDevice):
+    session = models.ForeignKey(ConfigurationSession, on_delete=models.CASCADE)
+    # non-nullable on the base SideChannelDevice — override to nullable for session-owned devices
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["session", "email"], name="session_email_otp_device_session_email"),
+        ]
 
 
 class DeviceIntegritySample(models.Model):
