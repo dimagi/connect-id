@@ -67,9 +67,10 @@ def test_superset_uploader_posts_csv(tmp_path, settings, superset_config):
     csv_path = tmp_path / "dump.csv"
     csv_path.write_text("content")
 
-    with mock.patch.object(uploader, "_authenticate"), mock.patch.object(
-        uploader, "_request", return_value={}
-    ) as mock_request:
+    with (
+        mock.patch.object(uploader, "_authenticate"),
+        mock.patch.object(uploader, "_request", return_value={}) as mock_request,
+    ):
         uploader.upload(csv_path)
 
     assert mock_request.call_count == 1
@@ -106,8 +107,9 @@ def test_bigquery_uploader_loads_csv(tmp_path, settings):
     mock_client = mock.Mock()
     mock_client.load_table_from_file.return_value = mock_job
 
-    with mock.patch("users.tasks.service_account.Credentials.from_service_account_info"), mock.patch(
-        "users.tasks.bigquery.Client", return_value=mock_client
+    with (
+        mock.patch("users.tasks.service_account.Credentials.from_service_account_info"),
+        mock.patch("users.tasks.bigquery.Client", return_value=mock_client),
     ):
         uploader.upload(csv_path)
 
