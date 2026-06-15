@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.1/ref/settings/
 """
 
+import json
 import logging
 from pathlib import Path
 
@@ -316,7 +317,6 @@ if FCM_PRIVATE_KEY:
     creds = credentials.Certificate(FCM_CREDENTIALS)
     default_app = initialize_app(credential=creds)
 
-
 GOOGLE_APPLICATION_CREDENTIALS = {
     "type": "service_account",
     "project_id": env("GOOGLE_PROJECT_ID", default=""),
@@ -364,6 +364,14 @@ WAFFLE_CREATE_MISSING_SWITCHES = True
 # Google Analytics settings
 GA_API_SECRET = env("GA_API_SECRET", default="")
 FIREBASE_APP_ID = env("FIREBASE_APP_ID", default="")
+
+# Bigquery upload settings
+_google_credentials_json = env("BIGQUERY_GOOGLE_CREDENTIALS_JSON", default="")
+BIGQUERY_GOOGLE_APPLICATION_CREDENTIALS = json.loads(_google_credentials_json) if _google_credentials_json else {}
+BIGQUERY_DATASET_ID = env("BIGQUERY_DATASET_ID", default="")
+BIGQUERY_CONFIGURATION_SESSION_TABLE = env(
+    "BIGQUERY_CONFIGURATION_SESSION_TABLE", default="personalid_configuration_session"
+)
 
 # Superset CSV upload settings
 SUPERSET_UPLOAD_CONFIG = {
