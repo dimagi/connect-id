@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import factory
 import pytest
+import requests
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse, reverse_lazy
 from django.utils.timezone import now
@@ -1509,6 +1510,40 @@ class TestStartConfigurationView:
         session = ConfigurationSession.objects.get(key=token)
         assert session.device == "Google Pixel 7"
 
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            requests.exceptions.Timeout("upstream timed out"),
+            requests.exceptions.ConnectionError("upstream unreachable"),
+        ],
+    )
+    @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
+    def test_returns_503_when_invite_check_fails(self, check_number_mock, exc, client):
+        check_number_mock.side_effect = exc
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": Faker().phone_number(), "gps_location": "1.2 3.4"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.status_code == 503
+        assert response.json() == {"error_code": AppIntegrityErrorCodes.CONFIGURATION_TEMPORARILY_UNAVAILABLE}
+
+    @skip_app_integrity_check
+    @patch("users.models.ConfigurationSession.country_code")
+    @patch("users.views.get_user_toggles")
+    def test_returns_503_when_toggle_fetch_fails(self, mock_get_toggles, mock_country_code, client):
+        mock_country_code.return_value = "US"
+        mock_get_toggles.side_effect = requests.exceptions.ConnectionError("upstream unreachable")
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": Faker().phone_number(), "gps_location": "1.2 3.4"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.status_code == 503
+        assert response.json() == {"error_code": AppIntegrityErrorCodes.CONFIGURATION_TEMPORARILY_UNAVAILABLE}
+
 
 @pytest.mark.django_db
 class TestCheckUserSimilarity:
@@ -2263,6 +2298,14 @@ class TestSendEmailOtp:
         assert SessionEmailOTPDevice.objects.filter(session=session, email="user@example.com").exists()
         mock_challenge.assert_called_once()
 
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.UserEmailOTPDevice.generate_challenge")
+    def test_basic_auth_flow_creates_device_and_sends_otp(self, mock_challenge, auth_device, user):
+        response = auth_device.post(self.url, data={"email": "user@example.com"}, format="json")
+        assert response.status_code == 200
+        assert UserEmailOTPDevice.objects.filter(user=user, email="user@example.com").exists()
+        mock_challenge.assert_called_once()
+
 
 @pytest.mark.django_db
 class TestVerifyEmailOtp:
@@ -2308,7 +2351,7 @@ class TestVerifyEmailOtp:
 
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
     @patch("users.models.SessionEmailOTPDevice.verify_token")
-    def test_session_success_sets_verified_email(self, mock_verify, session_client):
+    def test_session_success_without_active_user_sets_verified_email(self, mock_verify, session_client):
         mock_verify.return_value = True
         session = ConfigurationSessionFactory(is_phone_validated=True)
         SessionEmailOTPDeviceFactory(session=session, email="verified@example.com")
@@ -2318,3 +2361,59 @@ class TestVerifyEmailOtp:
         assert response.status_code == 200
         session.refresh_from_db()
         assert session.verified_email == "verified@example.com"
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.verify_token")
+    def test_session_success_with_active_user_updates_user_email(self, mock_verify, session_client, user):
+        mock_verify.return_value = True
+        session = ConfigurationSessionFactory(phone_number=user.phone_number, is_phone_validated=True)
+        SessionEmailOTPDeviceFactory(session=session, email="verified@example.com")
+        response = session_client(session).post(
+            self.url, data={"email": "verified@example.com", "otp": "123456"}, format="json"
+        )
+        assert response.status_code == 200
+        user.refresh_from_db()
+        assert user.email == "verified@example.com"
+        session.refresh_from_db()
+        assert not session.verified_email
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.verify_token")
+    def test_session_success_with_inactive_user_sets_verified_email(self, mock_verify, session_client):
+        mock_verify.return_value = True
+        inactive_user = UserFactory(is_active=False)
+        session = ConfigurationSessionFactory(phone_number=inactive_user.phone_number, is_phone_validated=True)
+        SessionEmailOTPDeviceFactory(session=session, email="verified@example.com")
+        response = session_client(session).post(
+            self.url, data={"email": "verified@example.com", "otp": "123456"}, format="json"
+        )
+        assert response.status_code == 200
+        session.refresh_from_db()
+        assert session.verified_email == "verified@example.com"
+        inactive_user.refresh_from_db()
+        assert not inactive_user.email
+
+    @pytest.mark.django_db(transaction=True)
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.UserEmailOTPDevice.verify_token")
+    def test_duplicate_active_email_returns_400(self, mock_verify, user_bearer_client, user):
+        mock_verify.return_value = True
+        UserFactory(email="taken@example.com")
+        UserEmailOTPDeviceFactory(user=user, email="taken@example.com")
+        response = user_bearer_client.post(
+            self.url, data={"email": "taken@example.com", "otp": "123456"}, format="json"
+        )
+        assert response.status_code == 400
+        assert response.json()["error_code"] == "EMAIL_ALREADY_IN_USE"
+        user.refresh_from_db()
+        assert not user.email
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.UserEmailOTPDevice.verify_token")
+    def test_basic_auth_success_sets_user_email(self, mock_verify, auth_device, user):
+        mock_verify.return_value = True
+        UserEmailOTPDeviceFactory(user=user, email="verified@example.com")
+        response = auth_device.post(self.url, data={"email": "verified@example.com", "otp": "123456"}, format="json")
+        assert response.status_code == 200
+        user.refresh_from_db()
+        assert user.email == "verified@example.com"

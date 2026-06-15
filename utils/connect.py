@@ -1,11 +1,18 @@
+import logging
+
 import requests
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
+
+CONNECT_REQUEST_TIMEOUT = 15
 
 
 def check_number_for_existing_invites(phone_number):
     url = settings.CONNECT_INVITED_USER_URL
     auth = (settings.COMMCARE_CONNECT_CLIENT_ID, settings.COMMCARE_CONNECT_CLIENT_SECRET)
-    response = requests.get(url, auth=auth, params={"phone_number": phone_number}, timeout=60)
+    response = requests.get(url, auth=auth, params={"phone_number": phone_number}, timeout=CONNECT_REQUEST_TIMEOUT)
+    response.raise_for_status()
     data = response.json()
     return data.get("invited", False)
 
@@ -29,8 +36,13 @@ def get_connect_toggles(username=None, phone_number=None):
         params["username"] = username
     elif phone_number is not None:
         params["phone_number"] = phone_number
-    response = requests.get(url, auth=auth, params=params, timeout=60)
-    data = response.json()
+    try:
+        response = requests.get(url, auth=auth, params=params, timeout=CONNECT_REQUEST_TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
+    except requests.exceptions.RequestException:
+        logger.exception("Failed to fetch toggles from connect.dimagi.com")
+        raise
     return {
         toggle["name"]: {
             "active": toggle["active"],

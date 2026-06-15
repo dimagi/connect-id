@@ -3,7 +3,7 @@ from fcm_django.models import FCMDevice
 from firebase_admin import messaging
 from firebase_admin.exceptions import FirebaseError
 
-from messaging.models import Notification
+from messaging.models import Notification, NotificationTypes
 from messaging.serializers import NotificationData
 from users.models import ConnectUser
 
@@ -21,11 +21,21 @@ def send_bulk_notification(message: NotificationData):
     missing_users = set(message.usernames) - {u.username for u in users}
 
     for user in users:
-        notification = Notification(
-            user=user,
-            json={"title": message.title, "body": message.body, "data": message.data},
-        )
-        notification.save()
+        data = message.data or {}
+        is_messaging = data.get("notification_type") == NotificationTypes.MESSAGING.value
+        message_id = data.get("message_id") if is_messaging else None
+
+        if message_id:
+            notification, _ = Notification.objects.get_or_create(
+                message_id=message_id,
+                defaults={"user": user, "json": {"title": message.title, "body": message.body, "data": data}},
+            )
+        else:
+            notification = Notification(
+                user=user,
+                json={"title": message.title, "body": message.body, "data": data},
+            )
+            notification.save()
 
         fcm_device = user.active_devices[0] if user.active_devices else None
 

@@ -280,6 +280,12 @@ EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.c
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Connect <noreply@commcare-connect.org>")
 EMAIL_OTP_VALIDITY_SECONDS = env.int("EMAIL_OTP_VALIDITY_SECONDS", default=1800)
 
+ANYMAIL = {
+    "AMAZON_SES_CLIENT_PARAMS": {
+        "region_name": env("AWS_DEFAULT_REGION", default="us-east-1"),
+    },
+}
+
 OAUTH2_PROVIDER = {
     "OIDC_ENABLED": True,
     "OIDC_RSA_PRIVATE_KEY": env.str("OIDC_RSA_PRIVATE_KEY", multiline=True, default=""),
@@ -331,7 +337,7 @@ AWS_S3_PHOTO_BUCKET_NAME = env("AWS_S3_PHOTO_BUCKET_NAME", default="personalid-u
 # Open Chat Studio (OCS) configuration
 OCS_CONFIG = {
     "api_key": env("OCS_API_KEY", default=""),
-    "api_base_url": "https://chatbots.dimagi.com/api",
+    "api_base_url": "https://www.openchatstudio.com/api",
     "bots": {
         "cultural_name_similarity": env("OCS_CULTURAL_NAME_BOT_ID", default=""),
     },
