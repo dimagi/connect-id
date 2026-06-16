@@ -145,10 +145,24 @@ class SupersetUploader:
         return response.json()
 
 
+CONFIGURATION_SESSION_BQ_SCHEMA = [
+    bigquery.SchemaField("key", "STRING"),
+    bigquery.SchemaField("created", "TIMESTAMP"),
+    bigquery.SchemaField("expires", "TIMESTAMP"),
+    bigquery.SchemaField("phone_number", "STRING"),
+    bigquery.SchemaField("is_phone_validated", "BOOL"),
+    bigquery.SchemaField("gps_location", "STRING"),
+    bigquery.SchemaField("invited_user", "BOOL"),
+    bigquery.SchemaField("device_id", "STRING"),
+    bigquery.SchemaField("device", "STRING"),
+]
+
+
 class BigQueryUploader:
-    def __init__(self, table_name):
+    def __init__(self, table_name, schema=None):
         self.dataset_id = settings.BIGQUERY_DATASET_ID
         self.table_name = table_name
+        self.schema = schema
 
     def upload(self, csv_path: Path) -> bool:
         if not self.dataset_id:
@@ -164,7 +178,8 @@ class BigQueryUploader:
         client = bigquery.Client(project=project_id, credentials=credentials)
         table_ref = f"{project_id}.{self.dataset_id}.{self.table_name}"
         job_config = bigquery.LoadJobConfig(
-            autodetect=True,
+            autodetect=self.schema is None,
+            schema=self.schema,
             write_disposition="WRITE_TRUNCATE",
             source_format=bigquery.SourceFormat.CSV,
             skip_leading_rows=1,
@@ -181,7 +196,7 @@ def upload_configuration_sessions():
     with CSVGenerator(
         ConfigurationSession.objects.all(), CONFIGURATION_SESSION_DUMP_FIELDS, max_rows=500000
     ) as csv_path:
-        bq_uploaded = BigQueryUploader(table_name).upload(csv_path)
+        bq_uploaded = BigQueryUploader(table_name, schema=CONFIGURATION_SESSION_BQ_SCHEMA).upload(csv_path)
         superset_uploaded = SupersetUploader(table_name).upload(csv_path)
     logger.info("ConfigurationSession upload finished (bigquery=%s, superset=%s)", bq_uploaded, superset_uploaded)
 
