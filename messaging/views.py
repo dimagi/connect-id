@@ -128,8 +128,10 @@ class CreateChannelView(APIView):
         channel_name = data.get("channel_name")
         server = get_current_message_server(request)
         user = get_object_or_404(ConnectUser, username__iexact=connect_id)
-        channel, created = Channel.objects.get_or_create(
-            server=server, connect_user=user, channel_source=channel_source, defaults={"channel_name": channel_name}
+        # only update channel_name if one was provided so an absent name doesn't wipe a stored one
+        defaults = {"channel_name": channel_name} if channel_name else {}
+        channel, created = Channel.objects.update_or_create(
+            server=server, connect_user=user, channel_source=channel_source, defaults=defaults
         )
         response_dict = {"channel_id": str(channel.channel_id), "consent": channel.user_consent}
         if created:
@@ -140,7 +142,9 @@ class CreateChannelView(APIView):
                     "body": f"A new messaging channel is available from {channel.visible_name}, press here to view",
                     "key_url": str(server.key_url),
                     "action": CCC_MESSAGE_ACTION,
-                    "channel_source": channel_source,
+                    # Mobile uses 'channel_source' for display.
+                    # See https://dimagi.atlassian.net/browse/CCCT-2509
+                    "channel_source": channel.visible_name,
                     "channel_id": str(channel.channel_id),
                     "consent": str(channel.user_consent),
                     "channel_name": channel.visible_name,

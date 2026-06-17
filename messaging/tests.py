@@ -237,8 +237,32 @@ class TestCreateChannelView:
             assert (
                 message.data["body"] == f"A new messaging channel is available from {channel_name}, press here to view"
             )
-            assert message.data["channel_source"] == data["channel_source"]
+            assert message.data["channel_source"] == channel_name
             assert message.data["channel_name"] == channel_name
+
+    def test_recreate_channel_updates_name(self, client, fcm_device, oauth_app, server):
+        data = rest_channel_data(fcm_device.user, channel_name="Old Name")
+        with mock.patch("messaging.views.send_bulk_notification"):
+            response = self.post_channel_request(client, data, status.HTTP_201_CREATED, server)
+        channel_id = response.json()["channel_id"]
+
+        data["channel_name"] = "New Name"
+        response = self.post_channel_request(client, data, status.HTTP_200_OK, server)
+        assert response.json()["channel_id"] == channel_id
+        channel = Channel.objects.get(channel_id=channel_id)
+        assert channel.channel_name == "New Name"
+
+    def test_recreate_channel_without_name_keeps_name(self, client, fcm_device, oauth_app, server):
+        data = rest_channel_data(fcm_device.user, channel_name="Old Name")
+        with mock.patch("messaging.views.send_bulk_notification"):
+            response = self.post_channel_request(client, data, status.HTTP_201_CREATED, server)
+        channel_id = response.json()["channel_id"]
+
+        data["channel_name"] = None
+        response = self.post_channel_request(client, data, status.HTTP_200_OK, server)
+        assert response.json()["channel_id"] == channel_id
+        channel = Channel.objects.get(channel_id=channel_id)
+        assert channel.channel_name == "Old Name"
 
     def test_create_channel_uppercase(self, client, fcm_device, oauth_app, server):
         data = rest_channel_data(fcm_device.user)
