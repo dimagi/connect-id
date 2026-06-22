@@ -145,18 +145,19 @@ python_files = [
     "test_*.py",
 ]
 
-# ==== black ====
-[tool.black]
+# ==== ruff ====
+[tool.ruff]
 line-length = 119
-target-version = ['py311']
+target-version = "py311"
+extend-exclude = ["**/migrations/*.py"]
 
+[tool.ruff.lint]
+# E/W: pycodestyle, F: pyflakes (flake8 defaults), I: isort
+select = ["E", "W", "F", "I"]
 
-# ==== isort ====
-[tool.isort]
-profile = "black"
-line_length = 119
-skip = ["venv/"]
-skip_glob = ["**/migrations/*.py"]
+[tool.ruff.lint.isort]
+# Matches the previous isort "black" profile behaviour.
+known-first-party = ["connectid"]
 
 # ==== PyLint ====
 [tool.pylint.MASTER]
