@@ -24,9 +24,8 @@ pytest -k test_name                # specific test
 
 # Code quality (all run via pre-commit)
 pre-commit run -a                  # run all hooks
-black .                            # format (line-length: 119)
-isort .                            # sort imports (black profile)
-flake8 .                           # lint
+ruff format .                      # format (line-length: 119)
+ruff check --fix .                 # lint + sort imports
 
 # Celery
 celery -A connectid.celery_app worker -B -l INFO
@@ -71,9 +70,8 @@ deploy/             # Kamal deployment config
 
 ## Code Style
 
-- Black formatter, line-length 119
-- isort with black profile
-- Flake8 linting (max-line-length 119, excludes migrations)
+- Ruff formatter, line-length 119
+- Ruff linter (E/W/F/I rules, line-length 119, excludes migrations) — import sorting replaces isort
 - Pre-commit hooks enforce all of the above plus pyupgrade (3.11+) and django-upgrade (4.1)
 
 ## Gotchas
