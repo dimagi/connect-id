@@ -33,14 +33,12 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "black==26.5.1",
     "factory-boy==3.3.3",
-    "flake8==7.3.0",
-    "flake8-isort==7.0.0",
     "pre-commit==4.6.0",
     "pytest==9.0.3",
     "pytest-cov==7.1.0",
     "pytest-django==4.12.0",
+    "ruff>=0.15.18",
 ]
 
 [tool.uv]
@@ -101,18 +99,14 @@ constraint-dependencies = [
     "identify==2.6.19",
     "idna==3.18",
     "iniconfig==2.3.0",
-    "isort==8.0.1",
     "jmespath==1.1.0",
     "jwcrypto==1.5.7",
     "kombu==5.6.2",
-    "mccabe==0.7.0",
     "msgpack==1.1.2",
     "multidict==6.7.1",
-    "mypy-extensions==1.1.0",
     "nodeenv==1.10.0",
     "oauthlib==3.3.1",
     "packaging==26.2",
-    "pathspec==1.1.1",
     "platformdirs==4.10.0",
     "pluggy==1.6.0",
     "prompt-toolkit==3.0.52",
@@ -121,9 +115,7 @@ constraint-dependencies = [
     "protobuf==7.35.0",
     "pyasn1==0.6.3",
     "pyasn1-modules==0.4.2",
-    "pycodestyle==2.14.0",
     "pycparser==3.0",
-    "pyflakes==3.4.0",
     "pyjwt==2.13.0",
     "pyparsing==3.3.2",
     "python-crontab==3.3.0",
