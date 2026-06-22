@@ -8,8 +8,7 @@ import requests
 from django.conf import settings
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ObjectDoesNotExist
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import validate_email
 from django.db.models import Count, Exists, F, OuterRef
