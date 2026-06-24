@@ -23,10 +23,11 @@ app.conf.beat_schedule = {
         "task": "messaging.tasks.delete_old_messages",
         "schedule": timedelta(hours=24),
     },
-    "resend_notifications_for_undelivered_messages": {
-        "task": "messaging.tasks.resend_notifications_for_undelivered_messages",
-        "schedule": timedelta(hours=1),
-    },
+    # Todo; jira ticket CI-727
+    # "resend_notifications_for_undelivered_messages": {
+    #     "task": "messaging.tasks.resend_notifications_for_undelivered_messages",
+    #     "schedule": timedelta(hours=1),
+    # },
     "upload_connect_users_to_superset": {
         "task": "users.tasks.upload_connect_users_to_superset",
         "schedule": crontab(hour=0, minute=0),
