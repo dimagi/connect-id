@@ -280,6 +280,7 @@ class UserCredential(models.Model):
     credential = models.ForeignKey(Credential, on_delete=models.CASCADE)
     accepted = models.BooleanField(default=False)
     invite_id = models.CharField(max_length=50, default=uuid4, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         unique_together = ("user", "credential")
