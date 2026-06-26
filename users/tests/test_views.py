@@ -610,7 +610,7 @@ class TestListCredentials:
             issuer=credential_issuing_authority,
             app_id=uuid.uuid4().hex,
         )
-        UserCredentialFactory.create(credential=cred, user=user)
+        user_cred = UserCredentialFactory.create(credential=cred, user=user)
 
         response = auth_device.get(self.url)
         assert response.status_code == 200
@@ -620,7 +620,7 @@ class TestListCredentials:
                     "uuid": str(cred.uuid),
                     "app_id": cred.app_id,
                     "opp_id": None,
-                    "date": cred.created_at.isoformat(),
+                    "date": user_cred.created_at.isoformat(),
                     "title": "Test Credential",
                     "issuer": "HQ",
                     "issuer_environment": "production",
