@@ -157,6 +157,7 @@ CONFIGURATION_SESSION_BQ_SCHEMA = [
     bigquery.SchemaField("invited_user", "BOOL"),
     bigquery.SchemaField("device_id", "STRING"),
     bigquery.SchemaField("device", "STRING"),
+    bigquery.SchemaField("verified_email", "STRING"),
 ]
 
 
