@@ -3,6 +3,11 @@ from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle, User
 from twilio.rest import Client
 
 
+def batched(items, size):
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
+
+
 def send_sms(to, body, sender=None):
     client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
     client.messages.create(body=body, to=to, from_=sender, messaging_service_sid=settings.TWILIO_MESSAGING_SERVICE)

@@ -41,7 +41,7 @@ def server():
 def test_send_message(authed_client, fcm_device):
     url = reverse("messaging:send_message")
 
-    with mock.patch("fcm_django.models.messaging.send", wraps=_fake_send) as mock_send_message:
+    with mock.patch("firebase_admin.messaging.send_each", wraps=_fake_send_each) as mock_send_message:
         response = authed_client.post(
             url,
             data=json.dumps(
@@ -60,7 +60,7 @@ def test_send_message(authed_client, fcm_device):
             "responses": [{"username": fcm_device.user.username, "status": "success"}],
         }
         mock_send_message.assert_called_once()
-        message = mock_send_message.call_args_list[0].args[0]
+        message = mock_send_message.call_args_list[0].args[0][0]
         notifications = Notification.objects.filter(user=fcm_device.user)
         assert len(notifications) == 1
         assert json.loads(str(message)) == {
@@ -82,7 +82,7 @@ def test_send_message_bulk(authed_client, fcm_device):
     fcm_device2 = FCMDeviceFactory()
     fcm_device3 = FCMDeviceFactory(active=False)
 
-    with mock.patch("fcm_django.models.messaging.send", wraps=_fake_send) as mock_send_message:
+    with mock.patch("firebase_admin.messaging.send_each", wraps=_fake_send_each) as mock_send_message:
         response = authed_client.post(
             url,
             data=json.dumps(
@@ -111,11 +111,12 @@ def test_send_message_bulk(authed_client, fcm_device):
         )
 
         assert response.status_code == 200, response.content
-        # only getting called for
-        # Notification 1 -> fcm_device, fcm_device2
-        # Notification 2 -> fcm_device
-        assert mock_send_message.call_count == 3
-        message = mock_send_message.call_args_list[0].args[0]
+        # All FCM messages are sent in one batched send_each call. The batch contains 3 messages:
+        #   Notification 1 -> fcm_device, fcm_device2
+        #   Notification 2 -> fcm_device
+        assert mock_send_message.call_count == 1
+        assert len(mock_send_message.call_args_list[0].args[0]) == 3
+        message = mock_send_message.call_args_list[0].args[0][0]
         notifications = Notification.objects.filter(user=fcm_device.user)
         assert len(notifications) == 2
         assert json.loads(str(message)) == {
@@ -150,8 +151,10 @@ def test_send_message_bulk(authed_client, fcm_device):
         ]
 
 
-def _fake_send(messages, **kwargs):
-    return messaging.BatchResponse([messaging.SendResponse({"name": f"message_id_{random.randint(10, 40)}"}, None)])
+def _fake_send_each(messages, **kwargs):
+    return messaging.BatchResponse(
+        [messaging.SendResponse({"name": f"message_id_{random.randint(10, 40)}"}, None) for _ in messages]
+    )
 
 
 @pytest.fixture
@@ -199,14 +202,14 @@ class TestCreateChannelView:
     def test_create_channel_success(self, client, fcm_device, oauth_app, server):
         data = rest_channel_data(fcm_device.user)
 
-        with mock.patch("fcm_django.models.messaging.send", wraps=_fake_send) as mock_send_message:
+        with mock.patch("firebase_admin.messaging.send_each", wraps=_fake_send_each) as mock_send_message:
             response = self.post_channel_request(client, data, status.HTTP_201_CREATED, server)
 
             json_data = response.json()
             assert "channel_id" in json_data
 
             mock_send_message.assert_called_once()
-            message = mock_send_message.call_args.args[0]
+            message = mock_send_message.call_args.args[0][0]
             channel = Channel.objects.get(connect_user__username=data["connectid"])
             notifications = Notification.objects.filter(user=fcm_device.user)
             assert len(notifications) == 1
@@ -229,11 +232,11 @@ class TestCreateChannelView:
         channel_name = "HQ Project"
         data = rest_channel_data(fcm_device.user, channel_name=channel_name)
 
-        with mock.patch("fcm_django.models.messaging.send", wraps=_fake_send) as mock_send_message:
+        with mock.patch("firebase_admin.messaging.send_each", wraps=_fake_send_each) as mock_send_message:
             self.post_channel_request(client, data, status.HTTP_201_CREATED, server)
 
             mock_send_message.assert_called_once()
-            message = mock_send_message.call_args.args[0]
+            message = mock_send_message.call_args.args[0][0]
             assert (
                 message.data["body"] == f"A new messaging channel is available from {channel_name}, press here to view"
             )
@@ -731,7 +734,7 @@ class TestUpdateNotificationReceivedView:
 @pytest.mark.django_db
 class TestSendBulkNotificationUtil:
     def test_send_notification(self, fcm_device):
-        with mock.patch("fcm_django.models.messaging.send", wraps=_fake_send) as mock_send_message:
+        with mock.patch("firebase_admin.messaging.send_each", wraps=_fake_send_each) as mock_send_message:
             fcm_notification = NotificationData(
                 usernames=[fcm_device.user.username],
                 title="test title",
@@ -746,7 +749,7 @@ class TestSendBulkNotificationUtil:
             }
 
             mock_send_message.assert_called_once()
-            message = mock_send_message.call_args_list[0].args[0]
+            message = mock_send_message.call_args_list[0].args[0][0]
 
             notification = Notification.objects.filter(user=fcm_device.user).first()
             assert notification is not None
@@ -767,7 +770,7 @@ class TestSendBulkNotificationUtil:
             assert notification.body == fcm_notification.body
 
     def test_send_notification_with_connect_message(self, fcm_device):
-        with mock.patch("fcm_django.models.messaging.send", wraps=_fake_send) as mock_send_message:
+        with mock.patch("firebase_admin.messaging.send_each", wraps=_fake_send_each) as mock_send_message:
             message = MessageFactory()
             serialied_message = MessageSerializer(message).data
             fcm_notification = NotificationData(
@@ -784,7 +787,7 @@ class TestSendBulkNotificationUtil:
             }
 
             mock_send_message.assert_called_once()
-            message = mock_send_message.call_args_list[0].args[0]
+            message = mock_send_message.call_args_list[0].args[0][0]
 
             notification = Notification.objects.filter(user=fcm_device.user).first()
             assert notification is not None
@@ -807,7 +810,7 @@ class TestSendBulkNotificationUtil:
 
     def test_send_notification_inactive_user(self, fcm_device):
         with mock.patch(
-            "fcm_django.models.messaging.send", wraps=_fake_send_raises_error(messaging.UnregisteredError)
+            "firebase_admin.messaging.send_each", wraps=_fake_send_each_raises_error(messaging.UnregisteredError)
         ) as mock_send_message:
             fcm_notification = NotificationData(
                 usernames=[fcm_device.user.username],
@@ -828,7 +831,7 @@ class TestSendBulkNotificationUtil:
 
     def test_send_notification_fcm_error(self, fcm_device):
         with mock.patch(
-            "fcm_django.models.messaging.send", wraps=_fake_send_raises_error(InvalidArgumentError)
+            "firebase_admin.messaging.send_each", wraps=_fake_send_each_raises_error(InvalidArgumentError)
         ) as mock_send_message:
             fcm_notification = NotificationData(
                 usernames=[fcm_device.user.username],
@@ -848,8 +851,10 @@ class TestSendBulkNotificationUtil:
             assert notification is not None
 
 
-def _fake_send_raises_error(error):
-    def _error_return(message, **kwargs):
-        raise error(message=message)
+def _fake_send_each_raises_error(error):
+    def _batch_error_return(messages, **kwargs):
+        return messaging.BatchResponse(
+            [messaging.SendResponse({"name": None}, error(message="error")) for _ in messages]
+        )
 
-    return _error_return
+    return _batch_error_return
