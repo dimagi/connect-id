@@ -25,7 +25,7 @@ from messaging.models import (
     NotificationTypes,
 )
 from messaging.serializers import MessageSerializer, NotificationData
-from messaging.tasks import CommCareHQAPIException
+from messaging.tasks import CommCareHQAPIException, send_bulk_notification_task
 from users.factories import FCMDeviceFactory, ServerKeysFactory
 from utils.notification import send_bulk_notification
 
@@ -287,7 +287,7 @@ class TestSendMessageToMobile:
         data = rest_message(channel.channel_id)
         headers = make_basic_auth_header(server.server_credentials.client_id, server.server_credentials.secret_key)
 
-        with mock.patch("messaging.views.send_bulk_notification") as mock_send_bulk_message:
+        with mock.patch("messaging.views.send_bulk_notification_task") as mock_send_bulk_task:
             response = client.post(self.url, data=data, content_type=APPLICATION_JSON, **headers)
             json_data = response.json()
             assert response.status_code == status.HTTP_200_OK
@@ -299,11 +299,11 @@ class TestSendMessageToMobile:
 
             serialized_msg = MessageSerializer(db_msg).data
             serialized_msg["channel"] = str(db_msg.channel.channel_id)
-            expected = NotificationData(
+            mock_send_bulk_task.delay.assert_called_once_with(
                 usernames=[channel.connect_user.username],
                 data=serialized_msg,
+                fcm_options={},
             )
-            mock_send_bulk_message.assert_called_once_with(expected)
 
     def test_send_to_nonexistent_channel(self, client, channel: Channel, server: MessageServer):
         data = rest_message(channel.channel_id)
@@ -853,3 +853,24 @@ def _fake_send_raises_error(error):
         raise error(message=message)
 
     return _error_return
+
+
+@pytest.mark.django_db
+class TestSendBulkNotificationTask:
+    def test_dispatches_to_util(self):
+        with mock.patch("messaging.tasks.send_bulk_notification") as mock_send:
+            send_bulk_notification_task.apply(
+                kwargs={"usernames": ["user1"], "data": {"foo": "bar"}, "fcm_options": {"analytics_label": "x"}}
+            )
+        mock_send.assert_called_once()
+        sent = mock_send.call_args.args[0]
+        assert sent.usernames == ["user1"]
+        assert sent.data == {"foo": "bar"}
+        assert sent.fcm_options == {"analytics_label": "x"}
+
+    def test_reraises_after_retries_exhausted(self):
+        # With retries seeded at max_retries, autoretry_for re-raises the original exception,
+        # which the Sentry Celery integration then reports as a task failure.
+        with mock.patch("messaging.tasks.send_bulk_notification", side_effect=RuntimeError("fcm exploded")):
+            with pytest.raises(RuntimeError):
+                send_bulk_notification_task.apply(kwargs={"usernames": ["user1"]}, retries=3, throw=True)

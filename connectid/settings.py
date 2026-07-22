@@ -315,7 +315,12 @@ if FCM_PRIVATE_KEY:
     from firebase_admin import credentials, initialize_app
 
     creds = credentials.Certificate(FCM_CREDENTIALS)
-    default_app = initialize_app(credential=creds)
+    # Cap the FCM HTTP timeout well under Gunicorn's worker timeout (default 120s otherwise),
+    # so a slow Firebase round-trip fails fast instead of outliving the worker.
+    default_app = initialize_app(
+        credential=creds,
+        options={"httpTimeout": env.int("FCM_HTTP_TIMEOUT_SECONDS", default=15)},
+    )
 
 GOOGLE_APPLICATION_CREDENTIALS = {
     "type": "service_account",
