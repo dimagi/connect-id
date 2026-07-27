@@ -1,7 +1,8 @@
+import sentry_sdk
 from django.db import transaction
 from django.db.models import Prefetch
 from fcm_django.models import MAX_MESSAGES_PER_BATCH, FCMDevice
-from firebase_admin import messaging
+from firebase_admin import exceptions, messaging
 
 from messaging.models import Notification, NotificationTypes
 from messaging.serializers import NotificationData
@@ -85,7 +86,17 @@ def _get_or_create_notification(user: ConnectUser, message: NotificationData):
 def _send_fcm_messages(fcm_messages: list[messaging.Message]) -> list[messaging.SendResponse]:
     send_responses: list[messaging.SendResponse] = []
     for batch in batched(fcm_messages, MAX_MESSAGES_PER_BATCH):
-        send_responses.extend(messaging.send_each(batch).responses)
+        try:
+            batch_responses = messaging.send_each(batch).responses
+        except (ValueError, exceptions.FirebaseError) as e:
+            sentry_sdk.capture_exception(e)
+            batch_responses = [
+                messaging.SendResponse(
+                    resp=None, exception=exceptions.UnknownError(message=f"send_each failed: {e}", cause=e)
+                )
+                for _ in batch
+            ]
+        send_responses.extend(batch_responses)
     return send_responses
 
 

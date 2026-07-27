@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 import pytest
 from django.urls import reverse
 from firebase_admin import messaging
-from firebase_admin.exceptions import INVALID_ARGUMENT, InvalidArgumentError
+from firebase_admin.exceptions import INVALID_ARGUMENT, UNKNOWN, InvalidArgumentError, UnknownError
 from rest_framework import status
 
 from messaging.const import ErrorCodes
@@ -849,6 +849,39 @@ class TestSendBulkNotificationUtil:
 
             notification = Notification.objects.filter(user=fcm_device.user).first()
             assert notification is not None
+
+    @pytest.mark.parametrize("error", [ValueError("boom"), UnknownError("boom")])
+    def test_send_notification_batch_raises(self, fcm_device, error):
+        """A batch raising is reported per message, without discarding batches that already succeeded."""
+        fcm_device2 = FCMDeviceFactory()
+        first_batch = messaging.BatchResponse([messaging.SendResponse({"name": "message_id_1"}, None)])
+
+        with (
+            mock.patch("firebase_admin.messaging.send_each", side_effect=[first_batch, error]) as mock_send_message,
+            mock.patch("utils.notification.MAX_MESSAGES_PER_BATCH", 1),
+            mock.patch("utils.notification.sentry_sdk.capture_exception") as mock_capture_exception,
+        ):
+            fcm_notification = NotificationData(
+                usernames=[fcm_device.user.username, fcm_device2.user.username],
+                title="test title",
+                body="test message",
+                data={"test": "data"},
+            )
+            ret = send_bulk_notification(fcm_notification)
+
+            assert mock_send_message.call_count == 2
+            assert ret == {
+                "all_success": False,
+                "responses": [
+                    {"username": fcm_device.user.username, "status": "success"},
+                    {"username": fcm_device2.user.username, "status": "error", "error": UNKNOWN},
+                ],
+            }
+            assert mock_capture_exception.call_args_list[0].args[0] is error
+            # a batch-level failure is not a bad token, so no device is deactivated
+            for device in [fcm_device, fcm_device2]:
+                device.refresh_from_db()
+                assert device.active
 
 
 def _fake_send_each_raises_error(error):
