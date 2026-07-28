@@ -36,9 +36,13 @@ class SingleMessageSerializer(serializers.Serializer):
     fcm_options = serializers.DictField(required=False, default={})
 
     def create(self, validated_data):
+        validated_data = dict(validated_data)
         username = validated_data.pop("username", None)
         if username:
-            validated_data["usernames"] = [username]
+            usernames = list(validated_data.get("usernames") or [])
+            if username not in usernames:
+                usernames.append(username)
+            validated_data["usernames"] = usernames
         return NotificationData(**validated_data)
 
 
@@ -55,7 +59,8 @@ class BulkMessageSerializer(serializers.Serializer):
         return messages
 
     def create(self, validated_data):
-        return [NotificationData(**message) for message in validated_data["messages"]]
+        child = self.fields["messages"].child
+        return [child.create(message) for message in validated_data["messages"]]
 
 
 class MessageSerializer(serializers.ModelSerializer):

@@ -157,10 +157,52 @@ def test_send_message_bulk(authed_client, fcm_device):
         ]
 
 
+@pytest.mark.django_db
+def test_send_message_bulk_singular_username(authed_client, fcm_device):
+    """Bulk children may use the singular `username`, alone or alongside `usernames`."""
+    url = reverse("messaging:send_message_bulk")
+
+    fcm_device2 = FCMDeviceFactory()
+
+    with mock.patch("firebase_admin.messaging.send_each", wraps=_fake_send_each):
+        response = authed_client.post(
+            url,
+            data=json.dumps(
+                {
+                    "messages": [
+                        {"username": fcm_device.user.username, "body": "singular only"},
+                        {
+                            "username": fcm_device.user.username,
+                            "usernames": [fcm_device2.user.username],
+                            "body": "mixed",
+                        },
+                    ]
+                }
+            ),
+            content_type=APPLICATION_JSON,
+        )
+
+    assert response.status_code == 200, response.content
+    assert response.json() == {
+        "all_success": True,
+        "messages": [
+            {"all_success": True, "responses": [{"status": "success", "username": fcm_device.user.username}]},
+            {
+                "all_success": True,
+                "responses": [
+                    {"status": "success", "username": fcm_device2.user.username},
+                    {"status": "success", "username": fcm_device.user.username},
+                ],
+            },
+        ],
+    }
+
+
 def _bulk_messages(recipients, num_messages=1, repeat=1):
     """`num_messages` payloads splitting `recipients` distinct usernames, each username listed `repeat` times."""
     usernames = [f"user-{index}" for index in range(recipients)]
-    chunks = list(batched(usernames, -(-recipients // num_messages))) if recipients else [[]] * num_messages
+    chunks = list(batched(usernames, -(-recipients // num_messages))) if recipients else []
+    chunks += [()] * (num_messages - len(chunks))  # fewer recipients than messages: pad with empty payloads
     return [{"usernames": list(chunk) * repeat, "body": "test message"} for chunk in chunks]
 
 
