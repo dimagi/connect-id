@@ -22,7 +22,7 @@ from . import views
 
 # admin.site is project-level state, so the project — not an app's admin module — owns this.
 # The template adds the "Unlock user" entry point to the index for superusers.
-admin.site.index_template = "admin/index_with_unlock.html"
+admin.site.index_template = "admin/personalid_admin_index.html"
 
 urlpatterns = [
     path("users/", include("users.urls")),
