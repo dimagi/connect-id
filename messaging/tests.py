@@ -24,9 +24,15 @@ from messaging.models import (
     Notification,
     NotificationTypes,
 )
-from messaging.serializers import MessageSerializer, NotificationData
+from messaging.serializers import (
+    MAX_BULK_MESSAGES,
+    MAX_BULK_RECIPIENTS,
+    MessageSerializer,
+    NotificationData,
+)
 from messaging.tasks import CommCareHQAPIException
 from users.factories import FCMDeviceFactory, ServerKeysFactory
+from utils import batched
 from utils.notification import send_bulk_notification
 
 APPLICATION_JSON = "application/json"
@@ -149,6 +155,41 @@ def test_send_message_bulk(authed_client, fcm_device):
                 ],
             },
         ]
+
+
+def _bulk_messages(recipients, num_messages=1, repeat=1):
+    """`num_messages` payloads splitting `recipients` distinct usernames, each username listed `repeat` times."""
+    usernames = [f"user-{index}" for index in range(recipients)]
+    chunks = list(batched(usernames, -(-recipients // num_messages))) if recipients else [[]] * num_messages
+    return [{"usernames": list(chunk) * repeat, "body": "test message"} for chunk in chunks]
+
+
+@pytest.mark.parametrize(
+    ("messages", "expected_status", "expected_limit"),
+    [
+        # Recipients are counted across messages, not per message.
+        pytest.param(
+            _bulk_messages(MAX_BULK_RECIPIENTS + 1, num_messages=2), 400, MAX_BULK_RECIPIENTS, id="recipients-over"
+        ),
+        # A username repeated within a message is one FCM message, so it counts once against the limit.
+        pytest.param(_bulk_messages(MAX_BULK_RECIPIENTS, repeat=2), 200, None, id="recipients-at-limit-deduplicated"),
+        # No recipients at all, so only the message-count cap can trip.
+        pytest.param(
+            _bulk_messages(0, num_messages=MAX_BULK_MESSAGES + 1), 400, MAX_BULK_MESSAGES, id="messages-over"
+        ),
+    ],
+)
+def test_send_message_bulk_limits(authed_client, messages, expected_status, expected_limit):
+    url = reverse("messaging:send_message_bulk")
+
+    with mock.patch("firebase_admin.messaging.send_each", wraps=_fake_send_each) as mock_send_message:
+        response = authed_client.post(url, data=json.dumps({"messages": messages}), content_type=APPLICATION_JSON)
+
+    assert response.status_code == expected_status, response.content
+    if expected_limit is not None:
+        assert str(expected_limit) in json.dumps(response.json())
+        mock_send_message.assert_not_called()
+        assert not Notification.objects.exists()
 
 
 def _fake_send_each(messages, **kwargs):

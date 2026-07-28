@@ -5,6 +5,8 @@ from rest_framework import serializers
 from messaging.models import Message, Notification, NotificationTypes
 
 CCC_MESSAGE_ACTION = "ccc_message"
+MAX_BULK_MESSAGES = 5000
+MAX_BULK_RECIPIENTS = 1000
 
 
 @dataclasses.dataclass
@@ -14,6 +16,15 @@ class NotificationData:
     body: str = None
     data: dict = None
     fcm_options: dict = dataclasses.field(default_factory=lambda: {})
+
+
+def _recipients(message: dict) -> list[str]:
+    """Recipient usernames of a validated single-message payload, from either the singular or plural key."""
+    usernames = list(message.get("usernames") or [])
+    username = message.get("username")
+    if username:
+        usernames.append(username)
+    return usernames
 
 
 class SingleMessageSerializer(serializers.Serializer):
@@ -32,7 +43,16 @@ class SingleMessageSerializer(serializers.Serializer):
 
 
 class BulkMessageSerializer(serializers.Serializer):
-    messages = serializers.ListField(child=SingleMessageSerializer())
+    messages = serializers.ListField(child=SingleMessageSerializer(), max_length=MAX_BULK_MESSAGES)
+
+    def validate_messages(self, messages):
+        recipients = sum(len(set(_recipients(message))) for message in messages)
+        if recipients > MAX_BULK_RECIPIENTS:
+            raise serializers.ValidationError(
+                f"Too many recipients: {recipients} (maximum {MAX_BULK_RECIPIENTS} per request). "
+                f"Split the messages across multiple requests."
+            )
+        return messages
 
     def create(self, validated_data):
         return [NotificationData(**message) for message in validated_data["messages"]]
