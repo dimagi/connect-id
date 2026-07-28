@@ -1,7 +1,5 @@
 from django.contrib import admin
-from django.contrib.admin.models import CHANGE, LogEntry
 from django.contrib.auth.admin import UserAdmin
-from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.template.response import TemplateResponse
@@ -10,7 +8,7 @@ from django.utils.translation import gettext_lazy as _
 
 from .forms import UnlockUserConfirmForm, UnlockUserSearchForm
 from .models import ConfigurationSession, ConnectUser, DeviceIntegritySample, IssuingAuthority, ServerKeys
-from .unlock import find_unlock_candidates, generate_backup_code, get_active_user, unlock_user
+from .unlock import find_unlock_candidates, unlock_and_issue_backup_code
 
 
 @admin.register(ConnectUser)
@@ -61,20 +59,19 @@ class ConnectUserAdmin(UserAdmin):
         if not request.user.is_superuser:
             raise PermissionDenied
 
-        context = {
-            **self.admin_site.each_context(request),
-            "title": "Unlock user",
-            "opts": self.model._meta,
-        }
+        base_context = {**self.admin_site.each_context(request), "title": "Unlock user"}
+
+        def render(**state):
+            # Each return states the whole render state, so no branch depends on what an
+            # earlier one put in the context. The template keys off confirm_form.
+            return TemplateResponse(request, self.unlock_template, {**base_context, **state})
 
         if request.method != "POST":
-            context["search_form"] = UnlockUserSearchForm()
-            return TemplateResponse(request, self.unlock_template, context)
+            return render(search_form=UnlockUserSearchForm())
 
         search_form = UnlockUserSearchForm(request.POST)
-        context["search_form"] = search_form
         if not search_form.is_valid():
-            return TemplateResponse(request, self.unlock_template, context)
+            return render(search_form=search_form)
 
         candidates = find_unlock_candidates(
             phone_number=search_form.cleaned_data.get("phone_number"),
@@ -82,46 +79,31 @@ class ConnectUserAdmin(UserAdmin):
         )
         if not candidates:
             search_form.add_error(None, "No locked account matches that search.")
-            return TemplateResponse(request, self.unlock_template, context)
-
-        active_user = get_active_user(candidates[0].phone_number)
-        context["active_user"] = active_user
+            return render(search_form=search_form)
 
         if "confirm" not in request.POST:
-            context["confirm_form"] = UnlockUserConfirmForm(candidates=candidates)
-            return TemplateResponse(request, self.unlock_template, context)
+            return render(search_form=search_form, confirm_form=UnlockUserConfirmForm(candidates=candidates))
 
         confirm_form = UnlockUserConfirmForm(request.POST, candidates=candidates)
-        context["confirm_form"] = confirm_form
         if not confirm_form.is_valid():
-            return TemplateResponse(request, self.unlock_template, context)
+            return render(search_form=search_form, confirm_form=confirm_form)
 
         user = confirm_form.selected_user
+        active_user = confirm_form.active_user
         disable_active = confirm_form.cleaned_data["disable_current_active_user"]
         with transaction.atomic():
-            unlock_user(user, disable_current_active_user=disable_active)
-            backup_code = generate_backup_code(user)
+            backup_code = unlock_and_issue_backup_code(user, disable_current_active_user=disable_active)
             if disable_active and active_user is not None:
-                self._log_unlock(request, active_user, f"Deactivated in favour of unlocked user {user.pk}")
-            self._log_unlock(request, user, "Unlocked user and generated a new backup code")
+                self.log_change(request, active_user, f"Deactivated in favour of unlocked user {user.pk}")
+            self.log_change(request, user, "Unlocked user and generated a new backup code")
 
         # The backup code is only ever shown here, once, in the rendered response. It must
         # never enter the messages framework (signed but not encrypted cookie storage) or
         # get logged.
-        context["confirm_form"] = None
-        context["search_form"] = UnlockUserSearchForm()
-        context["unlocked_user"] = user
-        context["backup_code"] = backup_code
-        return TemplateResponse(request, self.unlock_template, context)
-
-    def _log_unlock(self, request, user, message):
-        LogEntry.objects.log_action(
-            user_id=request.user.pk,
-            content_type_id=ContentType.objects.get_for_model(ConnectUser).pk,
-            object_id=user.pk,
-            object_repr=str(user),
-            action_flag=CHANGE,
-            change_message=message,
+        return render(
+            search_form=UnlockUserSearchForm(),
+            unlocked_user=user,
+            backup_code=backup_code,
         )
 
 
@@ -153,8 +135,3 @@ class DeviceIntegritySampleAdmin(admin.ModelAdmin):
     list_display = ("request_id", "device_id", "passed", "created")
     search_fields = ("request_id", "device_id", "passed", "created")
     list_filter = ("device_id", "passed")
-
-
-# Adds the "Unlock user" button to the admin index. Set here because users/admin.py is
-# imported by admin autodiscovery.
-admin.site.index_template = "admin/index_with_unlock.html"

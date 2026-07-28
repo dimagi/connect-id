@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand, CommandError
 
 from users.exceptions import UnlockUserError
-from users.unlock import generate_backup_code, get_inactive_user, unlock_user
+from users.unlock import get_inactive_user, unlock_and_issue_backup_code
 
 
 class Command(BaseCommand):
@@ -24,6 +24,5 @@ class Command(BaseCommand):
             inactive_user = get_inactive_user(phone_number, inactive_user_id)
         except UnlockUserError as e:
             raise CommandError(str(e))
-        unlock_user(inactive_user, disable_current_active_user)
-        backup_code = generate_backup_code(inactive_user)
+        backup_code = unlock_and_issue_backup_code(inactive_user, disable_current_active_user)
         print(f"User {phone_number} has been unlocked and a backup code has been generated: {backup_code}")

@@ -77,7 +77,7 @@ class TestUnlockPageSearch:
 
         response = su_client.post(unlock_url, {"phone_number": PHONE, "search": "Search"})
 
-        assert response.context["active_user"].pk == active.pk
+        assert response.context["confirm_form"].active_user.pk == active.pk
 
     def test_no_match_stays_on_the_search_form(self, su_client, unlock_url):
         response = su_client.post(unlock_url, {"phone_number": PHONE, "search": "Search"})
