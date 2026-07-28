@@ -26,8 +26,16 @@ def get_active_user(phone_number):
 
 
 def get_inactive_user(phone_number, inactive_user_id=None):
+    """The single account the command should unlock, by phone number or by id.
+
+    The id path stays unfiltered on purpose: naming an id is an operator override, so an
+    account that is already active or already unlocked is still accepted there.
+    """
     if inactive_user_id:
-        return ConnectUser.objects.get(id=inactive_user_id)
+        try:
+            return ConnectUser.objects.get(id=inactive_user_id)
+        except ConnectUser.DoesNotExist:
+            raise UnlockUserError(f"No user found with ID {inactive_user_id}.") from None
 
     candidates = find_unlock_candidates(phone_number=phone_number)
     if len(candidates) != 1:

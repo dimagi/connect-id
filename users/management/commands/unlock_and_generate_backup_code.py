@@ -23,6 +23,6 @@ class Command(BaseCommand):
         try:
             inactive_user = get_inactive_user(phone_number, inactive_user_id)
         except UnlockUserError as e:
-            raise CommandError(str(e))
+            raise CommandError(str(e)) from e
         backup_code = unlock_and_issue_backup_code(inactive_user, disable_current_active_user)
         print(f"User {phone_number} has been unlocked and a backup code has been generated: {backup_code}")

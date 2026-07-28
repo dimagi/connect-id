@@ -81,10 +81,15 @@ class TestGetInactiveUser:
         with pytest.raises(UnlockUserError):
             get_inactive_user(PHONE)
 
-    def test_unknown_user_id_still_raises_does_not_exist(self):
-        # The id path is deliberately unfiltered, so the caller sees the ORM's own error.
-        with pytest.raises(ConnectUser.DoesNotExist):
+    def test_unknown_user_id_is_an_unlock_error(self):
+        with pytest.raises(UnlockUserError):
             get_inactive_user(phone_number=None, inactive_user_id=-1)
+
+    def test_active_user_id_is_still_accepted(self):
+        # Naming an id is an operator override, so the id path stays unfiltered.
+        active = UserFactory.create(phone_number=PHONE)
+
+        assert get_inactive_user(phone_number=None, inactive_user_id=active.pk).pk == active.pk
 
 
 @pytest.mark.django_db
