@@ -1,0 +1,124 @@
+{% extends "admin/base_site.html" %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+  /* Django's .aligned rules indent help text with sibling selectors that assume
+     "label then field" with nothing after. These rows carry help text and radio
+     lists too, so each row gets an explicit field column instead. */
+  #unlock-user-page .form-row { padding: 16px 10px; }
+  #unlock-user-page .aligned label { width: 150px; padding-right: 20px; }
+  #unlock-user-page .unlock-field { margin-left: 170px; }
+  #unlock-user-page .unlock-field .help {
+    margin: 0;
+    padding: 10px 0 0 0;
+    clear: none;
+  }
+  #unlock-user-page .unlock-field label {
+    float: none;
+    width: auto;
+    display: inline;
+    padding: 0 0 0 8px;
+    line-height: 1.5;
+  }
+  #unlock-user-page .unlock-candidates > div { padding: 7px 0; }
+  /* Hanging indent so a wrapped candidate line sits under its text, not under the radio. */
+  #unlock-user-page .unlock-candidates label {
+    display: block;
+    padding: 0 0 0 22px;
+    text-indent: -22px;
+  }
+  #unlock-user-page .unlock-checkbox { margin: 0; padding: 14px 0 0 0; }
+  #unlock-user-page .unlock-result p { margin: 0; padding: 12px 10px 0 10px; }
+  #unlock-user-page .unlock-result p:last-child { padding-bottom: 16px; }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label='users' %}">Users</a>
+  &rsaquo; Unlock user
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div id="unlock-user-page">
+  {% if backup_code %}
+  <div class="module unlock-result">
+    <h2>Unlock successful</h2>
+    <ul class="messagelist">
+      <li class="success">
+        Unlocked <strong>{{ unlocked_user.username }}</strong> ({{ unlocked_user.name|default:"no name" }}).
+      </li>
+    </ul>
+    <p class="help">
+      New backup code:
+      <strong style="font-size: 1.4em; letter-spacing: 0.2em;">{{ backup_code }}</strong>
+    </p>
+    <p class="help">
+      This code is shown once and cannot be retrieved later. Share it with the user now.
+    </p>
+  </div>
+  {% endif %}
+  {% if confirm_form %}
+    <form method="post">{% csrf_token %}
+      <input type="hidden" name="phone_number" value="{{ search_form.phone_number.value|default_if_none:'' }}">
+      <input type="hidden" name="user_id" value="{{ search_form.user_id.value|default_if_none:'' }}">
+      <fieldset class="module aligned">
+        <h2>Confirm the account to unlock</h2>
+        {{ confirm_form.non_field_errors }}
+        <div class="form-row">
+          {{ confirm_form.unlock_user_id.errors }}
+          <label>{{ confirm_form.unlock_user_id.label }}</label>
+          <div class="unlock-field unlock-candidates">
+            {{ confirm_form.unlock_user_id }}
+          </div>
+        </div>
+        {% if active_user %}
+        <div class="form-row">
+          <label>Currently active</label>
+          <div class="unlock-field">
+            <p class="help">
+              <strong>{{ active_user.username }}</strong> is currently active on
+              {{ active_user.phone_number }}. Only one account per phone number can be active.
+            </p>
+            <p class="unlock-checkbox">
+              {{ confirm_form.disable_current_active_user }}
+              <label class="vCheckboxLabel" for="{{ confirm_form.disable_current_active_user.id_for_label }}">
+                Deactivate the currently active account
+              </label>
+            </p>
+          </div>
+        </div>
+        {% endif %}
+      </fieldset>
+      <div class="submit-row">
+        <input type="submit" name="confirm" value="Unlock and generate backup code" class="default">
+        <a href="{% url 'admin:users_connectuser_unlock' %}" class="closelink">Cancel</a>
+      </div>
+    </form>
+  {% else %}
+    <form method="post">{% csrf_token %}
+      <fieldset class="module aligned">
+        <h2>Find the locked account</h2>
+        {{ search_form.non_field_errors }}
+        {% for field in search_form %}
+        <div class="form-row">
+          {{ field.errors }}
+          {{ field.label_tag }}
+          <div class="unlock-field">
+            {{ field }}
+            {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </fieldset>
+      <div class="submit-row">
+        <input type="submit" name="search" value="Search" class="default">
+      </div>
+    </form>
+  {% endif %}
+  </div>
+</div>
+{% endblock %}
