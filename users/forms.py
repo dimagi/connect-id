@@ -87,8 +87,17 @@ class UnlockUserConfirmForm(forms.Form):
 
 def _candidate_label(user):
     return format_html(
-        "<strong>{}</strong> &mdash; {} &mdash; joined {}",
+        '<strong>{}</strong> &mdash; {} &mdash; joined {} <span class="unlock-status">({})</span>',
         user.username,
         user.name or "no name",
         user.date_joined.date(),
+        _candidate_status(user),
     )
+
+
+def _candidate_status(user):
+    # Candidates are always inactive, but the user-ID path also admits accounts that are
+    # not locked, so both flags are worth stating rather than assuming.
+    active = "active" if user.is_active else "inactive"
+    locked = "locked" if user.is_locked else "not locked"
+    return f"{active}, {locked}"

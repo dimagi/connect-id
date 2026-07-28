@@ -144,3 +144,13 @@ class TestCandidateLabel:
 
         assert "last login" not in label
         assert f"(id {user.pk})" not in label
+
+    def test_shows_the_locked_and_active_status(self):
+        user = UserFactory.create(phone_number=PHONE, is_active=False, is_locked=True)
+
+        assert "(inactive, locked)" in self._label_for(user)
+
+    def test_distinguishes_an_inactive_account_that_is_not_locked(self):
+        user = UserFactory.create(phone_number=PHONE, is_active=False, is_locked=False)
+
+        assert "(inactive, not locked)" in self._label_for(user)
