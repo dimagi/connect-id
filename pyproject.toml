@@ -11,7 +11,7 @@ dependencies = [
     "django-axes[ipware]==6.0.3",
     "django-celery-beat==2.9.0",
     "django-environ==0.13.0",
-    "django-oauth-toolkit==2.3.0",
+    "django-oauth-toolkit==3.3.0",
     "django-otp==1.5.4",
     "django-phonenumber-field==7.0.2",
     "django-waffle==4.2.0",
