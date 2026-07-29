@@ -7,6 +7,7 @@ from pathlib import Path
 import requests
 from celery import shared_task
 from django.conf import settings
+from django.core.management import call_command
 from google.auth.exceptions import GoogleAuthError
 from google.cloud import bigquery
 from google.oauth2 import service_account
@@ -210,3 +211,8 @@ def upload_connect_users_to_superset():
     with CSVGenerator(ConnectUser.objects.all(), CONNECT_USER_DUMP_FIELDS, max_rows=100000) as csv_path:
         uploaded = SupersetUploader(table_name).upload(csv_path)
     logger.info("ConnectUser upload to Superset finished (uploaded=%s)", uploaded)
+
+
+@shared_task(name="users.tasks.clear_expired_oauth_tokens")
+def clear_expired_oauth_tokens():
+    call_command("cleartokens")
