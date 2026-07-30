@@ -25,7 +25,7 @@ from messaging.serializers import (
 )
 from messaging.tasks import CommCareHQAPIException, make_request, send_messages_to_service_and_mark_status
 from users.models import ConnectUser
-from utils.notification import send_bulk_notification
+from utils.notification import send_bulk_notification, send_bulk_notifications
 from utils.rest_framework import ClientProtectedResourceAuth, MessagingServerAuth
 
 
@@ -107,13 +107,8 @@ class SendMessageBulk(APIView):
         serializer.is_valid(raise_exception=True)
         messages = serializer.save()
 
-        global_all_success = True
-        results = []
-        for message in messages:
-            message_result = send_bulk_notification(message)
-            results.append(message_result)
-            if not message_result["all_success"]:
-                global_all_success = False
+        results = send_bulk_notifications(messages)
+        global_all_success = all(result["all_success"] for result in results)
 
         return JsonResponse({"messages": results, "all_success": global_all_success}, status=200)
 
