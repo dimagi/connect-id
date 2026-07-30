@@ -27,6 +27,7 @@ def test_csv_generator_outputs_expected_rows():
     user_data = {
         "username": "alice",
         "name": "Alice Smith",
+        "email": "alice@example.com",
         "phone_number": "+12025550123",
         "phone_validated": True,
         "recovery_phone": "+12025550000",

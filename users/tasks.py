@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 CONNECT_USER_DUMP_FIELDS = [
     "username",
     "name",
+    "email",
     "phone_number",
     "phone_validated",
     "recovery_phone",
@@ -42,6 +43,7 @@ CONFIGURATION_SESSION_DUMP_FIELDS = [
     "invited_user",
     "device_id",
     "device",
+    "verified_email",
 ]
 
 
@@ -155,6 +157,7 @@ CONFIGURATION_SESSION_BQ_SCHEMA = [
     bigquery.SchemaField("invited_user", "BOOL"),
     bigquery.SchemaField("device_id", "STRING"),
     bigquery.SchemaField("device", "STRING"),
+    bigquery.SchemaField("verified_email", "STRING"),
 ]
 
 
