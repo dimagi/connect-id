@@ -9,7 +9,11 @@ def create_update_device(user, token):
     if device:
         if device.user_id != user.id:
             # Update ownership of device
-            FCMDevice.objects.filter(Q(registration_id=token) | Q(user=user)).update(active=False)
+            FCMDevice.objects.filter(Q(registration_id=token) | Q(user=user)).deactivate(
+                reason="device_reassigned",
+                source="create_update_device",
+                metadata={"target_user_id": user.id},
+            )
             device.active = True
             device.user = user
             device.save()
@@ -28,6 +32,10 @@ def create_update_device(user, token):
         return JsonResponse({}, status=200)
     else:
         # deactivate all other devices
-        FCMDevice.objects.filter(user=user).update(active=False)
+        FCMDevice.objects.filter(user=user).deactivate(
+            reason="one_device_per_user",
+            source="create_update_device",
+            metadata={"user_id": user.id},
+        )
         FCMDevice.objects.create(user=user, registration_id=token, type=DeviceType.ANDROID)
         return JsonResponse({}, status=201)
