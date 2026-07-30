@@ -3,6 +3,7 @@ import json
 import random
 import uuid
 from collections import defaultdict
+from functools import partial
 from unittest import mock
 from unittest.mock import Mock, patch
 from uuid import UUID, uuid4
@@ -912,9 +913,25 @@ class TestSendBulkNotificationUtil:
             notification = Notification.objects.filter(user=fcm_device.user).first()
             assert notification is not None
 
-    def test_send_notification_fcm_error(self, fcm_device):
+            # an unregistered token is dead, so the device is deactivated
+            fcm_device.refresh_from_db()
+            assert fcm_device.active is False
+
+    @pytest.mark.parametrize(
+        ("cause", "stays_active"),
+        [
+            # INVALID_ARGUMENT is broader than token invalidation (a malformed payload or a bad TTL
+            # raises it too), so the device survives unless Firebase names the token as the cause.
+            (None, True),
+            ("Invalid registration", False),
+        ],
+        ids=["generic-invalid-argument", "invalid-registration"],
+    )
+    def test_send_notification_invalid_argument(self, fcm_device, cause, stays_active):
+        """Whether INVALID_ARGUMENT deactivates the device depends entirely on its cause."""
         with mock.patch(
-            "firebase_admin.messaging.send_each", wraps=_fake_send_each_raises_error(InvalidArgumentError)
+            "firebase_admin.messaging.send_each",
+            wraps=_fake_send_each_raises_error(partial(InvalidArgumentError, cause=cause)),
         ) as mock_send_message:
             fcm_notification = NotificationData(
                 usernames=[fcm_device.user.username],
@@ -929,9 +946,10 @@ class TestSendBulkNotificationUtil:
                 "responses": [{"username": fcm_device.user.username, "status": "error", "error": INVALID_ARGUMENT}],
             }
             mock_send_message.assert_called_once()
+            assert Notification.objects.filter(user=fcm_device.user).exists()
 
-            notification = Notification.objects.filter(user=fcm_device.user).first()
-            assert notification is not None
+            fcm_device.refresh_from_db()
+            assert fcm_device.active is stays_active
 
     @pytest.mark.parametrize("error", [ValueError("boom"), UnknownError("boom")])
     def test_send_notification_batch_raises(self, fcm_device, error):
