@@ -215,4 +215,5 @@ def upload_connect_users_to_superset():
 
 @shared_task(name="users.tasks.clear_expired_oauth_tokens")
 def clear_expired_oauth_tokens():
+    # https://django-oauth-toolkit.readthedocs.io/en/latest/management_commands.html
     call_command("cleartokens")
