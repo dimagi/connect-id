@@ -349,6 +349,7 @@ COMMCARE_CONNECT_CLIENT_SECRET = env("COMMCARE_CONNECT_CLIENT_SECRET", default="
 CONNECT_INVITED_USER_URL = "https://connect.dimagi.com/users/invited_user/"
 CONNECT_RESEND_INVITES_URL = "https://connect.dimagi.com/users/resend_invites/"
 CONNECT_TOGGLES_URL = "https://connect.dimagi.com/users/toggles/"
+CONNECT_UPDATE_PROFILE_URL = "https://connect.dimagi.com/users/update_profile/"
 
 # List of countries that are blacklisted from using PersonalID
 # Example: ["us", "ca", "gb"] (Alpha-2 country codes)

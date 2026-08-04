@@ -2,6 +2,7 @@ import csv
 import logging
 import tempfile
 from datetime import date, datetime
+from http import HTTPStatus
 from pathlib import Path
 
 import requests
@@ -14,6 +15,7 @@ from google.oauth2 import service_account
 from phonenumber_field.phonenumber import PhoneNumber
 
 from users.models import ConfigurationSession, ConnectUser
+from utils.connect import update_connect_user_profile
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +194,22 @@ class BigQueryUploader:
             job = client.load_table_from_file(f, table_ref, job_config=job_config)
         job.result()
         return True
+
+
+@shared_task(
+    name="users.tasks.push_profile_to_connect",
+    autoretry_for=(requests.RequestException,),
+    retry_backoff=True,
+    max_retries=5,
+)
+def push_profile_to_connect(username, name):
+    try:
+        update_connect_user_profile(username, name)
+    except requests.HTTPError as e:
+        status = getattr(e.response, "status_code", None)
+        if status is None or status >= 500 or status == HTTPStatus.TOO_MANY_REQUESTS:
+            raise
+        logger.error("Connect rejected the profile push for %s: %s", username, e)
 
 
 @shared_task(name="users.tasks.upload_configuration_sessions")
