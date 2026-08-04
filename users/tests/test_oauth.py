@@ -250,7 +250,7 @@ class TestOAuth2TokenRevocation:
         response = api_client.get(reverse("oauth2_provider:user-info"))
         assert response.status_code in (401, 403)
 
-    def test_deactivate_account_revokes_all_user_tokens(self, oauth_app, user):
+    def test_token_revocation_used_by_deactivate_account(self, oauth_app, user):
         """Mirrors the revoke loop in users/views.py's deactivate_account view.
 
         AccessToken.revoke() hard-deletes the row, but RefreshToken.revoke() soft-deletes
