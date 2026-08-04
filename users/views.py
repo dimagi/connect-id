@@ -58,6 +58,7 @@ from .models import (
 )
 from .serializers import UserCredentialSerializer
 from .services import upload_photo_to_s3
+from .tasks import push_profile_to_connect
 
 logger = logging.getLogger(__name__)
 
@@ -470,9 +471,10 @@ def update_profile(request):
     data = request.data
     user = request.user
     changed = False
-    if data.get("name"):
+    name_changed = False
+    if data.get("name") and data["name"] != user.name:
         user.name = data["name"]
-        changed = True
+        changed = name_changed = True
     if data.get("secondary_phone"):
         user.recovery_phone = data["secondary_phone"]
         changed = True
@@ -486,6 +488,8 @@ def update_profile(request):
         except ValidationError as e:
             return JsonResponse(e.message_dict, status=400)
         user.save()
+    if name_changed:
+        push_profile_to_connect.delay(user.username, user.name)
     return HttpResponse()
 
 
