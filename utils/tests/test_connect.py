@@ -2,6 +2,7 @@ from unittest import mock
 
 import pytest
 import requests
+from phonenumbers.phonenumberutil import NumberParseException
 
 from utils.connect import check_number_for_existing_invites, get_connect_toggles
 
@@ -11,6 +12,18 @@ class TestCheckNumberForExistingInvites:
     def test_returns_invited_value(self, mock_get):
         mock_get.return_value.json.return_value = {"invited": True}
         assert check_number_for_existing_invites("+12025550100") is True
+
+    @mock.patch("utils.connect.requests.get")
+    def test_sends_phone_number_in_e164_format(self, mock_get):
+        mock_get.return_value.json.return_value = {"invited": True}
+        check_number_for_existing_invites("+23401051962390")
+        assert mock_get.call_args.kwargs["params"] == {"phone_number": "+2341051962390"}
+
+    @mock.patch("utils.connect.requests.get")
+    def test_raises_on_malformed_phone_number(self, mock_get):
+        with pytest.raises(NumberParseException):
+            check_number_for_existing_invites("not-a-phone-number")
+        mock_get.assert_not_called()
 
     @mock.patch("utils.connect.requests.get")
     def test_propagates_request_exceptions(self, mock_get):

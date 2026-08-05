@@ -2,6 +2,7 @@ import logging
 
 import requests
 from django.conf import settings
+from phonenumber_field.phonenumber import PhoneNumber
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +12,9 @@ CONNECT_REQUEST_TIMEOUT = 15
 def check_number_for_existing_invites(phone_number):
     url = settings.CONNECT_INVITED_USER_URL
     auth = (settings.COMMCARE_CONNECT_CLIENT_ID, settings.COMMCARE_CONNECT_CLIENT_SECRET)
-    response = requests.get(url, auth=auth, params={"phone_number": phone_number}, timeout=CONNECT_REQUEST_TIMEOUT)
+    phone = PhoneNumber.from_string(phone_number)
+
+    response = requests.get(url, auth=auth, params={"phone_number": phone.as_e164}, timeout=CONNECT_REQUEST_TIMEOUT)
     response.raise_for_status()
     data = response.json()
     return data.get("invited", False)
