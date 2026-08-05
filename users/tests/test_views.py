@@ -12,6 +12,7 @@ from django.urls import reverse, reverse_lazy
 from django.utils.timezone import now
 from faker import Faker
 from fcm_django.models import FCMDevice
+from phonenumbers.phonenumberutil import NumberParseException
 from waffle.testutils import override_switch
 
 from flags.const import EMAIL_OTP_VERIFICATION
@@ -1528,6 +1529,22 @@ class TestStartConfigurationView:
         )
         assert response.status_code == 503
         assert response.json() == {"error_code": AppIntegrityErrorCodes.CONFIGURATION_TEMPORARILY_UNAVAILABLE}
+
+    @patch("utils.app_integrity.decorators.AppIntegrityService")
+    @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
+    def test_returns_503_when_number_is_unparseable(self, check_number_mock, integrity_service_mock, client, caplog):
+        check_number_mock.side_effect = NumberParseException(
+            NumberParseException.NOT_A_NUMBER, "The string supplied did not seem to be a phone number."
+        )
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": "not-a-phone-number", "gps_location": "1.2 3.4"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.status_code == 503
+        assert response.json() == {"error_code": AppIntegrityErrorCodes.MALFORMED_PHONE_NUMBER}
+        integrity_service_mock.assert_not_called()
 
     @skip_app_integrity_check
     @patch("users.models.ConfigurationSession.country_code")
