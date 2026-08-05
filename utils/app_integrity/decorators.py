@@ -3,6 +3,7 @@ import logging
 import requests
 from django.http import HttpResponseBadRequest, HttpResponseForbidden, HttpResponseServerError, JsonResponse
 from googleapiclient.errors import HttpError
+from phonenumbers.phonenumberutil import NumberParseException
 
 from users.const import TEST_NUMBER_PREFIX
 from utils.app_integrity.const import INTEGRITY_REQUEST_HASH_KEY, INTEGRITY_TOKEN_HEADER_KEY, ErrorCodes
@@ -64,6 +65,12 @@ def require_app_integrity(view):
 
         try:
             invited = check_number_for_existing_invites(phone_number)
+        except NumberParseException as e:
+            logger.exception(f"Malformed phone number: {str(e)}")
+            return JsonResponse(
+                {"error_code": ErrorCodes.MALFORMED_PHONE_NUMBER},
+                status=503,
+            )
         except requests.exceptions.RequestException:
             logger.exception("Failed to reach connect.dimagi.com to check existing invites")
             return JsonResponse(
