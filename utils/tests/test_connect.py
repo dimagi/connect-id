@@ -13,6 +13,12 @@ class TestCheckNumberForExistingInvites:
         assert check_number_for_existing_invites("+12025550100") is True
 
     @mock.patch("utils.connect.requests.get")
+    def test_sends_phone_number_in_e164_format(self, mock_get):
+        mock_get.return_value.json.return_value = {"invited": True}
+        check_number_for_existing_invites("+23401051962390")
+        assert mock_get.call_args.kwargs["params"] == {"phone_number": "+2341051962390"}
+
+    @mock.patch("utils.connect.requests.get")
     def test_propagates_request_exceptions(self, mock_get):
         mock_get.side_effect = requests.exceptions.Timeout("upstream slow")
         with pytest.raises(requests.exceptions.Timeout):
