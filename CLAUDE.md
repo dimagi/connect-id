@@ -57,7 +57,7 @@ deploy/             # Kamal deployment config
 
 ## Tech Stack
 
-- **Python 3.11**, Django 4.1, Django REST Framework
+- **Python 3.11**, Django 4.2 (LTS), Django REST Framework
 - **PostgreSQL** + **Redis** (Celery broker/cache)
 - **Celery** with beat scheduler for async tasks
 - **OAuth2/OIDC** via django-oauth-toolkit
@@ -72,7 +72,7 @@ deploy/             # Kamal deployment config
 
 - Ruff formatter, line-length 119
 - Ruff linter (E/W/F/I rules, line-length 119, excludes migrations) — import sorting replaces isort
-- Pre-commit hooks enforce all of the above plus pyupgrade (3.11+) and django-upgrade (4.1)
+- Pre-commit hooks enforce all of the above plus pyupgrade (3.11+) and django-upgrade (4.2)
 
 ## Gotchas
 

@@ -374,10 +374,10 @@ requires-dist = [
     { name = "django-environ", specifier = "==0.13.0" },
     { name = "django-oauth-toolkit", specifier = "==3.3.0" },
     { name = "django-otp", specifier = "==1.5.4" },
-    { name = "django-phonenumber-field", specifier = "==7.0.2" },
+    { name = "django-phonenumber-field", specifier = "==7.1.0" },
     { name = "django-waffle", specifier = "==4.2.0" },
     { name = "djangorestframework", specifier = "==3.15.1" },
-    { name = "fcm-django", specifier = "==2.2.1" },
+    { name = "fcm-django", specifier = "==3.2.0" },
     { name = "geopy", specifier = "==2.4.1" },
     { name = "google-api-python-client", specifier = "==2.197.0" },
     { name = "google-auth", specifier = "==2.53.0" },
@@ -626,14 +626,14 @@ wheels = [
 
 [[package]]
 name = "django-phonenumber-field"
-version = "7.0.2"
+version = "7.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dd/4a/d93f47acd7a16eb6fdf9405cf608375c8d13a2e5d96064f771e72fcded1b/django-phonenumber-field-7.0.2.tar.gz", hash = "sha256:de3e47b986b4959949762c16fd8fe26b3e462ef3e5531ed00950bd20c698576a", size = 40893, upload-time = "2023-01-09T16:26:26.648Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/90/27/4c81bf912e792e472ae64cb4a9d9a16a1d6a4437869609531c74be6d9948/django-phonenumber-field-7.1.0.tar.gz", hash = "sha256:63721dbdc7424cd594a08d80f550e790cf6e7c903cbc0fb4dd9d86baac8b8c51", size = 41109, upload-time = "2023-04-26T20:44:26.629Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7f/fc/0d1ce00eb25075c89efe441b450398587c5bc41d7eddefc79e2b803b7a81/django_phonenumber_field-7.0.2-py3-none-any.whl", hash = "sha256:9edad2b2602af25f2aefc73c4cf53eaf7abf9e17d73c1c4372bd3052bebb26f9", size = 65850, upload-time = "2023-01-09T16:26:24.766Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/a4/2d1d19dded12c844a1a9fab2c0a9185423cf4a6ecb9d1d9b783bcd86d3ee/django_phonenumber_field-7.1.0-py3-none-any.whl", hash = "sha256:4eaab35fe9a163046dc3a47188771385c56a788e0e11b7bbcc662e1e6b7b9104", size = 65999, upload-time = "2023-04-26T20:44:24.298Z" },
 ]
 
 [[package]]
@@ -698,14 +698,17 @@ wheels = [
 
 [[package]]
 name = "fcm-django"
-version = "2.2.1"
+version = "3.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django" },
     { name = "firebase-admin" },
     { name = "swapper" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a5/b5/4bb0c738ba6934a82c210e57388abf869fae44b093ffafc21913033fbb13/fcm_django-2.2.1.tar.gz", hash = "sha256:bfc30f41537434f2485f364c2a5ae6ad579899805ec49628855bc196efa043b3", size = 21552, upload-time = "2024-07-22T18:46:13.925Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/48/18/c31e3d291ee3bb6fc226e18ccfa1b0ce04bf2e3e073cddb635732985ce3b/fcm_django-3.2.0.tar.gz", hash = "sha256:2bbef8ca013e1beb6e849d9335e6195185e173d19e5c3ee13b328fc971ea23a0", size = 33886, upload-time = "2026-04-07T10:07:40.625Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/36/00/847b33f63fb9b5c7b5210ea20764cbfb7787213ccbc48af9ee91356433f7/fcm_django-3.2.0-py3-none-any.whl", hash = "sha256:c468a64e0a1904f735111f7262f009523c1b6fd4f8caab086e17a42f210a4616", size = 29401, upload-time = "2026-04-07T10:07:39.168Z" },
+]
 
 [[package]]
 name = "filelock"

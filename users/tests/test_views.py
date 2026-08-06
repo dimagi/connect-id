@@ -772,6 +772,47 @@ class TestConfirmDeactivation(BaseTestDeactivation):
 
 
 @pytest.mark.django_db
+class TestFetchUsers:
+    @property
+    def endpoint(self):
+        return reverse("fetch_users")
+
+    def test_no_authentication(self, client):
+        assert client.get(self.endpoint).status_code == 403
+
+    def test_returns_matching_active_users(self, authed_client):
+        user = UserFactory.create(phone_number="+27821234567")
+        UserFactory.create(phone_number="+27829999999")
+
+        response = authed_client.get(self.endpoint, {"phone_numbers": [str(user.phone_number)]})
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "found_users": [{"username": user.username, "phone_number": str(user.phone_number), "name": user.name}]
+        }
+
+    def test_excludes_inactive_users(self, authed_client):
+        inactive = UserFactory.create(phone_number="+27821112222", is_active=False)
+
+        response = authed_client.get(self.endpoint, {"phone_numbers": [str(inactive.phone_number)]})
+
+        assert response.status_code == 200
+        assert response.json() == {"found_users": []}
+
+    def test_phone_number_serializes_as_a_string(self, authed_client):
+        """Pins the contract that breaks on django-phonenumber-field >= 7.2.0.
+
+        That release added a DB converter making values() return PhoneNumber objects, which
+        JsonResponse cannot serialize — this view would start raising instead of responding.
+        """
+        user = UserFactory.create(phone_number="+27823334444")
+
+        values = ConnectUser.objects.filter(pk=user.pk).values("phone_number")
+
+        assert isinstance(values[0]["phone_number"], str)
+
+
+@pytest.mark.django_db
 class TestGetDemoUsers:
     def setup_method(self):
         self.valid_user = UserFactory.create(
