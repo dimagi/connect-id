@@ -131,7 +131,7 @@ def start_device_configuration(request):
         response_data["sms_method"] = SMSMethods.PERSONAL_ID if request.invited_user else SMSMethods.FIREBASE
     else:
         response_data["sms_method"] = SMSMethods.FIREBASE
-        response_data["otp_fallback"] = token_session.invited_user
+        response_data["otp_fallback"] = True
 
     return JsonResponse(response_data)
 

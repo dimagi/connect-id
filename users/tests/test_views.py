@@ -1492,7 +1492,7 @@ class TestStartConfigurationView:
 
         sms_method = response.json().get("sms_method")
         assert sms_method == SMSMethods.FIREBASE
-        assert response.json().get("otp_fallback")
+        assert response.json().get("otp_fallback") is True
 
     @skip_app_integrity_check
     @patch("users.models.ConfigurationSession.country_code")
