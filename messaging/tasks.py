@@ -70,6 +70,23 @@ def send_messages_to_service_and_mark_status(channel_messages, status_to_be_upda
         Message.objects.filter(message_id__in=sent_message_ids).update(status=status_to_be_updated)
 
 
+@shared_task(
+    name="messaging.tasks.send_bulk_notification_task",
+    autoretry_for=(Exception,),
+    max_retries=3,
+    retry_backoff=10,
+)
+def send_bulk_notification_task(usernames, data=None, fcm_options=None, title=None, body=None):
+    message = NotificationData(
+        usernames=usernames,
+        data=data,
+        fcm_options=fcm_options or {},
+        title=title,
+        body=body,
+    )
+    send_bulk_notification(message)
+
+
 @shared_task(name="messaging.tasks.delete_old_messages")
 def delete_old_messages():
     """

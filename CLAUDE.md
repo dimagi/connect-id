@@ -79,7 +79,7 @@ deploy/             # Kamal deployment config
 - **Custom user model**: `ConnectUser` extends AbstractUser. Phone number is the primary identifier, not email/username.
 - **Phone-based auth**: Phone numbers must be unique among active users. Numbers with `TEST_NUMBER_PREFIX` bypass SMS sending.
 - **Recovery pin**: Must use `set_recovery_pin()` method (hashes internally), never assign directly.
-- **Celery runs eagerly**: `CELERY_TASK_ALWAYS_EAGER = True` in settings, so async tasks execute synchronously in dev/test.
+- **Celery is NOT eager by default**: `CELERY_TASK_ALWAYS_EAGER` defaults to `False` (env-overridable) and is not overridden in dev/test/CI, so `.delay()`/`.apply_async()` enqueue to the broker rather than running inline. In tests, call tasks directly or via `.apply()` to run them synchronously; a running worker + Redis broker are required for `.delay()` to actually execute.
 - **API versioning**: Via Accept header, defaults to v2.0. v1.0 is deprecated but still supported.
 - **App integrity**: All app requests validate Google Play Integrity tokens. Use `@skip_app_integrity_check` decorator in tests.
 - **Docker Compose PostgreSQL**: Runs on port **5433** (not 5432).
