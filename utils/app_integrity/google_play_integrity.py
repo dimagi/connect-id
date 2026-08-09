@@ -150,14 +150,19 @@ class AppIntegrityService:
             and passed_account_details_check
         )
 
-        return DeviceIntegritySample.objects.create(
+        sample, created = DeviceIntegritySample.objects.get_or_create(
             request_id=request_id,
-            device_id=device_id,
-            is_demo_user=self.is_demo_user,
-            google_verdict=raw_verdict,
-            passed=check_passed,
-            passed_request_check=passed_request_check,
-            passed_app_integrity_check=passed_app_integrity_check,
-            passed_device_integrity_check=passed_device_integrity_check,
-            passed_account_details_check=passed_account_details_check,
+            defaults={
+                "device_id": device_id,
+                "is_demo_user": self.is_demo_user,
+                "google_verdict": raw_verdict,
+                "passed": check_passed,
+                "passed_request_check": passed_request_check,
+                "passed_app_integrity_check": passed_app_integrity_check,
+                "passed_device_integrity_check": passed_device_integrity_check,
+                "passed_account_details_check": passed_account_details_check,
+            },
         )
+        if not created:
+            raise DuplicateSampleRequestError("Duplicate sample request")
+        return sample
