@@ -5,9 +5,8 @@
 
 ## Why
 
-All our SMS goes through Twilio, called directly from four places in the code. We want to add
-more vendors, because different vendors are needed for delivery in different countries, for
-failover, for cost, and because some countries require a local sender.
+All our server-side SMS today goes through Twilio, called directly from four places in the code. We want to add
+more vendors, because different vendors are needed for delivery in different countries, for failover and cost.
 
 This change does not add a second vendor. It puts a service layer between our code and Twilio so
 that adding one later is a small, contained change.
@@ -33,7 +32,8 @@ In scope:
 
 Out of scope, to be designed separately:
 
-- **Choosing a vendor by country.** For now one vendor is active, set in settings.
+- **Choosing a vendor by country.** Callers can name a vendor, but none do. They all take the
+  default, which is Twilio.
 - **Falling back to another vendor when one fails.** A failure stays a failure.
 - **Firebase.** The mobile app calls Firebase Phone Auth itself and Firebase sends its own SMS. We
   only see the resulting token. Our Twilio OTP is the fallback when Firebase fails. None of that
@@ -42,7 +42,7 @@ Out of scope, to be designed separately:
   It is not sending, has one caller, and not every SMS vendor offers it. Left as is.
 - **Sending in the background.** Sends stay synchronous, in the web request, as they are today.
 
-## Where the code lives
+## Where the new code lives
 
 ```
 messaging/
@@ -58,12 +58,12 @@ messaging/
 
 `send_sms` and `get_sms_sender` are deleted from `utils/__init__.py`.
 
-`base.py` needs `TEST_NUMBER_PREFIX`, which it imports from `users/const.py`. That file imports
-nothing itself, so `users` and `messaging` do not end up importing each other.
 
 ## The interface
 
 ```python
+# messaging/sms/base.py
+
 @dataclass(frozen=True)
 class SmsMessage:
     to: PhoneNumber
@@ -88,12 +88,14 @@ class BaseSmsVendor(ABC):
     name: str
 
     def send(self, message: SmsMessage) -> SendResult:
+        # Exit early for test numbers
         if message.to.raw_input.startswith(TEST_NUMBER_PREFIX):
             return SendResult(vendor=self.name, vendor_message_id=None, skipped=True)
 
-        resolved = message.sender or get_sms_sender(message.to.country_code)
+        # Determine message sender
+        msg_sender = message.sender or get_sms_sender(message.to.country_code)
         try:
-            return self._send(replace(message, sender=resolved))
+            return self._send(replace(message, sender=msg_sender))
         except SmsSendError:
             raise
         except Exception as e:
@@ -105,7 +107,32 @@ class BaseSmsVendor(ABC):
 ```
 
 `send()` handles the parts every vendor needs: skipping test numbers, working out the sender ID,
-and converting vendor errors into one error type. A new vendor only writes `_send()`.
+and converting vendor errors into one error type. A new vendor only writes `_send()`. Twilio in
+full:
+
+```python
+# messaging/sms/vendors/twilio.py
+
+class TwilioVendor(BaseSmsVendor):
+    name = "twilio"
+
+    def __init__(self, account_sid: str, auth_token: str, messaging_service: str):
+        self._client = Client(account_sid, auth_token)
+        self._messaging_service = messaging_service
+
+    def _send(self, message: SmsMessage) -> SendResult:
+        sent = self._client.messages.create(
+            body=message.body,
+            to=message.to.as_e164,
+            from_=message.sender,
+            messaging_service_sid=self._messaging_service,
+        )
+        return SendResult(vendor=self.name, vendor_message_id=sent.sid)
+```
+
+It takes its credentials as arguments and holds one client. It does not check for test numbers,
+look up a sender ID, or catch errors, because `send()` has already dealt with those. That is all a
+second vendor has to write.
 
 `to` is a `PhoneNumber`, not a string. The layer needs `raw_input` to spot test numbers and
 `country_code` to pick the sender, and a string gives us neither. `.as_e164` is applied in one
@@ -114,8 +141,10 @@ place only: inside the vendor, when calling the API.
 The public function callers use:
 
 ```python
-def send_sms(to: PhoneNumber, body: str) -> SendResult:
-    return get_vendor().send(SmsMessage(to=to, body=body))
+# messaging/sms/__init__.py
+
+def send_sms(to: PhoneNumber, body: str, vendor: str | None = None) -> SendResult:
+    return get_vendor(vendor).send(SmsMessage(to=to, body=body))
 ```
 
 ## Settings
@@ -128,7 +157,6 @@ SMS_VENDORS = {
         "messaging_service": env("TWILIO_MESSAGING_SERVICE", default=None),
     },
 }
-SMS_DEFAULT_VENDOR = env("SMS_DEFAULT_VENDOR", default="twilio")
 ```
 
 Credentials are grouped per vendor and passed into the vendor when it is built, so each vendor
@@ -138,12 +166,38 @@ nothing needs to change in `.env` or in the Kamal secrets to deploy this.
 The flat `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` settings must stay, because the carrier
 lookup in `utils/twilio.py` still reads them.
 
-`get_vendor()` builds the vendor once per process and caches it, instead of building a new Twilio
-client on every send. When a test overrides either setting, Django's `setting_changed` signal
-clears the cache so the next send picks up the new config.
+## Building the vendor
 
-An unknown vendor name, or a vendor with no entry in `SMS_VENDORS`, raises
-`ImproperlyConfigured`.
+`registry.py` maps vendor names to classes, and builds them from the settings above.
+
+```python
+# messaging/sms/registry.py
+
+VENDORS: dict[str, type[BaseSmsVendor]] = {
+    TwilioVendor.name: TwilioVendor,
+}
+
+
+def get_vendor(name: str) -> BaseSmsVendor:
+    if name is None:
+        # Use twilio as default vendor
+        name = "twilio"
+
+    if name not in VENDORS:
+        raise ImproperlyConfigured(f"Unknown SMS vendor {name!r}. Known vendors: {sorted(VENDORS)}")
+
+    config = settings.SMS_VENDORS.get(name)
+    if config is None:
+        raise ImproperlyConfigured(f"No SMS_VENDORS entry for vendor {name!r}")
+
+    return VENDORS[name](**config)
+```
+## Adding a new vendor
+Adding any new vendor means
+1. Adding the vendor's configs to settings
+2. Writing its vendor class (`init` and `_send`)
+3. Adding one line to `VENDORS` to enable usage
+
 
 ## What changes at the call sites
 
@@ -171,16 +225,13 @@ After:
 send_sms(self.phone_number, self.otp_message)
 ```
 
-Existing tests that patch `users.models.send_sms` keep working, because that module still imports
-the name. Only where it comes from changes.
-
 ## Behaviour changes
 
 Two, both intended:
 
 1. **Credential invites and HQ invites now skip test numbers.** Today only the OTP and
    deactivation flows check for the `+7426` prefix, so the two invite flows send real SMS to test
-   numbers. Moving the check into the layer fixes that.
+   numbers. Moving the check into the layer results in these not being sent.
 2. **Errors now arrive as `SmsSendError`** instead of `TwilioRestException`. Nothing catches
    either one, so both end up as a 500 and a Sentry event. The new error names the vendor and
    keeps the original exception attached, so Sentry reports are more useful.
@@ -191,46 +242,12 @@ Nothing else changes. In particular, a failed send must keep rolling back the wa
 is not rate-limited out of retrying. A test number returns a result instead of raising, so the
 attempt is still recorded, which also matches today.
 
-## Testing
-
-- Test numbers return a skipped result and never reach the vendor.
-- Sender ID is `ConnectID` for country codes 265, 258, 232 and 44, and unset otherwise.
-- A vendor error is converted to `SmsSendError`, with the original error attached.
-- The Twilio vendor passes the expected arguments to `Client()` and `messages.create()`. This
-  keeps the existing check that a major Twilio upgrade fails CI. It also asserts `to` is a string,
-  which is the mistake that broke the earlier attempt at this work.
-- A failed send leaves `otp_last_sent`, `attempts` and `token` unchanged in the database.
-- The two invite flows make no vendor call for a test number. These fail on `main` today.
-
-New tests go in `messaging/test_sms.py`. `utils/tests/test_sms.py` is removed and its Twilio
-checks move across.
-
-## Earlier attempt
-
-Commit `2bb227f` (May 2025) moved SMS sending into `messaging` and was reverted the next morning
-by `2164f36`. Two things went wrong, and this design avoids both:
-
-- `send_sms` was typed to take a `PhoneNumber` but every caller passed `phone_number.as_e164`, a
-  string. Every send would have failed with `AttributeError`. Hence the test above that pins the
-  types at the boundary.
-- The function lived in `messaging/__init__.py`, the app's own init file, and imported
-  `phonenumber_field` at startup. That risks Django app-loading errors and makes `users` and
-  `messaging` import each other. The new code goes in `messaging/sms/`, and
-  `messaging/__init__.py` stays empty.
-
-Leftover `__pycache__` directories from that revert still sit in `messaging/providers/` and
-`messaging/tests/`. They are not in git but are worth deleting locally, as they look like real
-code.
 
 ## Decisions worth a second opinion
 
-- **No `sender` argument on `send_sms`.** After this change no caller passes one, so it was
-  dropped. Adding it back later is a one-line change.
 - **No `retryable` flag on `SmsSendError`.** Only failover would use it, and failover is out of
   scope. Deciding which Twilio errors are worth retrying is better done alongside the failover
   work, where it can be tested.
-- **`SendResult` is returned but not used yet.** Kept deliberately, so that recording which vendor
-  sent which message does not mean changing the interface again.
 - **Carrier lookup left in `utils/twilio.py`.** Revisit if a second vendor ever needs to serve it.
 
 ## Follow-up work this enables
@@ -238,7 +255,3 @@ code.
 - Choosing a vendor per destination country, and per message type.
 - Trying a second vendor when the first fails.
 - Storing each send, so delivery and cost can be reported on.
-- A known inconsistency to fix separately: `start_configuration` returns `otp_fallback: true` for
-  every v2 session (commit `88348ec`), but `send_session_otp` still rejects sessions that are not
-  invited users (`users/views.py:972-974`). Those sessions are told the fallback exists but cannot
-  use it.
