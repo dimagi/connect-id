@@ -27,7 +27,7 @@ All nine go through one function, `utils.send_sms`, and one Twilio messaging ser
 In scope:
 
 - A vendor interface, with Twilio as the first vendor behind it.
-- Moving sender-ID lookup and test-number skipping into the layer.
+- Moving test-number skipping into the layer, and sender-ID lookup onto the vendor.
 - No change to when or why any SMS is sent.
 
 Out of scope, to be designed separately:
@@ -50,13 +50,13 @@ messaging/
   sms/
     __init__.py         send_sms()
     base.py             SmsMessage, SendResult, SmsSendError, BaseSmsVendor
-    senders.py          get_sms_sender()
-    registry.py         get_vendor()
+    registry.py         VENDORS, DEFAULT_VENDOR, get_vendor()
     vendors/
+      __init__.py       stays empty
       twilio.py         TwilioVendor
 ```
 
-`send_sms` and `get_sms_sender` are deleted from `utils/__init__.py`.
+`send_sms` and `get_sms_sender` are deleted from `utils/__init__.py`. Sender IDs are vendor-specific, so the map moves onto the vendor that registered them.
 
 
 ## The interface
@@ -68,7 +68,6 @@ messaging/
 class SmsMessage:
     to: PhoneNumber
     body: str
-    sender: str | None = None   # filled in by the layer, not by callers
 
 
 @dataclass(frozen=True)
@@ -79,36 +78,43 @@ class SendResult:
 
 
 class SmsSendError(Exception):
-    def __init__(self, vendor: str, message: str):
-        super().__init__(message)
+    def __init__(self, vendor: str, message: str, vendor_error_code: str | None = None):
+        super().__init__(f"{vendor}: {message}")
         self.vendor = vendor
+        self.vendor_error_code = vendor_error_code
 
 
 class BaseSmsVendor(ABC):
     name: str
 
     def send(self, message: SmsMessage) -> SendResult:
-        # Exit early for test numbers
-        if message.to.raw_input.startswith(TEST_NUMBER_PREFIX):
-            return SendResult(vendor=self.name, vendor_message_id=None, skipped=True)
-
-        # Determine message sender
-        msg_sender = message.sender or get_sms_sender(message.to.country_code)
         try:
-            return self._send(replace(message, sender=msg_sender))
+            return self._send(message, self.get_sender(message))
         except SmsSendError:
             raise
         except Exception as e:
-            raise SmsSendError(self.name, str(e)) from e
+            raise SmsSendError(self.name, str(e), self.error_code(e)) from e
+
+    def get_sender(self, message: SmsMessage) -> str | None:
+        """Sender ID to send from. None means the vendor picks its own."""
+        return None
+
+    def error_code(self, exc: Exception) -> str | None:
+        """The vendor's own code for a failure. None if it does not have one."""
+        return None
 
     @abstractmethod
-    def _send(self, message: SmsMessage) -> SendResult:
+    def _send(self, message: SmsMessage, sender: str | None) -> SendResult:
         """Call the vendor's API. Raise anything; send() converts it."""
 ```
 
-`send()` handles the parts every vendor needs: skipping test numbers, working out the sender ID,
-and converting vendor errors into one error type. A new vendor only writes `_send()`. Twilio in
-full:
+`send()` does what every vendor needs: resolve the sender ID, and turn whatever the vendor's SDK
+raises into one error type. Around that are two hooks a vendor overrides only if it has something to
+say — `get_sender()` and `error_code()` — both of which default to "nothing". A new vendor must write
+`_send()`; the other two are optional, and a vendor with no registered sender IDs simply ignores the
+`sender` argument.
+
+Twilio, which uses both, in full:
 
 ```python
 # messaging/sms/vendors/twilio.py
@@ -116,23 +122,39 @@ full:
 class TwilioVendor(BaseSmsVendor):
     name = "twilio"
 
+    # Alphanumeric sender IDs registered with Twilio, by country calling code.
+    SENDER_IDS = {"265": "ConnectID", "258": "ConnectID", "232": "ConnectID", "44": "ConnectID"}
+
     def __init__(self, account_sid: str, auth_token: str, messaging_service: str):
         self._client = Client(account_sid, auth_token)
         self._messaging_service = messaging_service
 
-    def _send(self, message: SmsMessage) -> SendResult:
+    def get_sender(self, message: SmsMessage) -> str | None:
+        return self.SENDER_IDS.get(str(message.to.country_code))
+
+    def error_code(self, exc: Exception) -> str | None:
+        return str(exc.code) if isinstance(exc, TwilioRestException) else None
+
+    def _send(self, message: SmsMessage, sender: str | None) -> SendResult:
         sent = self._client.messages.create(
             body=message.body,
             to=message.to.as_e164,
-            from_=message.sender,
+            from_=sender,
             messaging_service_sid=self._messaging_service,
         )
         return SendResult(vendor=self.name, vendor_message_id=sent.sid)
 ```
 
-It takes its credentials as arguments and holds one client. It does not check for test numbers,
-look up a sender ID, or catch errors, because `send()` has already dealt with those. That is all a
-second vendor has to write.
+**Sender IDs belong to the vendor, not to the layer.** `"ConnectID"` is an alphanumeric sender ID
+registered with *Twilio*. Handing it to a second vendor that has not registered it means the send
+is rejected or silently undelivered, which is exactly the kind of failure this layer is supposed to
+prevent.
+
+`error_code()` captures the vendor's own failure code — for Twilio, `TwilioRestException.code`
+(`21610` unsubscribed, `21614` not a mobile number, `30003` unreachable, and so on). Nothing reads
+it yet. It is worth carrying now because it costs one line, it is the input the deferred failover
+work needs, and it keeps failures separable in Sentry once every vendor error shares one exception
+type.
 
 `to` is a `PhoneNumber`, not a string. The layer needs `raw_input` to spot test numbers and
 `country_code` to pick the sender, and a string gives us neither. `.as_e164` is applied in one
@@ -144,8 +166,13 @@ The public function callers use:
 # messaging/sms/__init__.py
 
 def send_sms(to: PhoneNumber, body: str, vendor: str | None = None) -> SendResult:
-    return get_vendor(vendor).send(SmsMessage(to=to, body=body))
+    name = vendor or DEFAULT_VENDOR
+    if (to.raw_input or "").startswith(TEST_NUMBER_PREFIX):
+        return SendResult(vendor=name, vendor_message_id=None, skipped=True)
+    return get_vendor(name).send(SmsMessage(to=to, body=body))
 ```
+
+The test-number check happens here, before any vendor is built.
 
 ## Settings
 
@@ -177,12 +204,10 @@ VENDORS: dict[str, type[BaseSmsVendor]] = {
     TwilioVendor.name: TwilioVendor,
 }
 
+DEFAULT_VENDOR = TwilioVendor.name
+
 
 def get_vendor(name: str) -> BaseSmsVendor:
-    if name is None:
-        # Use twilio as default vendor
-        name = "twilio"
-
     if name not in VENDORS:
         raise ImproperlyConfigured(f"Unknown SMS vendor {name!r}. Known vendors: {sorted(VENDORS)}")
 
@@ -190,12 +215,17 @@ def get_vendor(name: str) -> BaseSmsVendor:
     if config is None:
         raise ImproperlyConfigured(f"No SMS_VENDORS entry for vendor {name!r}")
 
-    return VENDORS[name](**config)
+    try:
+        return VENDORS[name](**config)
+    except Exception as e:
+        raise ImproperlyConfigured(f"Could not build SMS vendor {name!r} from SMS_VENDORS[{name!r}]: {e}") from e
 ```
+
 ## Adding a new vendor
 Adding any new vendor means
-1. Adding the vendor's configs to settings
-2. Writing its vendor class (`init` and `_send`)
+1. Adding the vendor's configs to settings, with keys matching its `__init__` arguments
+2. Writing its vendor class: `__init__` and `_send`, plus `get_sender` if it has registered sender
+   IDs and `error_code` if its SDK reports codes worth keeping
 3. Adding one line to `VENDORS` to enable usage
 
 
@@ -232,9 +262,12 @@ Two, both intended:
 1. **Credential invites and HQ invites now skip test numbers.** Today only the OTP and
    deactivation flows check for the `+7426` prefix, so the two invite flows send real SMS to test
    numbers. Moving the check into the layer results in these not being sent.
-2. **Errors now arrive as `SmsSendError`** instead of `TwilioRestException`. Nothing catches
-   either one, so both end up as a 500 and a Sentry event. The new error names the vendor and
-   keeps the original exception attached, so Sentry reports are more useful.
+2. **Send failures now arrive as `SmsSendError`** instead of `TwilioRestException`. Nothing catches
+   either one, so both end up as a 500 and a Sentry event. Wrapping does collapse every vendor
+   failure into a single exception type, which on its own would make Sentry grouping coarser; the
+   vendor name and `vendor_error_code` are in the message to keep the distinct failures apart, and
+   the original exception stays on `__cause__`.
+
 
 Nothing else changes. In particular, a failed send must keep rolling back the way it does now:
 `BaseOTPDevice._attempt_send` calls the send inside `transaction.atomic()` and only then records
@@ -245,9 +278,11 @@ attempt is still recorded, which also matches today.
 
 ## Decisions worth a second opinion
 
-- **No `retryable` flag on `SmsSendError`.** Only failover would use it, and failover is out of
-  scope. Deciding which Twilio errors are worth retrying is better done alongside the failover
-  work, where it can be tested.
+- **`vendor_error_code` is captured but not interpreted.** No `retryable` flag: only failover would
+  use it, and failover is out of scope. Deciding which Twilio codes are worth retrying is better
+  done alongside that work, where it can be tested. Recording the raw code now is what makes that
+  decision possible later without a second pass over every vendor.
+- **Sender IDs live on the vendor class, not in settings.**
 - **Carrier lookup left in `utils/twilio.py`.** Revisit if a second vendor ever needs to serve it.
 
 ## Follow-up work this enables
