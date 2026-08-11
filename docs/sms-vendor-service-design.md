@@ -165,11 +165,12 @@ The public function callers use:
 ```python
 # messaging/sms/__init__.py
 
-def send_sms(to: PhoneNumber, body: str, vendor: str | None = None) -> SendResult:
-    name = vendor or DEFAULT_VENDOR
+def send_sms(to: PhoneNumber, body: str) -> SendResult:
     if (to.raw_input or "").startswith(TEST_NUMBER_PREFIX):
-        return SendResult(vendor=name, vendor_message_id=None, skipped=True)
-    return get_vendor(name).send(SmsMessage(to=to, body=body))
+        return SendResult(vendor=None, vendor_message_id=None, skipped=True)
+    
+    vendor = DEFAULT_VENDOR  # in future work the vendor will be determined based on the country code
+    return get_vendor(vendor).send(SmsMessage(to=to, body=body))
 ```
 
 The test-number check happens here, before any vendor is built.
