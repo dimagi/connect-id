@@ -92,7 +92,7 @@ deploy/             # Kamal deployment config
 - pytest with pytest-django, `--reuse-db` enabled by default
 - Factory Boy factories in each app (`users/factories.py`, `messaging/factories.py`, etc.)
 - `test_utils/decorators.py` has `@skip_app_integrity_check` for bypassing integrity checks in tests
-- CI runs linting + pytest against PostgreSQL 12
+- CI runs linting + pytest against PostgreSQL 15
 
 ## Environment
 
