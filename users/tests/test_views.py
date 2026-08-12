@@ -1161,7 +1161,8 @@ class TestUpdateProfile:
 
     url = reverse("update_profile")
 
-    def test_success(self, auth_device, user):
+    @mock.patch("users.views.push_profile_to_connect.delay")
+    def test_success(self, mock_push, auth_device, user):
         data = {"name": "FooBar", "secondary_phone": "+27731234567"}
         user.phone_number = self.test_number
         user.save()
@@ -1210,6 +1211,44 @@ class TestUpdateProfile:
         assert response.status_code == 400
         assert isinstance(response, JsonResponse)
         assert response.json() == {"recovery_phone": ["The phone number entered is not valid."]}
+
+    @mock.patch("users.views.push_profile_to_connect.delay")
+    def test_name_change_is_pushed_to_connect(self, mock_push, auth_device, user):
+        # UserFactory's Faker phone number does not always survive full_clean().
+        user.phone_number = self.test_number
+        user.save()
+
+        response = auth_device.post(self.url, {"name": "New Name"})
+
+        assert response.status_code == 200
+        mock_push.assert_called_once_with(user.username, "New Name")
+
+    @mock.patch("users.views.push_profile_to_connect.delay")
+    def test_unchanged_name_is_not_pushed(self, mock_push, auth_device, user):
+        response = auth_device.post(self.url, {"name": user.name})
+
+        assert response.status_code == 200
+        mock_push.assert_not_called()
+
+    @mock.patch("users.services.boto3.client")
+    @mock.patch("users.views.push_profile_to_connect.delay")
+    def test_photo_only_update_is_not_pushed(self, mock_push, mock_boto3_client, auth_device):
+        mock_boto3_client.return_value = mock.MagicMock()
+        data = {"photo": "data:image/jpg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEB"}
+
+        auth_device.post(self.url, data)
+
+        mock_push.assert_not_called()
+
+    @mock.patch("users.views.push_profile_to_connect.delay")
+    def test_invalid_update_is_not_pushed(self, mock_push, auth_device, user):
+        user.phone_number = self.test_number
+        user.save()
+
+        response = auth_device.post(self.url, {"name": "New Name", "secondary_phone": "-12415"})
+
+        assert response.status_code == 400
+        mock_push.assert_not_called()
 
 
 class TestValidateFirebaseIDToken:

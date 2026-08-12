@@ -2,9 +2,15 @@ from unittest import mock
 
 import pytest
 import requests
+from django.conf import settings
 from phonenumbers.phonenumberutil import NumberParseException
 
-from utils.connect import check_number_for_existing_invites, get_connect_toggles
+from utils.connect import (
+    CONNECT_REQUEST_TIMEOUT,
+    check_number_for_existing_invites,
+    get_connect_toggles,
+    update_connect_user_profile,
+)
 
 
 class TestCheckNumberForExistingInvites:
@@ -57,3 +63,25 @@ class TestGetConnectToggles:
         mock_get.side_effect = exc
         with pytest.raises(requests.exceptions.RequestException):
             get_connect_toggles(username="alice")
+
+
+class TestUpdateConnectUserProfile:
+    @mock.patch("utils.connect.requests.post")
+    def test_posts_username_and_name(self, mock_post):
+        update_connect_user_profile("abc123", "New Name")
+
+        args, kwargs = mock_post.call_args
+        assert args[0] == settings.CONNECT_UPDATE_PROFILE_URL
+        assert kwargs["data"] == {"username": "abc123", "name": "New Name"}
+        assert kwargs["auth"] == (
+            settings.COMMCARE_CONNECT_CLIENT_ID,
+            settings.COMMCARE_CONNECT_CLIENT_SECRET,
+        )
+        assert kwargs["timeout"] == CONNECT_REQUEST_TIMEOUT
+
+    @mock.patch("utils.connect.requests.post")
+    def test_raises_on_error_response(self, mock_post):
+        mock_post.return_value.raise_for_status.side_effect = requests.exceptions.HTTPError("500")
+
+        with pytest.raises(requests.exceptions.HTTPError):
+            update_connect_user_profile("abc123", "New Name")

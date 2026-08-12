@@ -31,6 +31,16 @@ def resend_connect_invite(user):
     requests.post(url, auth=auth, data=data)
 
 
+def update_connect_user_profile(username, name):
+    """Push a profile change to Connect, which caches the name for its own reporting."""
+    url = settings.CONNECT_UPDATE_PROFILE_URL
+    auth = (settings.COMMCARE_CONNECT_CLIENT_ID, settings.COMMCARE_CONNECT_CLIENT_SECRET)
+    response = requests.post(
+        url, auth=auth, data={"username": username, "name": name}, timeout=CONNECT_REQUEST_TIMEOUT
+    )
+    response.raise_for_status()
+
+
 def get_connect_toggles(username=None, phone_number=None):
     url = settings.CONNECT_TOGGLES_URL
     auth = (settings.COMMCARE_CONNECT_CLIENT_ID, settings.COMMCARE_CONNECT_CLIENT_SECRET)
