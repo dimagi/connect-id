@@ -3,9 +3,10 @@
 **Ticket:** CCCT-2716
 **Status:** for review
 
-## Why
+Sending an SMS today can happen either through Firebase or PersonalID (using Twilio). This spec will cover only PersonalID SMS.
 
-All our server-side SMS today goes through Twilio, called directly from four places in the code. We want to add
+## Why
+PersonalID SMS today uses Twilio, called directly from four places in the code. We want to add
 more vendors, because different vendors are needed for delivery in different countries, for failover and cost.
 
 This change does not add a second vendor. It puts a service layer between our code and Twilio so
