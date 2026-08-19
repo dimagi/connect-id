@@ -70,14 +70,20 @@ asked for is returned unchanged either way.
 code?"** Their options were (a) `start_configuration` returns `email` (their stated preference), or
 (b) `check_name` returns it.
 
-*Answer: (b), and masked rather than in full — see D6.* (a) has a problem worth being explicit
-about: `start_device_configuration` is `@permission_classes([])` (`users/views.py:93-96`), gated
-only by app integrity. It is the call that *creates* the session, so there is no phone validation
-behind it. Returning the account's email there turns "phone number → email address" into a lookup
-available to anyone who can produce a valid Play Integrity token. `check_name` at least sits behind
-`is_phone_validated` (`users/views.py:943`), so the caller has already proved control of the number.
-This one is a genuine client/server disagreement and should get an explicit decision rather than
-being settled by whichever spec merges first.
+*Answer: mostly "you don't need it" — and where you do, (b) masked, not (a). See D6.* Because
+`complete_recovery` resolves the address from `user.email` rather than accepting one (§5), the
+client never needs the address to complete recovery. The only thing still asking for it is
+`send_email_otp`'s required `email` parameter, and D6 proposes that endpoint resolve server-side too
+during recovery — after which the full address never crosses the wire in either direction, and the
+client needs only a masked hint to tell the user which mailbox is being used.
+
+Option (a) also has a problem worth being explicit about: `start_device_configuration` is
+`@permission_classes([])` (`users/views.py:93-96`), gated only by app integrity. It is the call that
+*creates* the session, so there is no phone validation behind it. Returning the account's email
+there turns "phone number → email address" into a lookup available to anyone who can produce a valid
+Play Integrity token. `check_name` at least sits behind `is_phone_validated` (`users/views.py:943`).
+This is a genuine client/server disagreement and should get an explicit decision rather than being
+settled by whichever spec merges first.
 
 ---
 
@@ -95,6 +101,8 @@ being settled by whichever spec merges first.
    * Option B: Complete email OTP verification
      * User indicates that they don't remember their backup code
      * An OTP is emailed to the user and they are shown the Email Verification page
+       * The OTP always goes to the address on record for the account — the user never types
+         one, and never chooses which mailbox is used (§5)
      * User retrieves and enters the OTP and submits
  * On submission of either of the above options:
    * Mobile makes the new `complete_recovery` request with the chosen `method` and associated data
@@ -119,9 +127,12 @@ Content-Type: application/json
 |---|---|---|
 | `method` | always | `"backup_code"` or `"email_otp"`. Any other value → `400 INVALID_DATA`; absent → `400 MISSING_DATA`. |
 | `backup_code` | `method=backup_code` | The user's backup code. Equivalent field to `recovery_pin` in `confirm_backup_code` today. |
-| `otp` | `method=email_otp` | The code mailed by `send_email_otp` for this session + email. |
+| `otp` | `method=email_otp` | The code mailed by `send_email_otp` for this session. |
 
 Fields belonging to the other method are ignored, not rejected.
+
+**The client never sends an email address.** The endpoint resolves it from `user.email` on the
+account being recovered — see §5. An `email` key in the request body is ignored, not honoured.
 
 URL name: `complete_recovery` (`users/urls.py`), path under `recover/` alongside the other recovery
 endpoints.
@@ -156,14 +167,14 @@ only when the session carries a `device` **and** a *different* device was seen o
 | Status | `error_code` | When |
 |---|---|---|
 | 400 | `MISSING_DATA` | `method` absent, or the selected method's fields are absent/blank |
-| 400 | `INVALID_DATA` | `method` not one of the two values; no pending email OTP device for this session+email |
+| 400 | `INVALID_DATA` | `method` not one of the two values; no pending email OTP device for this session and the account's email |
 | 400 | `NO_RECOVERY_PIN_SET` | `backup_code` and the account has no backup code set |
+| 400 | `NO_EMAIL_SET` | `email_otp` and the account has no email on record (decision D4) |
 | 401 | `INCORRECT_OTP` | `email_otp` and the code is wrong or expired |
 | 401 | `LOCKED_ACCOUNT` | the third consecutive wrong backup code — the account is deactivated and locked |
 | 403 | `PHONE_NOT_VALIDATED` | `session.is_phone_validated` is false |
 | 403 | `NOT_ALLOWED` | `email_otp` requested while the `email_otp_verification` switch is off (decision D2) |
 | 404 | `USER_DOES_NOT_EXIST` | no active `ConnectUser` for the session's phone number (decision D5) |
-| 4xx | *(D4)* | `email_otp` and the email does not match the account's — code TBD, see §5 |
 
 ---
 
@@ -184,7 +195,8 @@ Validation runs in this order; the first failure returns.
 
 Lift-and-shift of `confirm_backup_code`:
 
-- `user.check_recovery_pin(recovery_pin)`.
+- `user.check_recovery_pin(data["backup_code"])` — the model method and column keep the older
+  `recovery_pin` name; only the wire field is renamed to match the user-facing term.
 - `RecoveryPinNotSetError` → `400 NO_RECOVERY_PIN_SET`.
 - Wrong code → `user.add_failed_backup_code_attempt()`. If `backup_code_attempts_left` is then `0`
   (`MAX_BACKUP_CODE_ATTEMPTS = 3`), set `is_active = False`, `is_locked = True`, save, and return
@@ -193,20 +205,23 @@ Lift-and-shift of `confirm_backup_code`:
 
 ### 4.2 `method = email_otp`
 
-- `email` and `otp` both required and non-blank after `.strip()` → else `400 MISSING_DATA`.
-- Look up `SessionEmailOTPDevice.objects.get(session=request.auth, email=email)`. Not found →
-  `400 INVALID_DATA`. Binding the device to *this session* is what stops an OTP issued to one
-  session being redeemed by another.
-- **The email must match the account's email** — §5. This is the load-bearing rule.
+- `otp` required and non-blank after `.strip()` → else `400 MISSING_DATA`.
+- **Resolve the email from the account, not the request:** `email = user.email`. If it is unset,
+  `400 NO_EMAIL_SET` — see §5 and D4. The client does not get to say which mailbox counts.
+- Look up `SessionEmailOTPDevice.objects.get(session=request.auth, email=user.email)`. Not found →
+  `400 INVALID_DATA`. Two properties come out of this one lookup: binding to *this session* stops an
+  OTP issued to another session being redeemed here, and binding to *the account's* email means an
+  OTP the caller had mailed to some other address has no device row to match.
 - `device.verify_token(otp)` → false gives `401 INCORRECT_OTP` and logs the masked email, matching
   `verify_email_otp` (`users/views.py:1054-1056`). django-otp's `SideChannelDevice.verify_token`
   clears the stored token on success, so a code cannot be replayed — worth re-confirming against the
   pinned django-otp version during implementation, since the replay property depends on it.
 - Success → §4.3.
 
-Note there is deliberately **no `user.email = email` write** on this path: the matching rule in §5
-means the email is already the account's. The only account-email writes stay in
-`verify_email_otp` / `complete_profile`.
+Note there is deliberately **no `user.email` write** on this path. The address came *from* the
+account, so there is nothing to store; the only account-email writes stay in `verify_email_otp` /
+`complete_profile`. `complete_recovery` never mutates which mailbox owns an account, which also
+means it can never be used to move one.
 
 ### 4.3 Shared completion
 
@@ -230,25 +245,43 @@ password that now authenticates the account. Cheap to fix while the code is bein
 
 ---
 
-## 5. Security: the email-match rule
+## 5. Security: the email is server-resolved, never client-supplied
 
-**Requirement: `method=email_otp` succeeds only if the submitted email is already the email on the
-account being recovered** (compared case-insensitively; `ConnectUser.email` is a `EmailField`).
+**Requirement: `method=email_otp` reads the address from `user.email` on the account being
+recovered. The request carries no email at all, and an `email` key in the body is ignored.**
 
-Why this is not optional. The session has proved exactly one thing: the caller controls the phone
-number. Recovery today requires a second factor on top of that — the backup code, something the
-caller knows. `send_email_otp` on a `ConfigurationSession` will mail an OTP to *any* address the
-caller types (`users/views.py:1010-1021`); it has no notion of the account's email. If
-`complete_recovery` accepted any verified mailbox, then anyone holding the SIM — a recycled number,
-a stolen or swapped SIM, a shared handset — recovers the account by mailing themselves an OTP. The
-second factor would be decorative.
+Why this matters. The session has proved exactly one thing: the caller controls the phone number.
+Recovery today requires a second factor on top of that — the backup code, something the caller
+knows. `send_email_otp` on a `ConfigurationSession` will mail an OTP to *any* address the caller
+types (`users/views.py:1010-1021`); it has no notion of the account's email. If `complete_recovery`
+honoured a client-supplied address, then anyone holding the SIM — a recycled number, a stolen or
+swapped SIM, a shared handset — recovers the account by mailing themselves an OTP. The second factor
+would be decorative.
 
-The check therefore belongs in `complete_recovery`, before `verify_token`, and it is the reason this
-endpoint cannot simply delegate to the existing `verify_email_otp` view.
+Note this is *not* implemented as a comparison between a submitted address and the stored one. An
+earlier draft of this spec proposed exactly that, and it is strictly worse: a comparison is a check
+that can be reordered, short-circuited, or forgotten under a later refactor, and it puts an
+attacker-controlled string into the lookup path. Resolving from `user.email` removes the class of
+bug instead of guarding against it — there is no attacker-supplied address anywhere in the flow, so
+there is nothing to get wrong. It also deletes the whole mismatch error path, case-folding question,
+and the enumeration argument that came with it.
+
+The consequence for `send_email_otp` is worth stating plainly, because it is *not* fixed by this
+change: that endpoint still accepts and mails to an arbitrary address during a recovery session. The
+attacker simply gains nothing from it — the resulting `SessionEmailOTPDevice` is keyed on an email
+that `complete_recovery` will never look up. What remains is an abuse vector for *sending* mail, not
+for taking over accounts, and it exists today independently of this work. See D6 for the proposal
+that `send_email_otp` resolve the address server-side too during recovery, which would close it and
+simplify the client at the same time.
+
+This is also the reason the endpoint cannot simply delegate to the existing `verify_email_otp` view,
+which is built around a client-supplied address by design.
 
 Corollaries worth having on the record:
 
-- An account with no email set can never recover by `email_otp`. Same error as a mismatch (D4).
+- An account with no email on record can never recover by `email_otp` — `400 NO_EMAIL_SET` (D4).
+  The mobile spec's flow should never reach this, since "Forgot backup code?" is only offered when
+  an email exists, so treat it as a defensive error rather than a UX path.
 - **Nothing in the codebase limits wrong OTP guesses**, on any OTP, and that becomes a much sharper
   problem here. Verified: all seven `verify_token` call sites (`users/views.py` 183, 211, 315, 358,
   995, 1054 and `payments/views.py:41`) return a bare `401` with no counter; `BaseOTPDevice` extends
@@ -316,12 +349,16 @@ to make it `401 INCORRECT_CODE` with `attempts_left` in the body.
 semantics keep the old and new paths sharing one handler while both are live. Worth spending the
 change if the team disagrees — this is the last chance to fix it.
 
-**D4 — What error does an email mismatch return?**
-Options: reuse `400 INVALID_DATA` (indistinguishable from "no pending device", so it leaks nothing
-extra), or add a specific code such as `EMAIL_MISMATCH` so the client can say something useful.
-*Recommendation: a new `403 EMAIL_MISMATCH`.* The caller already controls the phone, so the
-enumeration concern is thin, and "that isn't the email on this account" is exactly what the user
-needs to be told. Needs a matching client string.
+**D4 — What error when the account has no email on record?**
+*(Was "what error does a mismatch return?" — that question is gone. The email is server-resolved, so
+there is no submitted address to mismatch. §5.)*
+The remaining case is `method=email_otp` against an account with `user.email` unset. Options: reuse
+`400 INVALID_DATA`, or add a dedicated code.
+*Recommendation: a new `400 NO_EMAIL_SET`*, mirroring the existing `NO_RECOVERY_PIN_SET` that the
+`backup_code` path already returns for the same shape of problem — "you asked for a factor this
+account hasn't got". The symmetry is worth the extra constant, and it makes the failure obvious in
+logs if a client ever offers email recovery when it shouldn't. Needs a matching client string,
+though per §5 the client should never surface it.
 
 **D5 — What happens when no active user exists for the session's phone number?**
 `confirm_backup_code` calls `.get()` unguarded, so this is a `ConnectUser.DoesNotExist` → `500`
@@ -330,27 +367,36 @@ retrofit the old one; a client that reaches this state has skipped `check_name`.
 
 **D6 — How does the client learn that `email_otp` is available for this account?** *(client/server
 disagreement — needs an explicit decision)*
-The endpoint is unusable without an answer, and the mobile spec asks for one directly (§1.1, their
-Q2). `check_name` returns `account_exists` and a photo, not whether the account has an email.
-Without a hint, a user picks "recover by email", types an address, receives an OTP, verifies it, and
-only *then* gets rejected for a mismatch — a bad flow, and a way to make us mail OTPs to arbitrary
-addresses.
+The mobile spec asks for this directly (§1.1, their Q2): to offer "Forgot backup code?" the app has
+to know an email exists, and today `check_name` returns only `account_exists` and a photo. The
+client's stated preference is `start_configuration` returning `email`, "available from the very
+start of the configuration flow".
 
-The client's stated preference is `start_configuration` returning `email`, "available from the very
-start of the configuration flow". *Recommendation: `check_name` instead, returning a masked hint
-(e.g. `d***@gmail.com`) plus an `email_recovery_available` boolean.* Two reasons:
+Server-resolving the address in `complete_recovery` (§5) shrinks what the client actually needs.
+It never needs the address to *complete* recovery any more. The only remaining reason it wants one
+is that `send_email_otp` takes `email` as a required parameter — so the question is no longer "how
+does the client get the email" but "why does the client need it at all".
 
-- `start_device_configuration` is unauthenticated (`@permission_classes([])`, `users/views.py:93-96`)
-  and gated only by app integrity — it is the call that creates the session, so nothing has proved
-  control of the phone number yet. Returning the account's email makes phone → email a harvesting
-  lookup. `check_name` runs behind `is_phone_validated` (`users/views.py:943`).
-- The client only needs to *offer the option* and prefill; it never needs the full address, because
-  `complete_recovery` matches server-side against `user.email` (§5). A mask is sufficient for the UI
-  and leaks materially less if the phone factor is ever compromised.
+*Recommendation, in two parts:*
 
-If the flow genuinely needs this before `check_name` runs, the better answer is a third call behind
-phone validation, not widening `start_configuration`. Build is a separate ticket either way;
-sequence it *before* the client work.
+1. **`send_email_otp` resolves the address server-side too**, when the caller is a phone-validated
+   `ConfigurationSession` with an active user — same rule as §5, same one-line lookup. Registration
+   keeps today's behaviour, because there the address genuinely is new and only the client knows it.
+   This closes the "mail an OTP anywhere during a recovery session" abuse vector §5 leaves open, and
+   it means the full address never crosses the wire in either direction during recovery.
+2. **`check_name` returns `email_recovery_available` plus a masked hint** (e.g. `d***@gmail.com`),
+   purely so the UI can say *which* mailbox it is about to mail. Nothing consumes it as data.
+
+Against the client's preferred `start_configuration`: that endpoint is unauthenticated
+(`@permission_classes([])`, `users/views.py:93-96`) and gated only by app integrity — it is the call
+that *creates* the session, so nothing has proved control of the phone number yet. Returning the
+account's email there makes phone → email a harvesting lookup for anyone who can produce a valid
+Play Integrity token. `check_name` runs behind `is_phone_validated` (`users/views.py:943`). If the
+flow genuinely needs the hint before `check_name` runs, the better answer is a new call behind phone
+validation, not widening `start_configuration`.
+
+Both parts are separate tickets from this one; part 1 should be sequenced *before* the client work,
+since without it the client still needs a real address to call `send_email_otp`.
 
 **D7 — Path.** `recover/complete_recovery` (verbose but matches the URL name and the `recover/`
 grouping) vs `recover/complete`. *Recommendation: `recover/complete_recovery`.* Trivial; just needs
@@ -365,7 +411,7 @@ picking before the client is written.
 | `users/urls.py` | `path("recover/complete_recovery", views.complete_recovery, name="complete_recovery")` |
 | `users/views.py` | New `complete_recovery` view. Extract `_complete_recovery_for_user(user, session) -> dict` and `_apply_device_info(user, session, response_data)` from the tail of `confirm_backup_code`. Extract the backup-code verification into a helper the two views share. |
 | `users/views.py` | `confirm_backup_code` calls the extracted helpers — **no behaviour change**, so its existing tests must pass untouched. |
-| `users/const.py` | `RECOVERY_METHOD_BACKUP_CODE` / `RECOVERY_METHOD_EMAIL_OTP` constants; `EMAIL_MISMATCH` error code if D4 lands. |
+| `users/const.py` | `RECOVERY_METHOD_BACKUP_CODE` / `RECOVERY_METHOD_EMAIL_OTP` constants; `NO_EMAIL_SET` error code if D4 lands. |
 | `users/tests/test_views.py` | New `TestCompleteRecoveryApi` (§8). |
 
 No model changes and no migration. No new API version — `AcceptHeaderVersioning` defaults to v2.0
@@ -417,20 +463,27 @@ def complete_recovery(request):
 - Missing `method` → 400 `MISSING_DATA`; `method="sms"` → 400 `INVALID_DATA`.
 
 **`backup_code`**
-- Missing `recovery_pin` → 400 `MISSING_DATA`.
+- Missing `backup_code` → 400 `MISSING_DATA`.
 - No backup code set → 400 `NO_RECOVERY_PIN_SET`.
 - Wrong code → `{"attempts_left": 2}`, `failed_backup_code_attempts == 1`.
 - Third wrong code → 401 `LOCKED_ACCOUNT`, user `is_active=False` and `is_locked=True`.
 - Correct code → success payload; `failed_backup_code_attempts` reset to 0.
 
 **`email_otp`**
-- Missing `email` or `otp` → 400 `MISSING_DATA`.
-- No `SessionEmailOTPDevice` for this session+email → 400 `INVALID_DATA`.
+- Missing `otp` → 400 `MISSING_DATA`.
+- `user.email` is unset → 400 `NO_EMAIL_SET`, and `verify_token` is never called.
+- No `SessionEmailOTPDevice` for this session + `user.email` → 400 `INVALID_DATA`.
 - Device exists on a *different* session for the same email → 400 `INVALID_DATA` (cross-session
   redemption blocked).
-- Email does not match `user.email` → per D4, and `verify_token` is never called.
-- `user.email` is null → same rejection.
-- Email matches but differs in case → accepted.
+- **A device exists on this session for a different email, with a valid OTP → 400 `INVALID_DATA`,
+  and `verify_token` is never called.** This is the test that proves the client cannot nominate the
+  mailbox: post the correct code for `attacker@evil.com` and it is not merely rejected, it is not
+  even looked at. Assert the account is untouched — no password rotation, no `UserDeviceInfo` write.
+- **An `email` key in the request body is ignored.** Send `{"method": "email_otp", "otp": <valid>,
+  "email": "attacker@evil.com"}` with a valid device on `user.email` → succeeds, because the body's
+  address plays no part; and the mirror case, a valid device on `attacker@evil.com` and an `email`
+  key naming it → 400 `INVALID_DATA`. Guards against a later refactor quietly reintroducing
+  client-supplied addressing.
 - Wrong OTP → 401 `INCORRECT_OTP` (patch `SessionEmailOTPDevice.verify_token` → `False`, as the
   existing `TestVerifyEmailOtp` does).
 - Per D1: N consecutive wrong OTPs invalidate the token — the (N+1)th request fails even when the
