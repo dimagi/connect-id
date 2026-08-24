@@ -13,7 +13,7 @@
 
 **Answers:** the "Server Team Request" section of the mobile tech spec
  * [commcare-android#3843](https://github.com/dimagi/commcare-android/pull/3843)
- * [CCCT-2677](https://dimagi.atlassian.net/browse/CCCT-2677),
+ * [CCCT-2677](https://dimagi.atlassian.net/browse/CCCT-2677)
  * `docs/superpowers/specs/2026-07-28-personalid-backup-code-management-design.md`
 
 **Related code:**
@@ -80,17 +80,13 @@ code?"** Their options were (a) `start_configuration` returns `email` (their sta
 *Answer: mostly "you don't need it" — and where you do, (b) masked, not (a). See D6.* Because
 `complete_recovery` resolves the address from `user.email` rather than accepting one (§5), the
 client never needs the address to complete recovery. The only thing still asking for it is
-`send_email_otp`'s required `email` parameter, and D6 proposes that endpoint resolve server-side too
-during recovery — after which the full address never crosses the wire in either direction, and the
-client needs only a masked hint to tell the user which mailbox is being used.
+`send_email_otp`'s required `email` parameter.
 
 Option (a) also has a problem worth being explicit about: `start_device_configuration` is
 `@permission_classes([])` (`users/views.py:93-96`), gated only by app integrity. It is the call that
 *creates* the session, so there is no phone validation behind it. Returning the account's email
 there turns "phone number → email address" into a lookup available to anyone who can produce a valid
 Play Integrity token. `check_name` at least sits behind `is_phone_validated` (`users/views.py:943`).
-This is a genuine client/server disagreement and should get an explicit decision rather than being
-settled by whichever spec merges first.
 
 ---
 
@@ -183,7 +179,7 @@ Notes:
 | 401 | `LOCKED_ACCOUNT` | the third consecutive wrong backup code — the account is deactivated and locked |
 | 403 | `PHONE_NOT_VALIDATED` | `session.is_phone_validated` is false |
 | 403 | `NOT_ALLOWED` | `email_otp` requested while the `email_otp_verification` switch is off (decision D2) |
-| 404 | `USER_DOES_NOT_EXIST` | no active `ConnectUser` for the session's phone number (decision D5) |
+| 500 | no active `ConnectUser` for the session's phone number (decision D5) |
 
 ---
 
@@ -279,9 +275,7 @@ The consequence for `send_email_otp` is worth stating plainly, because it is *no
 change: that endpoint still accepts and mails to an arbitrary address during a recovery session. The
 attacker simply gains nothing from it — the resulting `SessionEmailOTPDevice` is keyed on an email
 that `complete_recovery` will never look up. What remains is an abuse vector for *sending* mail, not
-for taking over accounts, and it exists today independently of this work. See D6 for the proposal
-that `send_email_otp` resolve the address server-side too during recovery, which would close it and
-simplify the client at the same time.
+for taking over accounts, and it exists today independently of this work.
 
 This is also the reason the endpoint cannot simply delegate to the existing `verify_email_otp` view,
 which is built around a client-supplied address by design.
@@ -376,7 +370,6 @@ today. *Recommendation: Keep as is.* Mobile should never allow this.
 **D6 — How does the client learn that `email_otp` is available for this account?**
 In a separate ticket, the server will change to sending the `masked_email` field to mobile on successful `check_name`.
 
-
 **D7 — Path.** `recover/complete_recovery` (verbose but matches the URL name and the `recover/`
 grouping) vs `recover/complete`. *Recommendation: `recover/complete_recovery`.* Trivial; just needs
 picking before the client is written.
@@ -412,10 +405,7 @@ def complete_recovery(request):
     if method not in (RECOVERY_METHOD_BACKUP_CODE, RECOVERY_METHOD_EMAIL_OTP):
         return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
 
-    try:
-        user = ConnectUser.objects.get(phone_number=session.phone_number, is_active=True)
-    except ConnectUser.DoesNotExist:
-        return JsonResponse({"error_code": ErrorCodes.USER_DOES_NOT_EXIST}, status=404)
+    user = ConnectUser.objects.get(phone_number=session.phone_number, is_active=True)
 
     verify = _verify_backup_code if method == RECOVERY_METHOD_BACKUP_CODE else _verify_email_otp
     early_response = verify(request, user)          # None means "verified, carry on"
@@ -438,7 +428,7 @@ def complete_recovery(request):
 - Locked user's phone number → 401 `LOCKED_ACCOUNT` (raised in the auth class).
 - `is_phone_validated = False` → 403 `PHONE_NOT_VALIDATED`.
 - Basic-auth client and OAuth2 bearer client are both rejected — `SessionTokenAuthentication` only.
-- No active user for the session's phone → 404 `USER_DOES_NOT_EXIST`.
+- No active user for the session's phone → 500.
 - Missing `method` → 400 `MISSING_DATA`; `method="sms"` → 400 `INVALID_DATA`.
 
 **`backup_code`**
