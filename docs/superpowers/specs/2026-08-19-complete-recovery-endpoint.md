@@ -1,13 +1,20 @@
 # `complete_recovery` — a single endpoint for account recovery
 
 **Status:** Draft — for team review
+
 **Ticket:** [CCCT-2708](https://dimagi.atlassian.net/browse/CCCT-2708)
+
 **Repo:** `connect-id` (server). Client counterpart lands in `commcare-android`.
-**Replaces (for new clients):** `POST /users/recover/confirm_backup_code`, `POST /users/verify_email_otp`
-**Answers:** the "Server Team Request" section of the mobile tech spec —
-[commcare-android#3843](https://github.com/dimagi/commcare-android/pull/3843) /
-[CCCT-2677](https://dimagi.atlassian.net/browse/CCCT-2677),
-`docs/superpowers/specs/2026-07-28-personalid-backup-code-management-design.md`
+
+**Replaces during recovery (for new clients):**
+ * `POST /users/recover/confirm_backup_code`
+ * `POST /users/verify_email_otp`
+   * Note: Still called during Edit Profile workflow
+
+**Answers:** the "Server Team Request" section of the mobile tech spec
+ * [commcare-android#3843](https://github.com/dimagi/commcare-android/pull/3843)
+ * [CCCT-2677](https://dimagi.atlassian.net/browse/CCCT-2677),
+ * `docs/superpowers/specs/2026-07-28-personalid-backup-code-management-design.md`
 
 **Related code:**
  * `users/views.py:566` (`confirm_backup_code`)
@@ -107,9 +114,10 @@ settled by whichever spec merges first.
  * On submission of either of the above options:
    * Mobile makes the new `complete_recovery` request with the chosen `method` and associated data
 
-The session token is the only credential. `SessionTokenAuthentication` already rejects an unknown
-key (`401 INVALID_TOKEN`), an expired session (`401 TOKEN_EXPIRED`), and a phone number belonging to
-a locked account (`401 LOCKED_ACCOUNT`) before the view body runs.
+The session token is the only credential. `SessionTokenAuthentication` already rejects:
+ * An unknown key (`401 INVALID_TOKEN`)
+ * An expired session (`401 TOKEN_EXPIRED`)
+ * A phone number belonging to a locked account (`401 LOCKED_ACCOUNT`)
 
 ---
 
@@ -151,10 +159,11 @@ endpoints.
 }
 ```
 
-`email` is present only when the account has one. `previous_device` / `last_accessed` are present
-only when the session carries a `device` **and** a *different* device was seen on the account within
-`DEVICE_RECENT_ACCESS_THRESHOLD` (30 days) — byte-for-byte the rule in `confirm_backup_code`
-(`users/views.py:602-626`).
+Notes:
+ * `email` is present only when the account has one
+ * `previous_device` / `last_accessed` are present only when the session carries a `device` **and** a *different* device was seen on the account within
+`DEVICE_RECENT_ACCESS_THRESHOLD` (30 days)
+   * Byte-for-byte the rule in `confirm_backup_code` (`users/views.py:602-626`).
 
 ### Wrong-backup-code response — `200` (see decision D3)
 
@@ -362,41 +371,11 @@ though per §5 the client should never surface it.
 
 **D5 — What happens when no active user exists for the session's phone number?**
 `confirm_backup_code` calls `.get()` unguarded, so this is a `ConnectUser.DoesNotExist` → `500`
-today. *Recommendation: catch it and return `404 USER_DOES_NOT_EXIST` in the new endpoint.* Do not
-retrofit the old one; a client that reaches this state has skipped `check_name`.
+today. *Recommendation: Keep as is.* Mobile should never allow this.
 
-**D6 — How does the client learn that `email_otp` is available for this account?** *(client/server
-disagreement — needs an explicit decision)*
-The mobile spec asks for this directly (§1.1, their Q2): to offer "Forgot backup code?" the app has
-to know an email exists, and today `check_name` returns only `account_exists` and a photo. The
-client's stated preference is `start_configuration` returning `email`, "available from the very
-start of the configuration flow".
+**D6 — How does the client learn that `email_otp` is available for this account?**
+In a separate ticket, the server will change to sending the `masked_email` field to mobile on successful `check_name`.
 
-Server-resolving the address in `complete_recovery` (§5) shrinks what the client actually needs.
-It never needs the address to *complete* recovery any more. The only remaining reason it wants one
-is that `send_email_otp` takes `email` as a required parameter — so the question is no longer "how
-does the client get the email" but "why does the client need it at all".
-
-*Recommendation, in two parts:*
-
-1. **`send_email_otp` resolves the address server-side too**, when the caller is a phone-validated
-   `ConfigurationSession` with an active user — same rule as §5, same one-line lookup. Registration
-   keeps today's behaviour, because there the address genuinely is new and only the client knows it.
-   This closes the "mail an OTP anywhere during a recovery session" abuse vector §5 leaves open, and
-   it means the full address never crosses the wire in either direction during recovery.
-2. **`check_name` returns `email_recovery_available` plus a masked hint** (e.g. `d***@gmail.com`),
-   purely so the UI can say *which* mailbox it is about to mail. Nothing consumes it as data.
-
-Against the client's preferred `start_configuration`: that endpoint is unauthenticated
-(`@permission_classes([])`, `users/views.py:93-96`) and gated only by app integrity — it is the call
-that *creates* the session, so nothing has proved control of the phone number yet. Returning the
-account's email there makes phone → email a harvesting lookup for anyone who can produce a valid
-Play Integrity token. `check_name` runs behind `is_phone_validated` (`users/views.py:943`). If the
-flow genuinely needs the hint before `check_name` runs, the better answer is a new call behind phone
-validation, not widening `start_configuration`.
-
-Both parts are separate tickets from this one; part 1 should be sequenced *before* the client work,
-since without it the client still needs a real address to call `send_email_otp`.
 
 **D7 — Path.** `recover/complete_recovery` (verbose but matches the URL name and the `recover/`
 grouping) vs `recover/complete`. *Recommendation: `recover/complete_recovery`.* Trivial; just needs
