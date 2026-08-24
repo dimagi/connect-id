@@ -3,9 +3,11 @@ from datetime import timedelta
 from unittest.mock import MagicMock
 
 import pytest
+from django.test import override_settings
 from django.urls import reverse
 from django.utils.timezone import now
 from oauth2_provider.models import AccessToken, Application, RefreshToken
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.test import APIClient
 
 from users.const import ErrorCodes
@@ -171,6 +173,18 @@ class TestOAuth2TokenEndpoint:
 
         assert response.status_code == 400
         assert response.json()["error_code"] == ErrorCodes.LOGIN_FROM_DIFFERENT_DEVICE
+
+    @override_settings(AXES_ENABLED=True, AXES_FAILURE_LIMIT=1)
+    def test_password_grant_lockout_after_axes_failure_limit(self, client, password_grant_app):
+        """Pins that django-axes still fires user_locked_out -> users/signals.py on lockout."""
+        user = UserFactory(password="correctpass")
+
+        with pytest.raises(PermissionDenied):
+            _post_token(
+                client,
+                password_grant_app,
+                {"grant_type": "password", "username": user.username, "password": "wrongpass"},
+            )
 
     def test_client_credentials_grant_issues_token(self, client, oauth_app):
         response = _post_token(client, oauth_app, {"grant_type": "client_credentials"})

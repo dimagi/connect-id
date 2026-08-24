@@ -799,18 +799,6 @@ class TestFetchUsers:
         assert response.status_code == 200
         assert response.json() == {"found_users": []}
 
-    def test_phone_number_serializes_as_a_string(self, authed_client):
-        """Pins the contract that breaks on django-phonenumber-field >= 7.2.0.
-
-        That release added a DB converter making values() return PhoneNumber objects, which
-        JsonResponse cannot serialize — this view would start raising instead of responding.
-        """
-        user = UserFactory.create(phone_number="+27823334444")
-
-        values = ConnectUser.objects.filter(pk=user.pk).values("phone_number")
-
-        assert isinstance(values[0]["phone_number"], str)
-
 
 @pytest.mark.django_db
 class TestGetDemoUsers:

@@ -57,7 +57,7 @@ deploy/             # Kamal deployment config
 
 ## Tech Stack
 
-- **Python 3.11**, Django 4.2 (LTS), Django REST Framework
+- **Python 3.11**, Django 5.2 (LTS), Django REST Framework
 - **PostgreSQL** + **Redis** (Celery broker/cache)
 - **Celery** with beat scheduler for async tasks
 - **OAuth2/OIDC** via django-oauth-toolkit

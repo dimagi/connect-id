@@ -654,11 +654,12 @@ class FetchUsers(ClientProtectedResourceMixin, View):
     def get(self, request, *args, **kwargs):
         numbers = request.GET.getlist("phone_numbers")
         results = {}
-        found_users = list(
-            ConnectUser.objects.filter(phone_number__in=numbers, is_active=True).values(
-                "username", "phone_number", "name"
+        found_users = [
+            {**row, "phone_number": str(row["phone_number"])}
+            for row in ConnectUser.objects.filter(phone_number__in=numbers, is_active=True).values(
+                "username", "name", "phone_number"
             )
-        )
+        ]
         results["found_users"] = found_users
         return JsonResponse(results)
 
@@ -680,7 +681,10 @@ class GetDemoUsers(ClientProtectedResourceMixin, View):
             .values("phone_number", "token")
         )
 
-        demo_users = list(demo_phone_devices) + list(demo_connect_users)
+        demo_users = [
+            {**row, "phone_number": str(row["phone_number"])}
+            for row in list(demo_phone_devices) + list(demo_connect_users)
+        ]
         sorted_demo_users = sorted(
             demo_users,
             key=lambda x: x["phone_number"],
