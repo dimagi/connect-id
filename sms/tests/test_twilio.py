@@ -68,6 +68,7 @@ def test_send_wraps_twilio_error_with_its_code(vendor):
 
     assert excinfo.value.vendor == "twilio"
     assert excinfo.value.vendor_error_code == "21610"
+    assert str(excinfo.value).startswith("twilio [21610]: ")
     assert "unsubscribed recipient" in str(excinfo.value)
     assert isinstance(excinfo.value.__cause__, TwilioRestException)
 

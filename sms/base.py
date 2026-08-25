@@ -19,7 +19,8 @@ class SendResult:
 
 class SmsSendError(Exception):
     def __init__(self, vendor: str, message: str, vendor_error_code: str | None = None):
-        super().__init__(f"{vendor}: {message}")
+        code = f" [{vendor_error_code}]" if vendor_error_code is not None else ""
+        super().__init__(f"{vendor}{code}: {message}")
         self.vendor = vendor
         self.vendor_error_code = vendor_error_code
 

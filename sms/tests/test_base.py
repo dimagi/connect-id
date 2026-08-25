@@ -59,6 +59,8 @@ def test_send_wraps_with_vendor_error_code(message):
         CodedVendor(raises=Boom("nope")).send(message)
 
     assert excinfo.value.vendor_error_code == "42"
+    # The code is in the message too, so Sentry keeps distinct failures apart.
+    assert str(excinfo.value) == "fake [42]: nope"
 
 
 def test_send_does_not_rewrap_sms_send_error(message):
