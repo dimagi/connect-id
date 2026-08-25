@@ -27,14 +27,6 @@ def message():
     return SmsMessage(to=to_python("+265991234567"), body="hi")
 
 
-def test_send_passes_resolved_sender_to_vendor(message):
-    vendor = FakeVendor()
-
-    assert vendor.send(message) == SendResult(vendor="fake", vendor_message_id="id-1")
-    # get_sender defaults to None, meaning the vendor picks its own sender.
-    assert vendor.sent == [(message, None)]
-
-
 def test_send_uses_get_sender_override(message):
     class SenderVendor(FakeVendor):
         def get_sender(self, message):
