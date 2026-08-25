@@ -19,11 +19,11 @@ from geopy.geocoders import MapBox
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 from phonenumber_field.modelfields import PhoneNumberField
 
+from sms import send_sms
 from users.exceptions import RateLimitedError, RecoveryPinNotSetError
 from users.services import get_user_photo_base64
-from utils import get_sms_sender, send_sms
 
-from .const import MAX_BACKUP_CODE_ATTEMPTS, TEST_NUMBER_PREFIX
+from .const import MAX_BACKUP_CODE_ATTEMPTS
 
 
 class ConnectUser(AbstractUser):
@@ -87,9 +87,7 @@ class ConnectUser(AbstractUser):
             f"Warning: This action is irreversible. If you didn't request deactivation, "
             f"please ignore this message."
         )
-        if not self.phone_number.raw_input.startswith(TEST_NUMBER_PREFIX):
-            sender = get_sms_sender(self.phone_number.country_code)
-            send_sms(self.phone_number.as_e164, message, sender)
+        send_sms(self.phone_number, message)
         return message
 
     def get_photo(self):
@@ -193,9 +191,7 @@ class BasePhoneDevice(BaseOTPDevice):
         return f"Your verification token from commcare connect is {self.token}"
 
     def _send_otp(self):
-        if not self.phone_number.raw_input.startswith(TEST_NUMBER_PREFIX):
-            sender = get_sms_sender(self.phone_number.country_code)
-            send_sms(self.phone_number.as_e164, self.otp_message, sender)
+        send_sms(self.phone_number, self.otp_message)
 
     def generate_challenge(self):
         try:
@@ -295,8 +291,7 @@ class UserCredential(models.Model):
             message = (
                 f"You have been given credential '{credential.title}'. Please click the following link to accept {url}"
             )
-            sender = get_sms_sender(user.phone_number.country_code)
-            send_sms(user.phone_number.as_e164, message, sender)
+            send_sms(user.phone_number, message)
 
 
 class ConfigurationSession(models.Model):
