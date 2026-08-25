@@ -72,5 +72,16 @@ def test_send_wraps_twilio_error_with_its_code(vendor):
     assert isinstance(excinfo.value.__cause__, TwilioRestException)
 
 
+def test_wraps_twilio_error_without_a_code(vendor):
+    vendor.client_cls.return_value.messages.create.side_effect = TwilioRestException(
+        status=503, uri="/Messages", msg="Service Unavailable"
+    )
+
+    with pytest.raises(SmsSendError) as excinfo:
+        vendor.send(SmsMessage(to=to_python("+265991234567"), body="hi"))
+
+    assert excinfo.value.vendor_error_code is None
+
+
 def test_error_code_is_none_for_non_twilio_errors(vendor):
     assert vendor.error_code(ValueError("boom")) is None

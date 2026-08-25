@@ -278,6 +278,8 @@ TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default=None)
 
 # Credentials for each SMS vendor, keyed by vendor name. Each entry is passed as
 # keyword arguments to the vendor class registered under that name in sms/registry.py.
+# This, not the TWILIO_* names above, is what the send path reads: override it as a
+# whole rather than overriding an individual TWILIO_* setting.
 SMS_VENDORS = {
     "twilio": {
         "account_sid": TWILIO_ACCOUNT_SID,

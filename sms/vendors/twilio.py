@@ -18,7 +18,10 @@ class TwilioVendor(BaseSmsVendor):
         return self.SENDER_IDS.get(str(message.to.country_code))
 
     def error_code(self, exc: Exception) -> str | None:
-        return str(exc.code) if isinstance(exc, TwilioRestException) else None
+        # Twilio omits the code on 5xx and transport-level failures.
+        if isinstance(exc, TwilioRestException) and exc.code is not None:
+            return str(exc.code)
+        return None
 
     def _send(self, message: SmsMessage, sender: str | None) -> SendResult:
         sent = self._client.messages.create(
