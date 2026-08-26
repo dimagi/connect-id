@@ -28,34 +28,35 @@
 3. **Install Git hooks:**
 
    ```bash
-   pre-commit install
-   pre-commit run -a
+   uv run pre-commit install
+   uv run pre-commit run -a
    ```
 
-4. **Create an environment file and edit the settings as needed:**
+4. **Create an environment file:**
 
    ```bash
    cp .env_template .env
    ```
 
-5. **Set the following environment variables in the `.env` file:**
+   The template works as-is against the services in `docker-compose.yml`. Every
+   other setting is commented out and has a default in `connectid/settings.py`;
+   uncomment only what you need. Note that a key left present but empty
+   overrides its default rather than falling back to it.
 
-   ```env
-   DATABASE_URL=
-   DEBUG=True
-   ```
+5. **Run local services with docker-compose:**
 
-````
-6. **Run local services with docker-compose**
    ```bash
    docker compose up
-````
+   ```
 
-7. **Run Django migrations and start the development server:**
+   To use your own PostgreSQL and Redis instead, skip this step and point
+   `DATABASE_URL`, `CELERY_BROKER_URL`, and `REDIS_URL` at them.
+
+6. **Run Django migrations and start the development server:**
 
    ```bash
-   ./manage.py migrate
-   ./manage.py runserver
+   uv run ./manage.py migrate
+   uv run ./manage.py runserver
    ```
 
 ## Production Deploy
