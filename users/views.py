@@ -30,7 +30,8 @@ from waffle.decorators import waffle_switch
 from flags.const import EMAIL_OTP_VERIFICATION
 from flags.utils import get_user_toggles
 from services.ai.ocs import OpenChatStudio
-from utils import get_ip, get_sms_sender, send_sms
+from sms import send_sms
+from utils import get_ip
 from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
 from utils.app_integrity.decorators import require_app_integrity
 from utils.app_integrity.exceptions import DuplicateSampleRequestError
@@ -807,8 +808,7 @@ class ForwardHQInvite(APIView):
         Thanks.
         -The ConnectID Team.
         """
-        sender = get_sms_sender(user.phone_number.country_code)
-        send_sms(user.phone_number.as_e164, message, sender)
+        send_sms(user.phone_number, message)
         return JsonResponse({"success": True})
 
 

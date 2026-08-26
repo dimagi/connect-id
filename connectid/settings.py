@@ -271,10 +271,22 @@ ALLOWED_CIDR_NETS = env.list("DJANGO_ALLOWED_CIDR_NETS", default=[])
 
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
-# Twilio settings
+# Twilio settings. Still read directly by the carrier lookup in utils/twilio.py.
 TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default=None)
 TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default=None)
 TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default=None)
+
+# Credentials for each SMS vendor, keyed by vendor name. Each entry is passed as
+# keyword arguments to the vendor class registered under that name in sms/registry.py.
+# This, not the TWILIO_* names above, is what the send path reads: override it as a
+# whole rather than overriding an individual TWILIO_* setting.
+SMS_VENDORS = {
+    "twilio": {
+        "account_sid": TWILIO_ACCOUNT_SID,
+        "auth_token": TWILIO_AUTH_TOKEN,
+        "messaging_service": TWILIO_MESSAGING_SERVICE,
+    },
+}
 
 EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Connect <noreply@commcare-connect.org>")
