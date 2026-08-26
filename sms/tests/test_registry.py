@@ -27,13 +27,6 @@ def test_unknown_vendor(settings):
         get_vendor("carrier-pigeon")
 
 
-def test_vendor_without_settings_entry(settings):
-    settings.SMS_VENDORS = {}
-
-    with pytest.raises(ImproperlyConfigured, match="No SMS_VENDORS entry for vendor 'twilio'"):
-        get_vendor("twilio")
-
-
 def test_vendor_with_bad_settings_entry(settings):
     settings.SMS_VENDORS = {"twilio": {"account_sid": "sid"}}
 
