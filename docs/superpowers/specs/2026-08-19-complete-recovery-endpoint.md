@@ -33,7 +33,7 @@
    * Username, rotated password, DB key, device info
 
 Both existing endpoints keep working for older clients. `confirm_backup_code` is unchanged apart from
-(optionally, see §8) an internal refactor onto the same shared completion helper. `verify_email_otp`
+an internal refactor onto the shared completion helper (§7). `verify_email_otp`
 picks up one new behaviour it does not have today — a limit on wrong guesses (§6), which every OTP in
 the system gains at once.
 
@@ -57,8 +57,8 @@ Two things are wrong with the current shape:
 
 So the new endpoint is not a pure consolidation of two existing behaviours. `backup_code` is a
 lift-and-shift of `confirm_backup_code`; `email_otp` is a **new recovery factor** that reuses
-`verify_email_otp`'s verification mechanics. §5 and §6 are the parts of this document that most need
-review, because that is where the new factor's security properties are pinned down.
+`verify_email_otp`'s verification mechanics. §5 and §6 pin down its security properties and are the
+parts most worth reviewing.
 
 ### 1.1 What this answers from the mobile spec
 
@@ -82,10 +82,11 @@ asked for is returned unchanged either way.
 code?"** Their options were (a) `start_configuration` returns `email` (their stated preference), or
 (b) `check_name` returns it.
 
-*Answer: mostly "you don't need it" — and where you do, (b) masked, not (a). See D6.* Because
+*Answer: mostly "you don't need it" — and where you do, (b) masked, not (a).* Because
 `complete_recovery` resolves the address from `user.email` rather than accepting one (§5), the
 client never needs the address to complete recovery. The only thing still asking for it is
-`send_email_otp`'s required `email` parameter.
+`send_email_otp`'s required `email` parameter. A separate ticket adds a `masked_email` field to the
+`check_name` response so the client can label the "Forgot backup code?" option.
 
 Option (a) also has a problem worth being explicit about: `start_device_configuration` is
 `@permission_classes([])` (`users/views.py:93-96`), gated only by app integrity. It is the call that
@@ -166,11 +167,15 @@ Notes:
 `DEVICE_RECENT_ACCESS_THRESHOLD` (30 days)
    * Byte-for-byte the rule in `confirm_backup_code` (`users/views.py:602-626`).
 
-### Wrong-backup-code response — `200` (see decision D3)
+### Wrong-backup-code response — `200`
 
 ```json
 { "attempts_left": 2 }
 ```
+
+A `200` for a wrong code is odd, but it is what `confirm_backup_code` returns today and what the
+client's `sessionData.dbKey != null` success test relies on. Kept as is so the old and new paths can
+share one handler while both are live.
 
 ### Wrong-email-OTP response — `401`
 
@@ -179,8 +184,7 @@ Notes:
 ```
 
 Same `attempts_left` key as the backup-code path, so the client can drive one "N attempts remaining"
-string from either method. The status code differs because the two paths already differ (D3); the
-counter semantics are identical. See §6.
+string from either method. Only the status code differs; the counter semantics are identical (§6).
 
 ### Errors
 
@@ -189,12 +193,12 @@ counter semantics are identical. See §6.
 | 400 | `MISSING_DATA` | `method` absent, or the selected method's fields are absent/blank |
 | 400 | `INVALID_DATA` | `method` not one of the two values; no pending email OTP device for this session and the account's email |
 | 400 | `NO_RECOVERY_PIN_SET` | `backup_code` and the account has no backup code set |
-| 400 | `NO_EMAIL_SET` | `email_otp` and the account has no email on record (decision D4) |
+| 400 | `NO_EMAIL_SET` | `email_otp` and the account has no email on record. New constant, mirroring `NO_RECOVERY_PIN_SET` |
 | 401 | `INCORRECT_OTP` | `email_otp` and the code is wrong or expired; body carries `attempts_left` (§6) |
 | 401 | `LOCKED_ACCOUNT` | the third consecutive wrong backup code, **or** the third consecutive wrong email OTP (§6) — the account is deactivated and locked |
 | 403 | `PHONE_NOT_VALIDATED` | `session.is_phone_validated` is false |
-| 403 | `NOT_ALLOWED` | `email_otp` requested while the `email_otp_verification` switch is off (decision D2) |
-| 500 | no active `ConnectUser` for the session's phone number (decision D5) |
+| 403 | `NOT_ALLOWED` | `email_otp` requested while the `email_otp_verification` switch is off (§4.2) |
+| 500 | — | no active `ConnectUser` for the session's phone number, as `confirm_backup_code` does today |
 
 `OTP_EXPIRED` — the other outcome of exhausting the attempt limit — is **not** returned by this
 endpoint. Recovery locks instead. It is the response the *non-recovery* OTP endpoints return once
@@ -211,7 +215,8 @@ Validation runs in this order; the first failure returns.
    so the only meaningful credential is the configuration session.
 2. **Phone validated** — `403 PHONE_NOT_VALIDATED` if not. The phone factor is a precondition for
    *both* methods; neither backup code nor email OTP replaces it.
-3. **Resolve the user** — `ConnectUser.objects.get(phone_number=session.phone_number, is_active=True)`.
+3. **Resolve the user** — `ConnectUser.objects.get(phone_number=session.phone_number, is_active=True)`,
+   unguarded as in `confirm_backup_code`: no active user is a `500`, and mobile should never allow it.
 4. **Method dispatch** — validate the method's own fields, then run its verification (§4.1 / §4.2).
 5. **Complete recovery** — shared, identical for both methods (§4.3).
 
@@ -224,11 +229,15 @@ Lift-and-shift of `confirm_backup_code`:
 - `RecoveryPinNotSetError` → `400 NO_RECOVERY_PIN_SET`.
 - Wrong code → `user.add_failed_backup_code_attempt()`. If `backup_code_attempts_left` is then `0`
   (`MAX_BACKUP_CODE_ATTEMPTS = 3`), set `is_active = False`, `is_locked = True`, save, and return
-  `401 LOCKED_ACCOUNT`. Otherwise return `{"attempts_left": n}` — see D3 on the status code.
+  `401 LOCKED_ACCOUNT`. Otherwise return `200 {"attempts_left": n}`.
 - Correct → §4.3.
 
 ### 4.2 `method = email_otp`
 
+- The `email_otp_verification` waffle switch is checked **inside this branch**, not with
+  `@waffle_switch` on the view — that would 404 the `backup_code` path too. Off → `403 NOT_ALLOWED`.
+  The switch already reaches the client in `start_configuration`'s `toggles`, so this is a backstop,
+  not a UX path.
 - `otp` required and non-blank after `.strip()` → else `400 MISSING_DATA`.
 - **Resolve the email from the account, not the request:** `email = user.email`. If it is unset,
   `400 NO_EMAIL_SET`
@@ -264,18 +273,29 @@ password that now authenticates the account. Cheap to fix while the code is bein
 ## 5. Security: the email is server-resolved, never client-supplied
 
 **Requirement: `method=email_otp` reads the address from `user.email` on the account being
-recovered.
+recovered. The request carries no email at all, and an `email` key in the body is ignored.**
 
-An account with no email on record can never recover by `email_otp` — `400 NO_EMAIL_SET` (D4).
-The mobile spec's flow should never reach this, since "Forgot backup code?" is only offered when
-an email exists, so treat it as a defensive error rather than a UX path.
+Not a comparison against the stored address, a resolution from it: the session proves only that the
+caller controls the phone number, and `send_email_otp` mails an OTP to whatever address it is given,
+so a client-supplied address here would let anyone holding the SIM mail themselves an OTP.
+`send_email_otp` itself is unchanged — the attacker just gains nothing from it, because the resulting
+`SessionEmailOTPDevice` is keyed on an email `complete_recovery` never looks up. It is also why this
+cannot delegate to `verify_email_otp`, which is built around a client-supplied address by design.
+
+An account with no email on record can never recover by `email_otp` — `400 NO_EMAIL_SET`. The mobile
+flow should never reach this, since "Forgot backup code?" is only offered when an email exists, so
+treat it as a defensive error rather than a UX path.
 
 ---
 
 ## 6. Failed-verify limits on OTPs
 
-**Requirement: a wrong OTP is counted, and running out of attempts has a consequence
+**Requirement: a wrong OTP is counted, and running out of attempts has a consequence — the same
+consequence a wrong backup code has, chosen by what the OTP is being used *for*.**
 
+No OTP in this codebase has a verify-side limit today, phone or email: a 6-digit code is guessable
+without limit for its full 30-minute window. The mechanism therefore has to be built, and since it
+belongs on `BaseOTPDevice`, every OTP in the system gains it at once — blast radius in §6.3.
 
 ### 6.1 The counter
 
@@ -286,8 +306,7 @@ an email exists, so treat it as a defensive error rather than a UX path.
 | `verify_attempts_left` | `BaseOTPDevice` | `max(MAX_OTP_VERIFY_ATTEMPTS - self.failed_verifications, 0)`, mirroring `ConnectUser.backup_code_attempts_left` (`users/models.py:106`). |
 | `is_exhausted` | `BaseOTPDevice` | `self.verify_attempts_left == 0`. What views branch on to choose a response. |
 
-`BaseOTPDevice` **overrides `verify_token`** rather than adding a separate counting method, and keeps
-django-otp's `bool` return:
+`BaseOTPDevice` **overrides `verify_token`**, keeping django-otp's `bool` return:
 
 ```python
 def verify_token(self, token):
@@ -301,38 +320,28 @@ def verify_token(self, token):
     return verified
 ```
 
-The override is the point. A separate `verify_token_with_limit()` would leave every call site that
-nobody remembered to convert silently unlimited — including the two legacy recovery views and
-`payments/views.py:41`. Overriding means the limit is on by default and a caller has to work to
-avoid it. Views that want to say something better than a bare `401` read `is_exhausted` /
-`verify_attempts_left` afterwards.
+Overriding rather than adding a `verify_token_with_limit()` matters: the limit is then on by default,
+and no call site can stay unlimited by being forgotten. Views wanting better than a bare `401` read
+`is_exhausted` / `verify_attempts_left` afterwards.
 
-Burning the token (`_burn_token`) is `self.token = None; self.valid_until = now()` — "dump the OTP so
-mobile has to request a new one". A burned token cannot be verified even if the caller then supplies
-the correct code, which is the property the §9 test asserts.
+`_burn_token` is `self.token = None; self.valid_until = now()` — a burned token cannot be verified
+even if the caller then supplies the correct code.
 
-The increment needs the same row lock `_attempt_send` already takes: the sketch above is
-read-modify-write, so N concurrent wrong guesses against one device would otherwise all read the same
-`failed_verifications` and count as one. That is exactly the shape of request an attacker sends.
-Wrap the body in `transaction.atomic()` with a `select_for_update()` re-read of
-`failed_verifications` and `token`, matching `_attempt_send` (`users/models.py:161-169`). Worth
-noting that `confirm_backup_code` has this same race today on `failed_backup_code_attempts` and we
-are not fixing it here — but a new counter should not be born with it.
+Wrap the override body in `transaction.atomic()` with a `select_for_update()` re-read of
+`failed_verifications` and `token`, matching `_attempt_send` (`users/models.py:161-169`). Without it
+the read-modify-write means N concurrent wrong guesses count as one — exactly the shape of request an
+attacker sends. (`confirm_backup_code` has the same race today on `failed_backup_code_attempts`; not
+fixing that here, but a new counter should not be born with it.)
 
-**A fresh token resets the counter, but not the send-side backoff.** `_attempt_send`
-(`users/models.py:160-182`) already zeroes the send counter `attempts` whenever it regenerates a
-token, so a naive `failed_verifications = 0` alongside it would reopen the hole from the other side:
-three guesses, request a new OTP, three more guesses, forever — 10⁶ codes at three per email, which
-is loud and slow but not bounded. So `_attempt_send` resets `attempts = 0` **only when the previous
-token expired on its own**; a token that was burned by failed verifications leaves `attempts` where
-it was, and the user waits out the existing `2**attempts`-minute backoff before the next code is
-sent. Guesses per token are bounded by the counter, tokens per hour by the backoff, and the product
-is a real limit rather than two half-measures. `failed_verifications` itself resets to `0` on every
-token that is actually sent.
+**A fresh token resets the counter, but not the send-side backoff.** `_attempt_send` currently zeroes
+the send counter `attempts` whenever it regenerates a token, so resetting `failed_verifications`
+alongside it would reopen the hole from the other side: three guesses, new OTP, three more, forever.
+So `attempts = 0` **only when the previous token expired on its own**; a token burned by failed
+verifications keeps its `2**attempts`-minute backoff. Guesses per token bounded by the counter,
+tokens per hour by the backoff. `failed_verifications` resets on every token actually sent.
 
-Concretely, inside the `is_otp_close_to_expiry` branch of `_attempt_send`
-(`users/models.py:170-173`), `self.is_exhausted` is the discriminator — it is true only for a burned
-token, since it is cleared on every send:
+`self.is_exhausted` is the discriminator inside the `is_otp_close_to_expiry` branch
+(`users/models.py:170-173`) — true only for a burned token, since it is cleared on every send:
 
 ```python
 if self.is_otp_close_to_expiry:
@@ -344,53 +353,42 @@ if self.is_otp_close_to_expiry:
         self.attempts = 0               # natural expiry only; a burned token keeps its backoff
 ```
 
-Note this runs under the existing `select_for_update()` lock, and `failed_verifications` must be
-read from the locked row alongside `attempts` / `token` / `valid_until` (`users/models.py:165-169`)
-or a concurrent verify can be lost.
+`failed_verifications` must be read from the locked row alongside `attempts` / `token` /
+`valid_until` (`users/models.py:165-169`) or a concurrent verify is lost.
 
-Two properties worth stating because they are easy to lose in a later refactor:
+Two properties that are easy to lose in a later refactor:
  * The counter lives on the **device row**, not on `ConnectUser`. Sharing
-   `failed_backup_code_attempts` would let wrong email OTPs eat the user's backup-code attempts and
-   corrupt the `attempts_left` number the client shows. The two factors count separately.
- * `SessionEmailOTPDevice` and `SessionPhoneDevice` rows are session-scoped, so their counters die
-   with the session. That is fine — the backoff and, in recovery, the account lock are what survive.
-   `PhoneDevice` and `UserEmailOTPDevice` are user-scoped and their counters persist, like the
-   backup-code counter does.
+   `failed_backup_code_attempts` would let wrong email OTPs eat backup-code attempts and corrupt the
+   `attempts_left` the client shows.
+ * Session-scoped counters (`SessionEmailOTPDevice`, `SessionPhoneDevice`) die with the session; the
+   backoff and, in recovery, the account lock are what survive. `PhoneDevice` / `UserEmailOTPDevice`
+   counters persist, like the backup-code counter.
 
 ### 6.2 What running out costs, by context
 
-The consequence differs, and it differs on exactly one axis: **is the OTP standing in for the
-account, or merely attached to something?**
+The consequence turns on one question: **is the OTP standing in for the account, or merely being
+attached to it?**
 
-**(a) Registration, edit profile, and every other non-recovery use → the process fails, the OTP is
-dumped, the user asks for a new one.** The response is a new `401 OTP_EXPIRED` error code. Mobile
-treats it as it treats any expired OTP: drop the entry field, call `send_email_otp` /
-`send_session_otp` again, and start over — subject to the resend backoff above, which is what stops
-the retry loop being free. Nothing about the account changes. This is right because in those flows
-the OTP proves control of a mailbox or handset that is about to be *attached* to an account the
-caller has already authenticated to by other means; guessing it wrong gets you a mailbox you do not
-own attached to your own account, not somebody else's account.
+**(a) Non-recovery (registration, edit profile, everything else) → new `401 OTP_EXPIRED`.** The token
+is dumped and the user requests a new one, subject to the resend backoff; nothing about the account
+changes. There the OTP proves control of a mailbox or handset being attached to an account the caller
+has *already* authenticated to, so guessing wrong gets you a mailbox you don't own on your own
+account.
 
-`OTP_EXPIRED` is a **new** constant in `ErrorCodes`. Do not reuse `TOKEN_EXPIRED` — that means the
-configuration session expired and the client's handling of it (restart the whole workflow) is not
-what we want here.
+`OTP_EXPIRED` is a **new** `ErrorCodes` constant. Do not reuse `TOKEN_EXPIRED` — the client responds
+to that by restarting the whole workflow.
 
 **(b) `complete_recovery` with `method=email_otp` → the account is locked.** `is_active = False`,
-`is_locked = True`, save, `401 LOCKED_ACCOUNT` — the same three lines and the same response as the
-third wrong backup code (`users/views.py:579-583`), and with the same aftermath:
-`SessionTokenAuthentication` then refuses to open any session for that phone number
-(`users/auth.py:23-26`) and only `unlock_and_generate_backup_code` can undo it. Here the OTP *is*
-the recovery factor — the thing standing between a caller who holds the SIM and somebody else's
-account — so it has to carry the same weight as the factor it substitutes for. Anything less and the
-attacker simply picks the cheaper door, which is the whole argument of §5.
-
-The token is burned in this case too. Strictly redundant once the account is locked, but it keeps one
-code path in the model and means the model is still correct if the locking policy ever changes.
+`is_locked = True`, save, `401 LOCKED_ACCOUNT` — same lines, same response, same aftermath as the
+third wrong backup code (`users/views.py:579-583`). Here the OTP *is* the recovery factor, so it has
+to carry the same weight as the factor it substitutes for; anything less and the attacker picks the
+cheaper door (§5). The token is burned too — redundant once locked, but it keeps one code path in the
+model.
 
 ### 6.3 Blast radius, and the one place this should *not* be copied
 
-Putting the override on `BaseOTPDevice` changes six other endpoints. All six move from "unlimited
-guesses" to "three guesses, then the token is dead":
+The override moves every other verify call site from "unlimited guesses" to "three guesses, then the
+token is dead":
 
 | Call site | Device | Response after the change |
 |---|---|---|
@@ -402,22 +400,18 @@ guesses" to "three guesses, then the token is dead":
 | `users/views.py:358` `confirm_secondary_recovery_otp` | `PhoneDevice` | unchanged bare `401`; token burned |
 | `payments/views.py:41` `confirm_payment_profile_otp` | `PhoneDevice` | unchanged bare `401`; token burned |
 
-The four legacy `PhoneDevice` views and the payments one keep their existing response shape — they
-are out of scope (§11) and their clients do not know `OTP_EXPIRED`. They still get the token-burning,
-which is a genuine behaviour change for them: a client that today retries a wrong code indefinitely
-will, after this, need to request a fresh OTP. That is the intended fix, but it is worth QA time on
-the payment-profile flow in particular, since that is a live non-Connect-workflow path.
+The legacy `PhoneDevice` views and the payments one keep their existing response shape — their
+clients do not know `OTP_EXPIRED` (§10). They still get the token-burning, which is a real behaviour
+change: a client that today retries a wrong code indefinitely will now need a fresh OTP. Intended,
+but worth QA time on the payment-profile flow, which is a live non-Connect path.
 
-**What is deliberately *not* extended: locking the account on failed phone OTPs.** It is tempting to
-say "wrong phone OTP during recovery locks the account too, for symmetry", and this is the one place
-symmetry is wrong. The backup-code and recovery-email-OTP lockouts both sit *behind* phone
-validation — to trigger them you must already control the number. The session phone OTP sits in
-front of it: `start_device_configuration` is `@permission_classes([])` and creates a session from
-nothing but a phone number and a Play Integrity token (§1.1). Locking on phone-OTP failure would let
-anyone who knows a phone number deactivate that account in three requests, with recovery gated behind
-a manual management command. That is a remote, unauthenticated denial of service against every user,
-handed over in exchange for symmetry. Phone OTP therefore gets the counter and the token-burning —
-case (a), `OTP_EXPIRED` — in every context, recovery included. See D1.
+**Deliberately *not* extended: locking the account on failed phone OTPs.** The backup-code and
+recovery-email-OTP lockouts sit *behind* phone validation, so triggering them costs an attacker
+control of the number. The session phone OTP sits in front of it — `start_device_configuration` is
+`@permission_classes([])` and creates a session from a phone number and a Play Integrity token
+(§1.1) — so locking there would let anyone who knows a number deactivate the account in three
+requests, undoable only by a management command. Phone OTP gets the counter and the token-burning,
+case (a), in every context including recovery.
 
 
 ---
@@ -432,211 +426,138 @@ case (a), `OTP_EXPIRED` — in every context, recovery included. See D1.
 | `users/views.py` | New `complete_recovery` view. Extract `_complete_recovery_for_user(user, session) -> dict` and `_apply_device_info(user, session, response_data)` from the tail of `confirm_backup_code`. Extract the backup-code verification into a helper the two views share. |
 | `users/views.py` | `confirm_backup_code` calls the extracted helpers — **no behaviour change**, so its existing tests must pass untouched. |
 | `users/views.py` | `confirm_session_otp` (`:995`) and `verify_email_otp` (`:1054`) return `401 OTP_EXPIRED` when `device.is_exhausted` after a failed verify (§6.3). |
-| `users/const.py` | `RECOVERY_METHOD_BACKUP_CODE` / `RECOVERY_METHOD_EMAIL_OTP` constants; `MAX_OTP_VERIFY_ATTEMPTS = 3`; `OTP_EXPIRED` error code; `NO_EMAIL_SET` error code if D4 lands. |
-| `users/tests/test_views.py` | New `TestCompleteRecoveryApi` (§9). |
-| `users/tests/test_models.py` | Counter, burn, reset, and backoff-preservation tests on `BaseOTPDevice` (§9). |
+| `users/const.py` | `RECOVERY_METHOD_BACKUP_CODE` / `RECOVERY_METHOD_EMAIL_OTP`; `MAX_OTP_VERIFY_ATTEMPTS = 3`; `OTP_EXPIRED` and `NO_EMAIL_SET` error codes. |
+| `users/tests/test_views.py` | New `TestCompleteRecoveryApi` (§8). |
+| `users/tests/test_models.py` | Counter, burn, reset, and backoff-preservation tests on `BaseOTPDevice` (§8). |
 
-One additive migration, no backfill. No new API version — `AcceptHeaderVersioning` defaults to v2.0
-and this endpoint behaves the same in both.
-
-Rough shape:
-
-```python
-@api_view(["POST"])
-@authentication_classes([SessionTokenAuthentication])
-def complete_recovery(request):
-    session = request.auth
-    if not session.is_phone_validated:
-        return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
-
-    method = request.data.get("method")
-    if not method:
-        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
-    if method not in (RECOVERY_METHOD_BACKUP_CODE, RECOVERY_METHOD_EMAIL_OTP):
-        return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
-
-    user = ConnectUser.objects.get(phone_number=session.phone_number, is_active=True)
-
-    verify = _verify_backup_code if method == RECOVERY_METHOD_BACKUP_CODE else _verify_email_otp
-    early_response = verify(request, user)          # None means "verified, carry on"
-    if early_response is not None:
-        return early_response
-
-    return JsonResponse(_complete_recovery_for_user(user, session))
-```
+No new API version — `AcceptHeaderVersioning` defaults to v2.0 and this endpoint behaves the same in
+both.
 
 ---
 
-## 9. Test plan
+## 8. Test plan
 
 `users/tests/test_views.py`, class `TestCompleteRecoveryApi`, using the existing `authed_client_token`
 / `valid_token` / `user` / `session_client` fixtures.
 
-**Auth and preconditions** (method-independent, parametrised over both methods)
-- No `Authorization` header → 401.
-- Expired session (`expired_token`) → 401 `TOKEN_EXPIRED`.
-- Locked user's phone number → 401 `LOCKED_ACCOUNT` (raised in the auth class).
-- `is_phone_validated = False` → 403 `PHONE_NOT_VALIDATED`.
-- Basic-auth client and OAuth2 bearer client are both rejected — `SessionTokenAuthentication` only.
-- No active user for the session's phone → 500.
-- Missing `method` → 400 `MISSING_DATA`; `method="sms"` → 400 `INVALID_DATA`.
+**Auth and preconditions** (parametrised over both methods) — the usual set: no header, expired
+session, locked phone number, `is_phone_validated = False`, basic-auth and OAuth2 clients rejected,
+no active user → 500, missing/unknown `method`.
 
-**`backup_code`**
-- Missing `backup_code` → 400 `MISSING_DATA`.
-- No backup code set → 400 `NO_RECOVERY_PIN_SET`.
-- Wrong code → `{"attempts_left": 2}`, `failed_backup_code_attempts == 1`.
-- Third wrong code → 401 `LOCKED_ACCOUNT`, user `is_active=False` and `is_locked=True`.
-- Correct code → success payload; `failed_backup_code_attempts` reset to 0.
+**`backup_code`** — mirrors the existing `TestConfirmBackupCodeApi` cases: missing field, no code set,
+wrong code (`attempts_left == 2`, counter incremented), third wrong code locks, correct code succeeds
+and resets the counter.
 
 **`email_otp`**
-- Missing `otp` → 400 `MISSING_DATA`.
-- `user.email` is unset → 400 `NO_EMAIL_SET`, and `verify_token` is never called.
-- No `SessionEmailOTPDevice` for this session + `user.email` → 400 `INVALID_DATA`.
-- Device exists on a *different* session for the same email → 400 `INVALID_DATA` (cross-session
-  redemption blocked).
-- **A device exists on this session for a different email, with a valid OTP → 400 `INVALID_DATA`,
-  and `verify_token` is never called.** This is the test that proves the client cannot nominate the
-  mailbox: post the correct code for `attacker@evil.com` and it is not merely rejected, it is not
-  even looked at. Assert the account is untouched — no password rotation, no `UserDeviceInfo` write.
-- **An `email` key in the request body is ignored.** Send `{"method": "email_otp", "otp": <valid>,
-  "email": "attacker@evil.com"}` with a valid device on `user.email` → succeeds, because the body's
-  address plays no part; and the mirror case, a valid device on `attacker@evil.com` and an `email`
-  key naming it → 400 `INVALID_DATA`. Guards against a later refactor quietly reintroducing
+- Missing `otp` → 400 `MISSING_DATA`. `user.email` unset → 400 `NO_EMAIL_SET`, `verify_token` never
+  called.
+- No `SessionEmailOTPDevice` for this session + `user.email` → 400 `INVALID_DATA`; likewise a device
+  on a *different* session for the same email (cross-session redemption blocked).
+- **A device on this session for a different email, holding a valid OTP → 400 `INVALID_DATA` and
+  `verify_token` is never called.** Proves the client cannot nominate the mailbox: the correct code
+  for `attacker@evil.com` is not merely rejected, it is never looked at. Assert the account is
+  untouched.
+- **An `email` key in the body is ignored** — valid device on `user.email` plus
+  `"email": "attacker@evil.com"` still succeeds; the mirror case (valid device on the attacker
+  address, `email` key naming it) → 400 `INVALID_DATA`. Guards against a refactor reintroducing
   client-supplied addressing.
-- Wrong OTP → 401 `INCORRECT_OTP` with `attempts_left == 2`, and `device.failed_verifications == 1`.
-- Second wrong OTP → 401 `INCORRECT_OTP`, `attempts_left == 1`, account still active.
-- **Third wrong OTP → 401 `LOCKED_ACCOUNT`, `user.is_active is False`, `user.is_locked is True`**,
-  and the device's token is burned. Mirror of the existing third-wrong-backup-code test at
-  `test_views.py:937-941`; assert both produce the identical response body.
-- After the lock, the correct OTP is still refused — the token is gone, and
-  `SessionTokenAuthentication` no longer opens a session for that phone number at all.
-- `failed_backup_code_attempts` is **unchanged** by wrong email OTPs, and `failed_verifications` is
-  unchanged by wrong backup codes. The two counters are independent (§6.1) even though they now share
-  a consequence.
-- A successful verify resets `failed_verifications` to 0, so a later OTP starts clean.
-- Correct OTP → success payload.
-- Correct OTP with `email_otp_verification` inactive (`@override_switch(..., active=False)`) →
-  403 `NOT_ALLOWED`; the `backup_code` path still succeeds with the switch off.
-- Two prior failed backup-code attempts, then email recovery succeeds →
-  `failed_backup_code_attempts == 0`.
+- Wrong OTP → 401 `INCORRECT_OTP`, `attempts_left` 2 then 1, account still active; **third → 401
+  `LOCKED_ACCOUNT`** with the token burned and the same response body as the third wrong backup code
+  (`test_views.py:937-941`). After the lock the correct OTP is still refused.
+- The two counters are independent (§6.1): wrong OTPs leave `failed_backup_code_attempts` alone and
+  vice versa. A successful verify resets `failed_verifications`, and email recovery after two failed
+  backup-code attempts leaves `failed_backup_code_attempts == 0`.
+- Correct OTP → success payload. With `email_otp_verification` inactive → 403 `NOT_ALLOWED`, while
+  `backup_code` still succeeds.
 
-**Shared completion** (parametrised over both methods so the two paths are proved identical)
-- Response contains `username`, `db_key`, `invited_user`; `user.check_password(response["password"])`
-  is true; `UserKey` row exists.
-- `email` key omitted when the account has none, present when it does.
-- Session has no `device` → no `UserDeviceInfo` written, no `previous_device` in the response.
-- Same device → existing `UserDeviceInfo` updated, `last_accessed` bumped, no `previous_device`.
-- Different device, old one accessed < 30 days ago → new record created, `previous_device` and
-  `last_accessed` in the response.
-- Different device, old one accessed > 30 days ago → new record, no `previous_device`.
+**Shared completion** (parametrised over both methods, to prove the paths identical) — payload fields
+and `user.check_password(response["password"])`; `email` present only when set; and the four
+`UserDeviceInfo` cases: no session device, same device, different device inside 30 days, different
+device outside 30 days.
 
-**Failed-verify limit, at the model level** (`users/tests/test_models.py`, parametrised over
-`SessionEmailOTPDevice`, `SessionPhoneDevice`, `UserEmailOTPDevice`, `PhoneDevice` — the limit must
-behave identically on all four)
-- Wrong token increments `failed_verifications`; `verify_attempts_left` counts down 3 → 2 → 1 → 0.
-- The third wrong token sets `token = None`, `is_exhausted` true, and a subsequent `verify_token`
-  with the **correct** code returns `False`.
-- A correct token before exhaustion resets `failed_verifications` to 0.
-- `generate_challenge()` on a naturally-expired token resets both `failed_verifications` and the
-  send counter `attempts` to 0.
-- **`generate_challenge()` after exhaustion resets `failed_verifications` but leaves `attempts`
-  intact**, so the `2**attempts` backoff still applies. This is the test that closes the
-  burn-and-resend loop described in §6.1 — without it, the limit is decorative.
-- Concurrent wrong guesses each count. Two `verify_token` calls racing on one device leave
-  `failed_verifications == 2`, not `1` (§6.1). Needs `@pytest.mark.django_db(transaction=True)` and
-  threads — there is no existing concurrency test for `_attempt_send` to copy, despite its
-  `select_for_update()`, so this pattern is new to the repo. `test_views.py:2493` is the only
-  `transaction=True` test currently and it is not concurrent.
+**Failed-verify limit, model level** (`users/tests/test_models.py`, parametrised over all four device
+classes)
+- Counter increments, `verify_attempts_left` 3 → 0, third wrong token clears `token` and makes even
+  the correct code return `False`; a correct token before exhaustion resets the counter.
+- `generate_challenge()` on a naturally-expired token resets `failed_verifications` **and**
+  `attempts`; **after exhaustion it resets only `failed_verifications`**, leaving the `2**attempts`
+  backoff in place. That second test is what closes the burn-and-resend loop (§6.1).
+- Concurrent wrong guesses each count — two racing `verify_token` calls leave
+  `failed_verifications == 2`. Needs `@pytest.mark.django_db(transaction=True)` and threads; no
+  existing concurrency test to copy (`test_views.py:2493` is the only `transaction=True` test and it
+  is not concurrent).
 
-**A note on mocking, which affects most of the tests above.** The existing OTP tests patch
-`verify_token` wholesale — `@patch("users.models.UserEmailOTPDevice.verify_token")`
-(`test_views.py:2495, 2509`, and throughout `TestVerifyEmailOtp`). After §6, patching `verify_token`
-patches out the counter with it, so a mocked failure leaves `failed_verifications` at `0` and
-`is_exhausted` false — and any view logic branching on `is_exhausted` is then untested, or worse,
-silently takes the wrong branch. Every new test that needs the counter must drive real tokens
-(`device.generate_token()`, then submit a wrong string) rather than mock the verify. Mocks stay fine
-for tests that only care about what happens *after* a successful verify.
+**Mocking — affects most of the above.** Existing OTP tests patch `verify_token` wholesale
+(`test_views.py:2495, 2509`, throughout `TestVerifyEmailOtp`), which after §6 patches out the counter
+too: a mocked failure leaves `is_exhausted` false, so view logic branching on it is untested or takes
+the wrong branch silently. Tests that exercise the counter must drive real tokens
+(`device.generate_token()`, then submit a wrong string). Mocks stay fine for anything that only cares
+about what happens after a successful verify.
 
-**Non-recovery OTP endpoints** (`OTP_EXPIRED`, case (a) of §6.2)
-- `verify_email_otp` during registration / edit profile: three wrong OTPs → 401 `OTP_EXPIRED`; the
-  account is **not** locked, `user.email` is unwritten, and a fresh `send_email_otp` + correct OTP
-  then succeeds (subject to the backoff).
-- `confirm_session_otp`: three wrong OTPs → 401 `OTP_EXPIRED`, `session.is_phone_validated` still
-  false, no account touched. Explicitly assert no lock, per D1.
-- `confirm_payment_profile_otp` and the legacy `PhoneDevice` views keep their bare `401` body but
-  stop accepting further guesses on the burned token.
+**Non-recovery OTP endpoints** (`OTP_EXPIRED`, §6.2 case (a))
+- `verify_email_otp` in registration / edit profile: three wrong OTPs → 401 `OTP_EXPIRED`, account
+  **not** locked, `user.email` unwritten, and a fresh OTP then succeeds.
+- `confirm_session_otp`: three wrong OTPs → 401 `OTP_EXPIRED`, still not phone-validated, and
+  explicitly **no lock** (§6.3).
+- `confirm_payment_profile_otp` and the legacy `PhoneDevice` views keep their bare `401` but stop
+  accepting guesses on the burned token.
 
-**Regression**
-- The existing `TestConfirmBackupCodeApi` and `TestVerifyEmailOtp` classes pass unmodified. That is
-  the acceptance criterion for the §8 refactor — with one expected exception: any existing test that
-  submits more than `MAX_OTP_VERIFY_ATTEMPTS` wrong OTPs to one device, or that reuses a device
-  across sub-cases after failed verifies, will need the counter reset. Those are the only edits
-  permitted to the old test classes; a change to an *assertion* in them means the refactor drifted.
+**Regression** — `TestConfirmBackupCodeApi` and `TestVerifyEmailOtp` pass unmodified; that is the
+acceptance criterion for the refactor. One expected exception: tests that submit more than
+`MAX_OTP_VERIFY_ATTEMPTS` wrong OTPs to one device, or reuse a device across sub-cases after failed
+verifies, need a counter reset. Those are the only permitted edits — a changed *assertion* means the
+refactor drifted.
 
 ---
 
-## 10. Client and rollout impact
+## 9. Client and rollout impact
 
 *(commcare-android, separate ticket — noted so the two land in the right order.)*
 
 - New `ApiEndPoints.completeRecovery` + `ApiService` method + `PersonalIdApiHandler.completeRecovery`,
-  parsing the same payload `confirmBackupCode` parses today into `PersonalIdSessionData`.
-- `PersonalIdBackupCodeFragment.confirmBackupCode()` switches to `complete_recovery` with
-  `method=backup_code`. Downstream handling is unchanged, including the
-  `sessionData.dbKey != null` success test — that is what D3 buys.
-- `PersonalIdEmailVerificationFragment` calls `complete_recovery` with `method=email_otp` in the
-  mobile spec's `BACKUP_CODE_RECOVERY_SIGN_IN` workflow, then
-  `PersonalIdRecoveryCompleter.finalizeAccountRecovery`. Registration, `EXISTING_USER`, and the
-  profile-graph `BACKUP_CODE_RECOVERY_SET_CODE` flow keep using `verify_email_otp` — those attach an
-  email or gate a local action, they do not recover an account.
-- The account keeps its old, forgotten backup code after an `email_otp` recovery. Deliberately not
-  the server's problem: the mobile spec already routes straight to `SET_NEW_CODE` and calls
-  `set_recovery_pin` with `ProvidedAuth(userId, password)` using the password from this endpoint's
-  response, which `DeviceBasicAuthentication` accepts. `complete_recovery` does **not** clear or
-  invalidate `recovery_pin` — if the team wants the old code dead the moment email recovery
-  succeeds, that is a deliberate addition and needs its own decision, since it would strand any
-  client that fails between the two calls.
-- `AnalyticsParamValue.CCC_RECOVERY_METHOD_BACKUPCODE` is currently hardcoded in
-  `PersonalIdRecoveryCompleter.logRecoverySuccessResult()`. It needs an email variant so the
-  recovery-method split is measurable.
-- **Two new responses to handle, both from §6, and one of them lands on screens outside recovery.**
-  - `401 INCORRECT_OTP` now carries `attempts_left` on `complete_recovery`. The email verification
-    screen should show the same "N attempts remaining" warning the backup-code screen already shows,
-    and the same "this will lock your account" language on the last attempt — the consequence is now
-    identical, and a user who is not warned will meet it by surprise.
-  - `401 OTP_EXPIRED` is new and can be returned by `verify_email_otp` and `confirm_session_otp` —
-    i.e. on the **registration** and **edit-profile** email screens and the invited-user phone
-    screen, not only in recovery. Treat it as "that code is no longer valid": clear the field, tell
-    the user to request a new code, and re-enable the resend control. A client that falls through to
-    a generic error here leaves the user re-typing a code that can never succeed. Note the resend
-    may then hit the existing `429 RATE_LIMITED` with `retry_after_seconds`, which the client
-    already handles for `send_email_otp`.
-  - The client-side ordering follows from this: `OTP_EXPIRED` handling should ship **before or with**
-    the server change, since it affects existing screens on existing builds. It is the one part of
-    the client work that is not gated on `complete_recovery`.
-- **Rollout order:** server first (both old and new endpoints live), then the client — with the
-  `OTP_EXPIRED` caveat above, since older builds will start seeing that code on registration and
-  edit-profile screens the moment §6 deploys. Older builds do not break (they show a generic error
-  and the user requests a new code), but the UX is poor until the client ships. If that is judged
-  unacceptable, the alternative is to gate the `OTP_EXPIRED` response behind a waffle switch and
-  return the old bare `401` until client uptake is sufficient — the token is burned either way, so
-  the security property does not wait on the client. No deprecation or removal of the old endpoints
-  is proposed here; removing them is a later ticket gated on min-supported-version.
+  parsing the same payload into `PersonalIdSessionData`.
+- `PersonalIdBackupCodeFragment.confirmBackupCode()` switches to `method=backup_code`; downstream
+  handling unchanged, including the `sessionData.dbKey != null` success test.
+- `PersonalIdEmailVerificationFragment` calls `method=email_otp` in the mobile spec's
+  `BACKUP_CODE_RECOVERY_SIGN_IN` workflow, then `PersonalIdRecoveryCompleter.finalizeAccountRecovery`.
+  Registration, `EXISTING_USER`, and the profile-graph `BACKUP_CODE_RECOVERY_SET_CODE` flow keep
+  `verify_email_otp` — those attach an email, they do not recover an account.
+- `complete_recovery` does **not** clear `recovery_pin`, so the account keeps its old, forgotten
+  backup code. The mobile spec already routes straight to `SET_NEW_CODE` and calls `set_recovery_pin`
+  with the password from this response. Clearing it server-side would strand a client that fails
+  between the two calls, so it needs its own decision if wanted.
+- `AnalyticsParamValue.CCC_RECOVERY_METHOD_BACKUPCODE` is hardcoded in
+  `PersonalIdRecoveryCompleter.logRecoverySuccessResult()`; needs an email variant to make the
+  recovery-method split measurable.
+- **Two new responses to handle, both from §6:**
+  - `401 INCORRECT_OTP` now carries `attempts_left`. The email verification screen should show the
+    same "N attempts remaining" and "this will lock your account" language the backup-code screen
+    already shows — the consequence is now identical.
+  - `401 OTP_EXPIRED` can come from `verify_email_otp` and `confirm_session_otp`, i.e. on
+    **registration**, **edit-profile**, and invited-user phone screens, not only recovery. Clear the
+    field, tell the user to request a new code, re-enable resend (which may then hit the existing
+    `429 RATE_LIMITED`). Falling through to a generic error leaves the user retyping a dead code.
+- **Rollout order:** server first (both old and new endpoints live), then the client — except
+  `OTP_EXPIRED` handling, which should ship **before or with** the server change since it hits
+  existing screens on existing builds. Older builds do not break (generic error, user requests a new
+  code) but the UX is poor until the client ships; if that is unacceptable, gate the `OTP_EXPIRED`
+  response behind a waffle switch and keep returning the bare `401` — the token is burned either way,
+  so the security property does not wait on the client.
 
 ---
 
-## 11. Out of scope
+## 10. Out of scope
 
-- Removing or deprecating `confirm_backup_code` / `verify_email_otp`.
-- Any change to registration or to `EXISTING_USER` email attachment, beyond the `OTP_EXPIRED`
-  response `verify_email_otp` gains from §6.
+- Removing or deprecating `confirm_backup_code` / `verify_email_otp`. That is a later ticket gated on
+  min-supported-version.
+- Any change to registration or `EXISTING_USER` email attachment, beyond the `OTP_EXPIRED` response
+  `verify_email_otp` gains from §6.
 - Recovery by secondary phone (`recover/confirm_secondary_otp`) and the `RecoveryStatus` state
-  machine — untouched; `complete_recovery` is a `ConfigurationSession` flow and does not read or
-  write `RecoveryStatus`. Their `PhoneDevice`s do inherit the failed-verify limit (§6.3), but their
-  views and responses are not otherwise changed.
-- Any account lockout triggered by phone OTP failures — see D1 for why, and what would have to be
-  answered first.
-- The `check_name` masked-email hint (D6) — flagged, ticketed separately.
+  machine — `complete_recovery` is a `ConfigurationSession` flow and never reads or writes
+  `RecoveryStatus`. Their `PhoneDevice`s do inherit the failed-verify limit (§6.3); their views and
+  responses are otherwise unchanged.
+- Any account lockout triggered by phone OTP failures (§6.3).
+- The `check_name` masked-email hint — ticketed separately.
 
 Explicitly **not** out of scope, despite being tempting to defer: the failed-verify limit itself
 (§6). It may land as its own ticket sequenced before this one, but the `email_otp` path must not go
