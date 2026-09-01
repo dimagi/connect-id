@@ -275,13 +275,6 @@ password that now authenticates the account. Cheap to fix while the code is bein
 **Requirement: `method=email_otp` reads the address from `user.email` on the account being
 recovered. The request carries no email at all, and an `email` key in the body is ignored.**
 
-Not a comparison against the stored address, a resolution from it: the session proves only that the
-caller controls the phone number, and `send_email_otp` mails an OTP to whatever address it is given,
-so a client-supplied address here would let anyone holding the SIM mail themselves an OTP.
-`send_email_otp` itself is unchanged — the attacker just gains nothing from it, because the resulting
-`SessionEmailOTPDevice` is keyed on an email `complete_recovery` never looks up. It is also why this
-cannot delegate to `verify_email_otp`, which is built around a client-supplied address by design.
-
 An account with no email on record can never recover by `email_otp` — `400 NO_EMAIL_SET`. The mobile
 flow should never reach this, since "Forgot backup code?" is only offered when an email exists, so
 treat it as a defensive error rather than a UX path.
@@ -562,3 +555,21 @@ refactor drifted.
 Explicitly **not** out of scope, despite being tempting to defer: the failed-verify limit itself
 (§6). It may land as its own ticket sequenced before this one, but the `email_otp` path must not go
 live without it.
+
+
+## 11. Proposed Implementation Tickets
+Web:
+ - Prereq: Add failed verification limits to BaseOTPDevice
+ - Add OTP_EXPIRED responses
+ - Refactor confirm_backup_code to shared helpers
+ - Implement complete_recovery endpoint
+ - Add masked_email to check_name response
+ 
+Mobile:
+ - Handle 401 OTP_EXPIRED errors (email and phone pages)
+ - Show attempts remaining in email OTP after incorrect OTP
+ - Implement complete_recovery
+ - Change backup code page to user new API call
+ - Email OTP recovery flow
+ - Analytics (log email usage)
+ - Show masked_email in email OTP page during recovery
