@@ -23,7 +23,7 @@ We want to be able to make use of different SMS vendors for different countries.
    developer changes it without a deploy.
 2. A vendor that errors mid-send is followed by the next vendor in that country's chain.
 3. A resend goes to a vendor that has not already been tried for this OTP, preferring the
-   highest-priority one available.
+   highest-ranked one available.
 4. Every send attempt is recorded, so per-country/per-vendor reliability is reportable.
 5. An empty routing table reproduces today's behaviour exactly (i.e. default to Twilio as the global default).
 
@@ -60,7 +60,7 @@ the time, and whether it worked.
 On each send, `phonenumbers` (an existing python package used in the code) attributes the
 number to a country, and that country's chain is constructed from the `VendorRoute` table.
 `SmsLog` then answers *which of those vendors this number has already burned through for
-the current OTP*; the remainder are ranked by their **current** priority and the best one
+the current OTP*; the remainder are ranked by their **current** `vendor_rank` and the best one
 is tried first, falling through to the next on error. A country with no configured
 `VendorRoute` falls back to Twilio as the global default, which is why an empty table
 reproduces today's behaviour exactly.
@@ -76,22 +76,22 @@ those this number has not already tried.**
 |---|---|---|
 | `country` | `CharField(max_length=2)` | ISO-3166 alpha-2, uppercased in `save()` |
 | `vendor` | `CharField(max_length=50)` | `choices` from a callable reading `registry.VENDORS`, so admin gets a dropdown and adding a vendor churns no migration. |
-| `priority` | `PositiveSmallIntegerField(default=1)` | try lowest number first |
+| `vendor_rank` | `PositiveSmallIntegerField(default=1)` | try lowest number first |
 | `is_active` | `BooleanField(default=True)` | Pulls a vendor from a chain without deleting the row |
 
-Two unique constraints — `(country, vendor)`, and `(country, priority)` conditioned on
-`is_active` — plus `Meta.ordering = ["country", "priority", "vendor"]`. `clean()` rejects a
+Two unique constraints — `(country, vendor)`, and `(country, vendor_rank)` conditioned on
+`is_active` — plus `Meta.ordering = ["country", "vendor_rank", "vendor"]`. `clean()` rejects a
 `country` absent from `phonenumbers.SUPPORTED_REGIONS`.
 
 ```python
 models.UniqueConstraint(
-    fields=["country", "priority"],
+    fields=["country", "vendor_rank"],
     condition=models.Q(is_active=True),
-    name="unique_active_country_priority",
+    name="unique_active_country_vendor_rank",
 )
 ```
 
-Priorities need not be contiguous - `priority` is only meant to provide
+Ranks need not be contiguous - `vendor_rank` is only meant to provide
 an ordering structure.
 
 `sms/models.py:SmsLog` — history, one row per **vendor attempt** (not per send, so
@@ -102,7 +102,7 @@ failover is visible):
 | `phone_number` | `PhoneNumberField()` | keys the "already tried" lookup |
 | `country` | `CharField(max_length=2, blank=True)` | `""` when the number is not routable |
 | `vendor` | `CharField(max_length=50)` | which vendor was attempted |
-| `priority` | `PositiveSmallIntegerField(null=True)` | the vendor's priority **at send time**; `NULL` means the send went via `DEFAULT_VENDOR` because the country had no rows |
+| `vendor_rank` | `PositiveSmallIntegerField(null=True)` | the vendor's rank **at send time**; `NULL` means the send went via `DEFAULT_VENDOR` because the country had no rows |
 | `purpose` | `CharField(choices=Purpose)` | `otp` / `deactivation` / `hq_invite` / `credential_invite` |
 | `status` | `CharField(choices=Status)` | `success` / `vendor_error` / `config_error` |
 | `vendor_message_id` | `CharField(max_length=100, blank=True)` | from `SendResult` |
@@ -122,10 +122,10 @@ missing `SMS_VENDORS` entry or bad credentials) from `vendor_error` (the vendor'
 rejected the send). Collapsing the two would depress a vendor's measured reliability for
 what is actually a deployment mistake.
 
-`priority` is **reporting only** — routing never reads it. It is a historical snapshot, so
+`vendor_rank` is **reporting only** — routing never reads it. It is a historical snapshot, so
 a row stays interpretable after the chain is re-ordered and reporting can ask whether a
 vendor performs differently at p1 than at p3. Vendor selection always ranks by the
-priority held in `VendorRoute` *now*.
+`vendor_rank` held in `VendorRoute` *now*.
 
 #### Vendor resolution
 
@@ -136,11 +136,11 @@ New module `sms/routing.py`. `ChainEntry` is a frozen dataclass, matching the st
 @dataclass(frozen=True)
 class ChainEntry:
     vendor: str
-    priority: int | None   # None => DEFAULT_VENDOR fallback, no VendorRoute row
+    vendor_rank: int | None   # None => DEFAULT_VENDOR fallback, no VendorRoute row
 
 
 def resolve_chain(phone_number) -> list[ChainEntry]:
-    """Active, registered vendors for the number's country, lowest priority first.
+    """Active, registered vendors for the number's country, lowest rank first.
 
     Returns [ChainEntry(DEFAULT_VENDOR, None)] when the number has no region, the
     country has no active rows, or no active row names a registered vendor.
@@ -159,7 +159,7 @@ def tried_vendors(phone_number, since) -> set[str]:
 
 
 def candidates(chain: list[ChainEntry], tried: set[str]) -> list[ChainEntry]:
-    """The chain minus what has already been tried, best priority first."""
+    """The chain minus what has already been tried, best rank first."""
     untried = [e for e in chain if e.vendor not in tried]
     return untried or chain   # every vendor exhausted -> start over at p1
 ```
@@ -186,7 +186,7 @@ every vendor would fall back to p1 forever.
 
 It also resets itself. `window_start` is computed *after* the regeneration branch, so an
 expired token gives `window_start == now()`, no rows can match, and the send starts at p1.
-Non-OTP sends pass no window at all, so their tried-set is empty and `candidates` is just the chain in priority order.
+Non-OTP sends pass no window at all, so their tried-set is empty and `candidates` is just the chain in rank order.
 
 **Scope is the phone number, not the device.** The lookup keys on `phone_number` alone, so
 a `PhoneDevice` and a `SessionPhoneDevice` for the same number in overlapping windows share
@@ -264,8 +264,8 @@ def _attempt_send(self, valid_secs):
 
 Django admin only.
 
-`VendorRouteAdmin` sets `list_editable = ("priority", "is_active")` — that is the whole
-point: re-prioritising or disabling a country's vendors happens on one screen, without
+`VendorRouteAdmin` sets `list_editable = ("vendor_rank", "is_active")` — that is the whole
+point: re-ranking or disabling a country's vendors happens on one screen, without
 opening each row.
 
 #### Failure modes
@@ -275,10 +275,10 @@ opening each row.
 | Vendor 1 errors, vendor 2 accepts | Failover; vendor 1's exception is logged and the next candidate is tried. Two `SmsLog` rows: `vendor_error` then `success` | OTP arrives; nothing unusual |
 | A vendor accepts a message it never delivers | Nothing — undetectable without delivery webhooks. The row reads `success` | No SMS; the resend goes to an untried vendor |
 | Every vendor in the chain errors | `AllVendorsFailed`, uncaught, Sentry error; `transaction.atomic()` rolls back `attempts` and `otp_last_sent`, but the buffered `SmsLog` rows are flushed from the exception and persist | The generic error a Twilio failure gives today; resend allowed at once, no backoff advance |
-| Nothing routable — no region, no active rows (day one, every unconfigured country), or only unregistered vendors | Falls to `DEFAULT_VENDOR`, logged with `priority = NULL` | Today's behaviour |
+| Nothing routable — no region, no active rows (day one, every unconfigured country), or only unregistered vendors | Falls to `DEFAULT_VENDOR`, logged with `vendor_rank = NULL` | Today's behaviour |
 | A routed vendor has no `settings.SMS_VENDORS` entry, or bad credentials | `ImproperlyConfigured` caught, logged as `config_error`; next candidate tried | No effect if a later candidate succeeds |
 | Every configured vendor already tried this window | Candidate list is empty, so the full chain is reused and p1 is tried again | A repeat of the best vendor rather than an error |
-| `VendorRoute` edited between two sends | Absorbed: the chain is re-read and ranking uses the new priorities, while the tried-set is by name | Correct escalation regardless of the edit |
+| `VendorRoute` edited between two sends | Absorbed: the chain is re-read and ranking uses the new ranks, while the tried-set is by name | Correct escalation regardless of the edit |
 | Process killed mid-send | Buffered rows are lost; device state is rolled back too, so nothing is half-recorded | Resend allowed at once |
 | Two resends racing on one device | `select_for_update` serialises them as today, but the lock is now held across the whole chain walk rather than a single vendor call | The second request blocks for up to `len(chain) × SMS_VENDOR_TIMEOUT_SECONDS` before receiving its `RateLimitedError`, where today it returns almost at once. The `retry_after` value itself is unaffected |
 
@@ -290,7 +290,7 @@ the tried-set mid-flight, so flushing the log after the block does not expose a 
 Malawi is the only configured country; everywhere else falls to `DEFAULT_VENDOR`.
 
 `VendorRoute` table looks like this:
-| `country` | `vendor` | `priority` | `is_active` |
+| `country` | `vendor` | `vendor_rank` | `is_active` |
 |---|---|---|---|
 | `MW` | `twilio` | 1 | ✓ |
 | `MW` | `vendorB` | 2 | ✓ |
@@ -330,7 +330,7 @@ live table.
 
 - The token has long expired, so `is_otp_close_to_expiry` fires true, the token is
   regenerated and `attempts` resets
-- The send goes to twilio — priority 1, the vendor configured as best for Malawi
+- The send goes to twilio — `vendor_rank` 1, the vendor configured as best for Malawi
 
 **Edge paths.**
 
@@ -338,9 +338,9 @@ live table.
   Both attempts are logged, so the next resend skips both
 - **A four-vendor chain, reshuffled mid-flow** — `v1` and `v2` have been tried, then an
   admin swaps `v2` and `v4` so the chain reads `v1(1) v4(2) v3(3) v2(4)`. The untried set is
-  `{v3, v4}`, ranked by current priority, so `v4` is tried next
+  `{v3, v4}`, ranked by current `vendor_rank`, so `v4` is tried next
 - **An unconfigured country** — no rows match, so the chain is `[DEFAULT_VENDOR]` and the
-  row logs `priority = NULL`
+  row logs `vendor_rank = NULL`
 - **A test number** — returns before any database read or vendor call, and logs nothing
 
 #### Who owns what
@@ -375,10 +375,10 @@ state to keep in sync.
 Two variants were worked through, both keeping a single "where were we" pointer and
 stepping one position forward:
 
-- **By logged priority** — read the `priority` recorded on the newest OTP row and take the
-  next priority up.
+- **By logged `vendor_rank`** — read the `vendor_rank` recorded on the newest OTP row and take the
+  next rank up.
 - **By logged vendor** — resolve the logged *vendor* to its `VendorRoute` row at send time
-  and step past whatever priority it holds now.
+  and step past whatever rank it holds now.
 
 Both were rejected. A position cursor cannot express "we have tried these two, try
 something else", which is the actual requirement.
