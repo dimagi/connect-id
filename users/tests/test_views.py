@@ -1695,6 +1695,68 @@ class TestCheckUserSimilarity:
         assert response.json()["account_exists"] is False
         assert response.json()["photo"] == ""
 
+    @patch.object(ConnectUser, "get_photo")
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_masked_email_returned_for_matched_account(
+        self, check_similarity_mock, get_photo_mock, authed_client_token, user, valid_token
+    ):
+        check_similarity_mock.return_value = True
+        get_photo_mock.return_value = ""
+
+        user.name = "ExistingUser"
+        user.email = "someone@dimagi.com"
+        user.save()
+
+        response = authed_client_token.post(reverse(self.urlname), data={"name": user.name})
+        assert response.status_code == 200
+        assert response.json()["masked_email"] == "s*****e@dimagi.com"
+        # Never the real address.
+        assert "someone@" not in json.dumps(response.json())
+
+    @patch.object(ConnectUser, "get_photo")
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_masked_email_omitted_when_account_has_no_email(
+        self, check_similarity_mock, get_photo_mock, authed_client_token, user, valid_token
+    ):
+        check_similarity_mock.return_value = True
+        get_photo_mock.return_value = ""
+
+        user.name = "ExistingUser"
+        user.save()
+        assert not user.email
+
+        response = authed_client_token.post(reverse(self.urlname), data={"name": user.name})
+        assert response.status_code == 200
+        assert "masked_email" not in response.json()
+
+    @patch.object(ConnectUser, "get_photo")
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_masked_email_omitted_when_name_does_not_match(
+        self, check_similarity_mock, get_photo_mock, authed_client_token, user, valid_token
+    ):
+        check_similarity_mock.return_value = False
+        get_photo_mock.return_value = ""
+
+        valid_token.invited_user = False
+        valid_token.save()
+        user.name = "ExistingUser"
+        user.email = "someone@dimagi.com"
+        user.save()
+
+        response = authed_client_token.post(reverse(self.urlname), data={"name": "DifferentUser"})
+        assert response.status_code == 200
+        assert "masked_email" not in response.json()
+
+    def test_masked_email_stays_behind_the_phone_gate(self, authed_client_token, user, valid_token):
+        valid_token.is_phone_validated = False
+        valid_token.save()
+        user.email = "someone@dimagi.com"
+        user.save()
+
+        response = authed_client_token.post(reverse(self.urlname), data={"name": "ExistingUser"})
+        assert response.status_code == 403
+        assert "masked_email" not in response.json()
+
 
 class TestCompleteProfileView:
     url = reverse("complete_profile")

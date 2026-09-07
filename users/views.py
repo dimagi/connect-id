@@ -41,6 +41,7 @@ from utils.rest_framework import ClientProtectedResourceAuth
 from .auth import DeviceBasicAuthentication, IssuingCredentialsAuth, SessionTokenAuthentication
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
 from .device_utils import DEVICE_RECENT_ACCESS_THRESHOLD
+from .email_utils import mask_email
 from .exceptions import RateLimitedError, RecoveryPinNotSetError
 from .fcm_utils import create_update_device
 from .models import (
@@ -967,12 +968,18 @@ def check_user_similarity(request):
         if not request.auth.invited_user and user_name_is_similar is not None:
             is_same_user = user_name_is_similar
 
-    return JsonResponse(
-        {
-            "account_exists": is_same_user,
-            "photo": existing_user.get_photo() if is_same_user else "",
-        }
-    )
+    response_data = {
+        "account_exists": is_same_user,
+        "photo": existing_user.get_photo() if is_same_user else "",
+    }
+
+    # Gated on is_same_user like the photo. The client only needs this to label the
+    # "Forgot backup code?" option on a matched account, and a caller whose name did not
+    # match should learn nothing about the address on the number.
+    if is_same_user and existing_user.email:
+        response_data["masked_email"] = mask_email(existing_user.email)
+
+    return JsonResponse(response_data)
 
 
 @api_view(["POST"])
