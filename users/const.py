@@ -38,6 +38,9 @@ class ErrorCodes:
 
 MAX_BACKUP_CODE_ATTEMPTS = 3
 
+# Wrong guesses allowed against a single OTP token before it is burned.
+MAX_OTP_VERIFY_ATTEMPTS = 3
+
 
 class SMSMethods:
     PERSONAL_ID = "personal_id"
