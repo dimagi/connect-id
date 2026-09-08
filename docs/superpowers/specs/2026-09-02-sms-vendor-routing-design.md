@@ -22,8 +22,9 @@ We want to be able to make use of different SMS vendors for different countries.
 1. A country's vendor order lives in the database and is editable in Django admin, so a
    developer changes it without a deploy.
 2. A vendor that errors mid-send is followed by the next vendor in that country's chain.
-3. A resend goes to a vendor that has not already been tried for this OTP, preferring the
-   highest-ranked one available.
+3. An OTP resend goes to a vendor that has not already been tried for this number,
+   preferring the highest-ranked one available. A repeat of any other message moves off a
+   vendor only if its last attempt failed.
 4. Every send attempt is recorded, so per-country/per-vendor reliability is reportable.
 5. An empty routing table reproduces today's behaviour exactly (i.e. default to Twilio as the global default).
 
@@ -60,12 +61,15 @@ the time, which `SessionPhoneDevice` asked for it, and whether it worked.
 On each send, `phonenumbers` (an existing python package used in the code) attributes the
 number to a country, and that country's chain is constructed from the `VendorRoute` table.
 `SmsLog` then answers *which of those vendors this number has already burned through*,
-counting only sends made from a `ConfigurationSession` that is still live; the remainder
+counting attempts for the same purpose inside a fixed retry window — every attempt for an
+OTP, only ones that failed for anything else; the remainder
 vendors are ranked by their **current** `vendor_rank` and the best one is tried first,
 falling through to the next on error. A country with no configured `VendorRoute` falls back to Twilio as the global
 default, which is why an empty table reproduces today's behaviour exactly.
 
-The guiding rule is: **always use the vendor we currently believe is most reliable that this number has not already tried recently.**
+The guiding rule is: **always use the vendor we currently believe is most reliable that this
+number has not already been used recently** — where an OTP burns a vendor by being sent through
+it at all, and every other purpose burns one only by failing on it.
 
 #### Data model changes
 
@@ -98,7 +102,7 @@ failover is visible):
 
 | Field | Type | Purpose |
 |---|---|---|
-| `session_phone_device` | `ForeignKey("users.SessionPhoneDevice", null=True, blank=True, on_delete=SET_NULL, related_name="sms_logs")` | traces a send back to its flow, and its `session__expires` bounds the "already tried" lookup; `NULL` on every non-OTP send |
+| `session_phone_device` | `ForeignKey("users.SessionPhoneDevice", null=True, blank=True, on_delete=SET_NULL, related_name="sms_logs")` | traces an OTP send back to the flow that asked for it; `NULL` on every non-OTP send. Not read by routing |
 | `user` | `ForeignKey("users.ConnectUser", null=True, blank=True, on_delete=SET_NULL, related_name="sms_logs")` | per-user reporting as a join rather than a phone-number match; `NULL` on session OTP sends |
 | `phone_number` | `PhoneNumberField()` | the number the message went to. Always populated, on every row, for every purpose |
 | `country` | `CharField(max_length=2, blank=True)` | `""` when the number is not routable |
@@ -124,14 +128,15 @@ FK: it is the only identifier guaranteed on all of them.
 
 | Index | Serves |
 |---|---|
-| `(phone_number, purpose)` | the "already tried" lookup on every OTP send |
+| `(phone_number, purpose, created_at)` | the "already tried" lookup on every send |
 | `(country, vendor, created_at)` | per-country/per-vendor reporting |
 | `(created_at)` | the retention sweep |
 
 `status` distinguishes `config_error` (an `ImproperlyConfigured` from `get_vendor` — a
 missing `SMS_VENDORS` entry or bad credentials) from `vendor_error` (the vendor's API
 rejected the send). Collapsing the two would depress a vendor's measured reliability for
-what is actually a deployment mistake.
+what is actually a deployment mistake. Routing treats them alike — both mean "this vendor did
+not send" — and reads `status` only for non-OTP purposes.
 
 `vendor_rank` is **reporting only** — routing never reads it. It is a historical snapshot, so
 a row stays interpretable after the chain is re-ordered and reporting can ask whether a
@@ -158,15 +163,25 @@ def resolve_chain(phone_number) -> list[ChainEntry]:
     """
 
 
-def tried_vendors(phone_number) -> set[str]:
-    """Vendor names already attempted for this number's OTP, in any still-live session."""
-    return set(
-        SmsLog.objects.filter(
-            phone_number=phone_number,
-            purpose=SmsLog.Purpose.OTP,
-            session_phone_device__session__expires__gt=now(),
-        ).values_list("vendor", flat=True)
+# Purposes where a *successful* send still burns the vendor, since "success"
+# does not necessarily mean "delivered". 
+# The user asking for another OTP on this number is itself 
+# the evidence the last one never arrived.
+ESCALATE_ON_SUCCESS = frozenset({SmsLog.Purpose.OTP})
+
+
+def tried_vendors(phone_number, purpose) -> set[str]:
+    """Vendor names to skip for this number and purpose, inside the retry window."""
+    recent = SmsLog.objects.filter(
+        phone_number=phone_number,
+        purpose=purpose,
+        created_at__gt=now() - settings.SMS_VENDOR_RETRY_WINDOW,
     )
+    if purpose in ESCALATE_ON_SUCCESS:
+        return set(recent.values_list("vendor", flat=True))
+
+    latest_per_vendor = recent.order_by("vendor", "-created_at").distinct("vendor")
+    return {log.vendor for log in latest_per_vendor if log.status != SmsLog.Status.SUCCESS}
 
 
 def candidates(chain: list[ChainEntry], tried: set[str]) -> list[ChainEntry]:
@@ -183,22 +198,45 @@ is what makes the design immune to chain edits: re-ordering, insertion, deletion
 deactivation are all absorbed by re-reading `VendorRoute`, and a vendor is skipped because
 of *what it is*, never because of where it used to sit in the chain.
 
-**Scope is the phone number; live sessions bound it.** "Already tried" means *by this
-number, in any `ConfigurationSession` that has not yet expired*. The tried-set describes the
-number's reachability — the same SIM failing on a vendor should escalate however the user
-got there.
+**Scope is the phone number and the purpose; a time window bounds it.** "Already tried"
+means *by this number, for this purpose, within the last `SMS_VENDOR_RETRY_WINDOW`* — a new
+setting, `timedelta(hours=4)`, matching the `ConfigurationSession` lifetime the OTP flow
+already runs on. The tried-set describes the number's reachability, so the same SIM failing
+on a vendor should escalate however the user got there.
+
+**Purpose is part of the key, not dropped.** A vendor is burned for the message type it was
+burned on. Without it, a successful `hq_invite` would push the user's next OTP down to
+vendor 2 for four hours. They are separate conversations with the user; each escalates on its own.
+
+**Purpose also decides what counts as burning a vendor.** There are two modes, and which one
+applies is declared per purpose in `ESCALATE_ON_SUCCESS`:
+
+| Purpose | A vendor is skipped when | Why |
+|---|---|---|
+| `otp` | it was **attempted at all** in the window, success or failure | A user only asks for a second OTP because the first never arrived. Acceptance is not delivery, and without delivery webhooks a `success` row is not evidence the SMS landed — the resend itself is the evidence it did not |
+| everything else | its **most recent** attempt in the window was not a `success` | Nothing in these flows signals non-delivery, so a send the vendor accepted is the best information available. Sidelining a working vendor over a silent failure we cannot see would cost more than it buys |
+
+**A burn is sticky, and the only thing that lifts it is window exhaustion.** Reading the *latest*
+row per vendor rather than "any failure in the window" is not a re-probe mechanism: a burned
+vendor is not selected, so it cannot produce a newer row, so nothing normally overwrites its
+failure. There is exactly one path back. When every vendor in the chain is burned,
+`candidates` falls through to `untried or chain` and the full chain is walked from p1 again;
+the burned vendor is retried there, and a success rewrites its latest row and clears it.
+Short of that, an errored non-OTP vendor stays out for the remainder of the window.
+
+That is the intended behaviour — a vendor that just failed this number should not be tried
+first again minutes later — but it means `SMS_VENDOR_RETRY_WINDOW` is also *how long a single
+non-OTP failure sidelines a vendor for that number*.
 
 **This is what survives an app restart.** `start_device_configuration` is unauthenticated
 and takes only a phone number, so relaunching the app mints a fresh `ConfigurationSession`
 and a fresh `SessionPhoneDevice`. Keying on the device would hand that user an empty
 tried-set and send them straight back to the vendor that had just failed them. Keying on
-the number, the previous session is still live, so its attempts still count.
+the number, the earlier attempts are still inside the window, so they still count.
 
-`session_phone_device` is not the routing key. It is on the row for tracing a send back to
-the flow that asked, and its `session__expires` is what bounds the lookup.
+`session_phone_device` is not read by routing at all. It is on the row purely for tracing
+an OTP send back to the flow that asked.
 
-**The cost.** Non-OTP sends never match the filter — they have no session device, so the join excludes
-them — and their tried-set is empty, leaving `candidates` as the chain in rank order.
 
 #### Log durability
 
@@ -238,9 +276,9 @@ def send_sms(
 ) -> SendOutcome: ...
 ```
 
-`device` and `user` land on each logged row. `device` is not the routing key — the tried-set
-keys on `to` — but its session is what bounds the lookup, so an OTP send must pass it. The
-three non-OTP call sites pass `user` only.
+`device` and `user` land on each logged row, for tracing and reporting; neither is read by
+routing, which keys on `to` and `purpose` alone. The three non-OTP call sites pass `user`
+only.
 
 `_send_otp` lives on `BasePhoneDevice`, shared with `PhoneDevice`, so it cannot hand over
 `self` unconditionally. A hook keeps the base generic:
@@ -315,18 +353,21 @@ opening each row.
 | Scenario | What the system does | What the user sees |
 |---|---|---|
 | Vendor 1 errors, vendor 2 accepts | Failover; vendor 1's exception is logged and the next candidate is tried. Two `SmsLog` rows: `vendor_error` then `success` | OTP arrives; nothing unusual |
-| A vendor accepts a message it never delivers | Nothing — undetectable without delivery webhooks. The row reads `success` | No SMS; the resend goes to an untried vendor |
+| A vendor accepts an OTP it never delivers | Nothing — undetectable without delivery webhooks. The row reads `success`, but `otp` burns a vendor on success too | No SMS; the resend goes to an untried vendor |
+| A vendor accepts a non-OTP message it never delivers | Nothing, and nothing signals it. The `success` row leaves the vendor in play | A repeat send goes back to the same vendor — accepted, as the alternative is sidelining working vendors over failures we cannot observe |
 | Every vendor in the chain errors | `AllVendorsFailed`, uncaught, Sentry error; `transaction.atomic()` rolls back `attempts` and `otp_last_sent`, but the buffered `SmsLog` rows are flushed from the exception and persist | The generic error a Twilio failure gives today; resend allowed at once, no backoff advance |
 | Nothing routable — no region, no active rows (day one, every unconfigured country), or only unregistered vendors | Falls to `DEFAULT_VENDOR`, logged with `vendor_rank = NULL` | Today's behaviour |
 | A routed vendor has no `settings.SMS_VENDORS` entry, or bad credentials | `ImproperlyConfigured` caught, logged as `config_error`; next candidate tried | No effect if a later candidate succeeds |
-| Every configured vendor already tried across live sessions | Candidate list is empty, so the full chain is reused and p1 is tried again | A repeat of the best vendor rather than an error |
+| Every configured vendor already tried inside the retry window | Candidate list is empty, so the full chain is reused and p1 is tried again | A repeat of the best vendor rather than an error |
 | `VendorRoute` edited between two sends | Absorbed: the chain is re-read and ranking uses the new ranks, while the tried-set is by name | Correct escalation regardless of the edit |
 | Process killed mid-send | Buffered rows are lost; device state is rolled back too, so nothing is half-recorded | Resend allowed at once |
 | A user changes their phone number — legacy path only, since `change_phone` refuses a validated number | Historical rows keep the number each message actually went to; `user` still ties them to the person | Nothing — per-person history stays whole, per-number history stays accurate |
-| Two overlapping flows on the same number | They share a tried-set, so one flow's failures escalate the other | A flow may start further down the chain than its own history implies |
-| The user kills and relaunches the app after no SMS arrives | New session and new device, but the previous session is still live, so its attempts still count | The resend reaches an untried vendor rather than resetting to p1 |
-| Every live session for the number has expired | Nothing matches, tried-set empty, chain walked from p1 | A fresh start, which is correct after four idle hours |
-| A send with no session device — non-OTP purpose, or a legacy `PhoneDevice` flow | `session_phone_device = NULL`, tried-set empty, chain walked in rank order | Today's behaviour |
+| Two overlapping flows on the same number, same purpose | They share a tried-set, so one flow's failures escalate the other | A flow may start further down the chain than its own history implies |
+| The user kills and relaunches the app after no SMS arrives | New session and new device, but the earlier attempts are still inside the window, so they still count | The resend reaches an untried vendor rather than resetting to p1 |
+| The window has passed with no send | Nothing matches, tried-set empty, chain walked from p1 | A fresh start, which is correct after four idle hours |
+| A send with no session device — non-OTP purpose, or a legacy `PhoneDevice` flow | `session_phone_device = NULL`, but the lookup does not use it: the tried-set is still keyed on number and purpose | A repeated deactivation link goes to a different vendor if the last one errored, the same one if it was accepted |
+| A non-OTP vendor errors, and the chain still has untried vendors | It stays burned for the rest of the window — nothing selects it, so nothing can clear it | Later sends in the window start at the next vendor down |
+| Every vendor for a non-OTP purpose is burned | `candidates` falls back to the full chain, so p1 is retried; a success rewrites its latest row and clears the burn | The chain resets rather than erroring |
 | The `ConfigurationSession` behind a logged device is deleted | `SET_NULL` blanks the FK; `phone_number`, `country`, `vendor`, `vendor_rank` and `status` survive | Nothing — reporting is unaffected |
 | Two resends racing on one device | `select_for_update` serialises them as today, but the lock is now held across the whole chain walk rather than a single vendor call | The second request blocks for up to `len(chain) × SMS_VENDOR_TIMEOUT_SECONDS` before receiving its `RateLimitedError`, where today it returns almost at once. The `retry_after` value itself is unaffected |
 
@@ -344,7 +385,7 @@ Malawi is the only configured country; everywhere else falls to `DEFAULT_VENDOR`
 **Send 1 — a user on `+265991234567` requests their first OTP.**
 
 - No token exists, so `is_otp_close_to_expiry` is true
-- `tried_vendors` returns `{}` — nothing has been sent to this number from a live session
+- `tried_vendors` returns `{}` — no OTP has been sent to this number in the last four hours
 - `resolve_chain` returns `[twilio(p1), vendorB(p2)]`
 - `candidates` is the whole chain, so `get_vendor` is handed `"twilio"`
 - Twilio request succeeds
@@ -360,8 +401,8 @@ once per *send*, never once per vendor tried. (see *Open questions*)
 acceptance is not delivery. This is the failure the design exists for.
 
 - Two minutes have passed, clearing the `2**attempts` gate
-- `tried_vendors` returns `{"twilio"}` — the row logged against this same
-  `SessionPhoneDevice`
+- `tried_vendors` returns `{"twilio"}` — the row logged two minutes ago for this number
+  and purpose
 - `resolve_chain` returns the same two entries — it reads config, not history
 - `candidates` drops twilio, leaving `[vendorB(p2)]`
 - vendorB succeeds; a row for `vendorB`, p2, `success` is written
@@ -376,8 +417,8 @@ live table.
 
 **Send 3 — the same user returns a week later.**
 
-- Every session from the first visit expired long ago, so nothing joins and the tried-set is
-  empty — the week-old attempts are still on file for reporting, just no longer binding
+- The week-old rows are far outside the retry window, so the tried-set is empty — they are
+  still on file for reporting, just no longer binding
 - The token has long expired anyway, so `is_otp_close_to_expiry` fires true, the token is
   regenerated and `attempts` resets
 - The send goes to twilio — `vendor_rank` 1, the vendor configured as best for Malawi
@@ -385,7 +426,7 @@ live table.
 **Edge paths.**
 
 - **A vendor errors mid-send** — the next candidate is tried, and the user sees one OTP.
-  Both attempts are logged against the device, so the next resend on that device skips both
+  Both attempts are logged, so the next resend for this number skips both
 - **A four-vendor chain, reshuffled mid-flow** — `v1` and `v2` have been tried, then an
   admin swaps `v2` and `v4` so the chain reads `v1(1) v4(2) v3(3) v2(4)`. The untried set is
   `{v3, v4}`, ranked by current `vendor_rank`, so `v4` is tried next
@@ -398,7 +439,7 @@ live table.
 | Question | Answered by | Read | Written |
 |---|---|---|---|
 | Which vendors serve this country, in what order? | `VendorRoute` rows | Every send | Django admin only |
-| Which vendors has this number already burned through? | `SmsLog.vendor` for this number, across still-live sessions | Every OTP send | Once per vendor attempt, flushed after the transaction |
+| Which vendors has this number already burned through? | `SmsLog.vendor` for this number and purpose, inside `SMS_VENDOR_RETRY_WINDOW` — every attempt for `otp`, only latest-attempt failures otherwise | Every send | Once per vendor attempt, flushed after the transaction |
 | How is a vendor performing, by country? | `SmsLog` aggregates | Reporting | Once per vendor attempt |
 | What if the country has no rows? | `settings.DEFAULT_VENDOR` | When resolution yields nothing | Deploy only |
 
