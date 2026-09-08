@@ -162,17 +162,11 @@ class BaseOTPDevice(SideChannelDevice):
         return self.verify_attempts_left == 0
 
     def _burn_token(self):
-        """Make the current token unverifiable, even if the caller supplies the correct code."""
         self.token = None
         self.valid_until = now()
 
     def verify_token(self, token):
-        """Verify a token, counting wrong guesses and burning the token once they run out.
-
-        Overrides rather than sitting beside django-otp's ``verify_token`` so the limit
-        applies to every call site by default. Views wanting more than a bare failure read
-        ``is_exhausted`` / ``verify_attempts_left`` afterwards.
-        """
+        """Verify a token, counting wrong guesses and burning the token once they run out."""
         with transaction.atomic():
             # Lock this device's row and re-read the counter and token under the lock, so
             # concurrent wrong guesses each count rather than collapsing into one.
@@ -208,9 +202,7 @@ class BaseOTPDevice(SideChannelDevice):
                 self.otp_last_sent = None
                 self.failed_verifications = 0
                 if not was_burned:
-                    # Natural expiry only. A token burned by failed verifications keeps
-                    # climbing its backoff ladder, so three wrong guesses cannot earn a
-                    # free new code immediately.
+                    # Natural expiry only, failures should apply the backoff
                     self.attempts = 0
                 self.generate_token(valid_secs=valid_secs)
             wait_time = 2**self.attempts
