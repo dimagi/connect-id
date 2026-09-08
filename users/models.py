@@ -199,10 +199,12 @@ class BaseOTPDevice(SideChannelDevice):
             self.failed_verifications = locked.failed_verifications
             if self.is_otp_close_to_expiry:
                 was_burned = self.is_exhausted  # read before the counter is cleared
-                self.otp_last_sent = None
                 self.failed_verifications = 0
                 if not was_burned:
-                    # Natural expiry only, failures should apply the backoff
+                    # Natural expiry only, failures should apply the backoff. Keeping
+                    # otp_last_sent on a burn is what makes the wait actually bite —
+                    # clearing it would short-circuit the gate below and send at once.
+                    self.otp_last_sent = None
                     self.attempts = 0
                 self.generate_token(valid_secs=valid_secs)
             wait_time = 2**self.attempts

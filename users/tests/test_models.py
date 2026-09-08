@@ -8,6 +8,7 @@ from django.db import IntegrityError, connection
 from django.utils.timezone import now
 
 from users.const import MAX_OTP_VERIFY_ATTEMPTS
+from users.exceptions import RateLimitedError
 from users.factories import (
     ConfigurationSessionFactory,
     PhoneDeviceFactory,
@@ -184,6 +185,24 @@ class TestOTPDeviceFailedVerifications:
         # attempts was zeroed before this send, so the ladder is back at the bottom.
         assert otp_device.attempts == 1
 
+    def test_burn_delays_the_next_code(self, otp_device):
+        otp_device.generate_challenge()
+        assert otp_device.attempts == 1
+
+        for _ in range(MAX_OTP_VERIFY_ATTEMPTS):
+            assert not otp_device.verify_token(WRONG_TOKEN)
+
+        # A burn keeps otp_last_sent, so the ladder's wait applies before the next code
+        # instead of the burn earning one straight away. _attempt_send rather than
+        # generate_challenge because the phone devices swallow this error.
+        with pytest.raises(RateLimitedError):
+            otp_device._attempt_send(valid_secs=1800)
+
+        # Nothing was committed, so the token is still burned and unusable.
+        otp_device.refresh_from_db()
+        assert otp_device.token is None
+        assert otp_device.is_exhausted
+
     def test_burned_token_keeps_its_backoff(self, otp_device):
         otp_device.generate_challenge()
         assert otp_device.attempts == 1
@@ -191,14 +210,18 @@ class TestOTPDeviceFailedVerifications:
         for _ in range(MAX_OTP_VERIFY_ATTEMPTS):
             assert not otp_device.verify_token(WRONG_TOKEN)
 
+        # Wind the last send back past the 2**attempts-minute wait the burn preserved.
+        otp_device.otp_last_sent = now() - timedelta(minutes=2**otp_device.attempts)
+        otp_device.save()
+
         otp_device.generate_challenge()
 
         # A fresh token, so guesses are allowed again...
         assert otp_device.failed_verifications == 0
         assert not otp_device.is_exhausted
         assert otp_device.token is not None
-        # ...but attempts was not zeroed, so the resend interval keeps doubling. This is
-        # what stops three wrong guesses from earning a free new code, over and over.
+        # ...but attempts was not zeroed, so the resend interval keeps doubling. Three
+        # wrong guesses cost a wait that grows on every burn.
         assert otp_device.attempts == 2
 
 
