@@ -973,9 +973,6 @@ def check_user_similarity(request):
         "photo": existing_user.get_photo() if is_same_user else "",
     }
 
-    # Gated on is_same_user like the photo. The client only needs this to label the
-    # "Forgot backup code?" option on a matched account, and a caller whose name did not
-    # match should learn nothing about the address on the number.
     if is_same_user and existing_user.email:
         response_data["masked_email"] = mask_email(existing_user.email)
 
