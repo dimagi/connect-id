@@ -19,7 +19,13 @@ from flags.const import EMAIL_OTP_VERIFICATION
 from payments.models import PaymentProfile
 from services.ai.ocs import OpenChatStudio
 from test_utils.decorators import skip_app_integrity_check
-from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
+from users.const import (
+    MAX_OTP_VERIFY_ATTEMPTS,
+    NO_RECOVERY_PHONE_ERROR,
+    TEST_NUMBER_PREFIX,
+    ErrorCodes,
+    SMSMethods,
+)
 from users.exceptions import RateLimitedError
 from users.factories import (
     ConfigurationSessionFactory,
@@ -2502,3 +2508,159 @@ class TestVerifyEmailOtp:
         assert response.status_code == 200
         user.refresh_from_db()
         assert user.email == "verified@example.com"
+
+
+# A token is always six digits, so this can never accidentally be the right one.
+WRONG_OTP = "not-the-token"
+
+
+@pytest.mark.django_db
+class TestOtpVerifyLimit:
+    """The failed-verify limit as the OTP endpoints surface it.
+
+    These drive real tokens rather than patching verify_token — a mocked failure leaves
+    the counter untouched, so the exhaustion branch would never be exercised.
+    """
+
+    @staticmethod
+    def _exhaust(client, url, data, expected_incorrect_code):
+        """Submit MAX_OTP_VERIFY_ATTEMPTS wrong codes and return the final response."""
+        for attempt in range(MAX_OTP_VERIFY_ATTEMPTS):
+            response = client.post(url, data=data, format="json")
+            assert response.status_code == 401
+            if attempt < MAX_OTP_VERIFY_ATTEMPTS - 1:
+                assert response.json() == expected_incorrect_code
+        return response
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_edit_profile_email_otp_limit(self, user_bearer_client, user):
+        """Edit-profile path: OAuth2 client verifying against a UserEmailOTPDevice."""
+        device = UserEmailOTPDeviceFactory(user=user, email="new@example.com")
+        with mock.patch("users.email_utils.send_email_otp_message"):
+            device.generate_challenge()
+
+        response = self._exhaust(
+            user_bearer_client,
+            reverse("verify_email_otp"),
+            {"email": "new@example.com", "otp": WRONG_OTP},
+            {"error_code": ErrorCodes.INCORRECT_OTP},
+        )
+        assert response.json() == {"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}
+
+        device.refresh_from_db()
+        assert device.token is None
+
+        user.refresh_from_db()
+        assert user.is_active
+        assert not user.is_locked
+        assert not user.email
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_registration_email_otp_limit(self, session_client):
+        """Registration path: configuration session verifying against a SessionEmailOTPDevice."""
+        session = ConfigurationSessionFactory(is_phone_validated=True)
+        device = SessionEmailOTPDeviceFactory(session=session, email="new@example.com")
+        with mock.patch("users.email_utils.send_email_otp_message"):
+            device.generate_challenge()
+
+        response = self._exhaust(
+            session_client(session),
+            reverse("verify_email_otp"),
+            {"email": "new@example.com", "otp": WRONG_OTP},
+            {"error_code": ErrorCodes.INCORRECT_OTP},
+        )
+        assert response.json() == {"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}
+
+        session.refresh_from_db()
+        assert not session.verified_email
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_fresh_otp_verifies_after_a_burn(self, user_bearer_client, user):
+        """Exhausting the limit costs the token, not the ability to try again."""
+        device = UserEmailOTPDeviceFactory(user=user, email="new@example.com")
+        with mock.patch("users.email_utils.send_email_otp_message"):
+            device.generate_challenge()
+            self._exhaust(
+                user_bearer_client,
+                reverse("verify_email_otp"),
+                {"email": "new@example.com", "otp": WRONG_OTP},
+                {"error_code": ErrorCodes.INCORRECT_OTP},
+            )
+            # The resend backoff survived the burn, so step past it to get a new code.
+            device.refresh_from_db()
+            device.otp_last_sent = now() - timedelta(minutes=2**device.attempts)
+            device.save()
+            device.generate_challenge()
+
+        response = user_bearer_client.post(
+            reverse("verify_email_otp"),
+            data={"email": "new@example.com", "otp": device.token},
+            format="json",
+        )
+        assert response.status_code == 200
+        user.refresh_from_db()
+        assert user.email == "new@example.com"
+
+    def test_invited_user_phone_otp_limit(self, authed_client_token, valid_token, user):
+        """Invited-user phone path: confirm_session_otp against a SessionPhoneDevice."""
+        valid_token.is_phone_validated = False
+        valid_token.save()
+        device = SessionPhoneDeviceFactory(session=valid_token, phone_number=valid_token.phone_number)
+        with mock.patch("users.models.send_sms"):
+            device.generate_challenge()
+
+        response = self._exhaust(
+            authed_client_token,
+            reverse("confirm_session_otp"),
+            {"otp": WRONG_OTP},
+            {"error": ErrorCodes.INCORRECT_OTP},
+        )
+        assert response.json() == {"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}
+
+        valid_token.refresh_from_db()
+        assert not valid_token.is_phone_validated
+
+        # Locking on a phone OTP is deliberately out of scope — the session phone factor
+        # sits in front of phone validation, so anyone knowing the number could trigger it.
+        user.refresh_from_db()
+        assert user.is_active
+        assert not user.is_locked
+
+    def test_legacy_phone_view_keeps_bare_401_but_burns_token(self, auth_device, user):
+        """confirm_otp's clients do not know OTP_LIMIT_EXCEEDED, so its response is unchanged."""
+        device = PhoneDeviceFactory(user=user, phone_number=user.phone_number)
+        with mock.patch("users.models.send_sms"):
+            device.generate_challenge()
+        correct_token = device.token
+
+        for _ in range(MAX_OTP_VERIFY_ATTEMPTS):
+            response = auth_device.post(reverse("confirm_otp"), data={"token": WRONG_OTP})
+            assert response.status_code == 401
+            assert response.json() == {"error": "OTP token is incorrect"}
+
+        # The token is dead, so even the right code is now refused.
+        response = auth_device.post(reverse("confirm_otp"), data={"token": correct_token})
+        assert response.status_code == 401
+        user.refresh_from_db()
+        assert not user.phone_validated
+
+    def test_payment_profile_otp_keeps_bare_401_but_burns_token(self, auth_device, user):
+        """Same for the live non-Connect payment-profile flow."""
+        profile = PaymentProfile.objects.create(
+            user=user, phone_number=user.phone_number, owner_name="Owner", status=PaymentProfile.PENDING
+        )
+        device = PhoneDeviceFactory(user=user, phone_number=profile.phone_number)
+        with mock.patch("users.models.send_sms"):
+            device.generate_challenge()
+        correct_token = device.token
+
+        url = reverse("confirm_payment_profile_otp")
+        for _ in range(MAX_OTP_VERIFY_ATTEMPTS):
+            response = auth_device.post(url, data={"token": WRONG_OTP})
+            assert response.status_code == 401
+            assert response.json() == {"error": "OTP token is incorrect"}
+
+        response = auth_device.post(url, data={"token": correct_token})
+        assert response.status_code == 401
+        profile.refresh_from_db()
+        assert not profile.is_verified
