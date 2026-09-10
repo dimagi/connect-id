@@ -1731,6 +1731,24 @@ class TestCheckUserSimilarity:
 
     @patch.object(ConnectUser, "get_photo")
     @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_masked_email_omitted_when_account_email_is_unusable(
+        self, check_similarity_mock, get_photo_mock, authed_client_token, user, valid_token
+    ):
+        check_similarity_mock.return_value = True
+        get_photo_mock.return_value = ""
+
+        user.name = "ExistingUser"
+        # Nothing validates on the way in, so an address we could never send to can sit on
+        # an account. Offer no email factor at all rather than a mailbox we cannot reach.
+        user.email = "notanemail"
+        user.save()
+
+        response = authed_client_token.post(reverse(self.urlname), data={"name": user.name})
+        assert response.status_code == 200
+        assert "masked_email" not in response.json()
+
+    @patch.object(ConnectUser, "get_photo")
+    @patch.object(OpenChatStudio, "check_name_similarity")
     def test_masked_email_omitted_when_name_does_not_match(
         self, check_similarity_mock, get_photo_mock, authed_client_token, user, valid_token
     ):

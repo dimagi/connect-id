@@ -22,14 +22,19 @@ def send_email_otp_message(email: str, token: str, validity_minutes: int) -> Non
     logger.info("Email OTP sent to %s", masked)
 
 
-def mask_email(email: str) -> str:
+def mask_email(email: str) -> str | None:
     """Mask an address down to the first and last character of its local part.
-    A local part of three characters or fewer is masked entirely
-    Invalid addresses are masked entirely
+
+    A local part of three characters or fewer is masked entirely.
+
+    Returns None for an address we could not send an OTP to anyway, so callers treat it
+    as no address at all rather than offering the user a mailbox that cannot be reached.
     """
-    local, separator, domain = email.rpartition("@")
-    if not separator or not local:
-        return "*" * len(email)
+    try:
+        validate_email(email)
+    except ValidationError:
+        return None
+    local, _, domain = email.rpartition("@")
     if len(local) <= 3:
         masked_local = "*" * len(local)
     else:

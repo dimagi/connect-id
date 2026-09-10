@@ -57,13 +57,14 @@ class TestMaskEmail:
                 "ihaveaverylongemailname@dimagi.com",
                 "i*********************e@dimagi.com",
             ),
+            # An address no OTP could reach is not an address, so there is nothing to mask.
+            ("notanemail", None),
+            ("@dimagi.com", None),
+            ("missingdomain@", None),
+            ("double@@dimagi.com", None),
+            ("spaces in@dimagi.com", None),
+            ("", None),
         ],
     )
-    def test_masks_local_part(self, email, expected):
+    def test_mask_email(self, email, expected):
         assert mask_email(email) == expected
-
-    @pytest.mark.parametrize("email", ["notanemail", "@dimagi.com", ""])
-    def test_unrecognised_shapes_are_masked_entirely(self, email):
-        masked = mask_email(email)
-        assert set(masked) <= {"*"}
-        assert len(masked) == len(email)

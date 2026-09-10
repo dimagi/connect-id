@@ -973,8 +973,12 @@ def check_user_similarity(request):
         "photo": existing_user.get_photo() if is_same_user else "",
     }
 
-    if is_same_user and existing_user.email:
-        response_data["masked_email"] = mask_email(existing_user.email)
+    if is_same_user:
+        # Absent when the account has no address, or one we could not send to — mobile
+        # only offers the email recovery factor when this field comes back.
+        masked_email = mask_email(existing_user.email)
+        if masked_email:
+            response_data["masked_email"] = masked_email
 
     return JsonResponse(response_data)
 
