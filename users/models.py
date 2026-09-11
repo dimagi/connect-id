@@ -23,7 +23,7 @@ from sms import send_sms
 from users.exceptions import RateLimitedError, RecoveryPinNotSetError
 from users.services import get_user_photo_base64
 
-from .const import MAX_BACKUP_CODE_ATTEMPTS
+from .const import MAX_BACKUP_CODE_ATTEMPTS, MAX_OTP_VERIFY_ATTEMPTS
 
 
 class ConnectUser(AbstractUser):
@@ -138,10 +138,11 @@ class UserKey(models.Model):
 
 
 class BaseOTPDevice(SideChannelDevice):
-    """Abstract base for OTP devices with exponential backoff."""
+    """Abstract base for OTP devices with exponential backoff and a failed-verify limit."""
 
     otp_last_sent = models.DateTimeField(null=True, blank=True)
     attempts = models.IntegerField(default=1)
+    failed_verifications = models.IntegerField(default=0)
 
     class Meta:
         abstract = True
@@ -151,6 +152,36 @@ class BaseOTPDevice(SideChannelDevice):
         if self.valid_until is None:
             return True  # no token yet — regenerate immediately
         return self.valid_until - now() <= timedelta(minutes=5)
+
+    @property
+    def verify_attempts_left(self):
+        return max(MAX_OTP_VERIFY_ATTEMPTS - self.failed_verifications, 0)
+
+    @property
+    def is_exhausted(self):
+        return self.verify_attempts_left == 0
+
+    def _burn_token(self):
+        self.token = None
+        self.valid_until = now()
+
+    def verify_token(self, token):
+        """Verify a token, counting wrong guesses and burning the token once they run out."""
+        with transaction.atomic():
+            # Lock this device's row and re-read the counter and token under the lock, so
+            # concurrent wrong guesses each count rather than collapsing into one.
+            locked = self.__class__.objects.select_for_update().get(pk=self.pk)
+            self.failed_verifications = locked.failed_verifications
+            self.token = locked.token
+            self.valid_until = locked.valid_until
+            if self.is_exhausted:
+                return False
+            verified = super().verify_token(token)
+            self.failed_verifications = 0 if verified else self.failed_verifications + 1
+            if self.is_exhausted:
+                self._burn_token()
+            self.save()
+            return verified
 
     def _send_otp(self):
         raise NotImplementedError
@@ -165,10 +196,17 @@ class BaseOTPDevice(SideChannelDevice):
             self.attempts = locked.attempts
             self.token = locked.token
             self.valid_until = locked.valid_until
+            self.failed_verifications = locked.failed_verifications
             if self.is_otp_close_to_expiry:
-                self.otp_last_sent = None
+                was_burned = self.is_exhausted  # read before the counter is cleared
+                self.failed_verifications = 0
+                if not was_burned:
+                    # Natural expiry only, failures should apply the backoff. Keeping
+                    # otp_last_sent on a burn is what makes the wait actually bite —
+                    # clearing it would short-circuit the gate below and send at once.
+                    self.otp_last_sent = None
+                    self.attempts = 0
                 self.generate_token(valid_secs=valid_secs)
-                self.attempts = 0
             wait_time = 2**self.attempts
             if self.otp_last_sent is None or now() - self.otp_last_sent >= timedelta(minutes=wait_time):
                 self._send_otp()
