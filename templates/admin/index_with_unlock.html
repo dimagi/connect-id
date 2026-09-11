@@ -1,0 +1,27 @@
+{% extends "admin/index.html" %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+  /* #branding is not a flex container by default, so the h1 and the link would stack. */
+  #branding { display: flex; align-items: center; }
+  #unlock-user-link {
+    border: 1px solid var(--header-link-color);
+    border-radius: 4px;
+    padding: 3px 10px;
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+  #unlock-user-link:hover, #unlock-user-link:focus {
+    background: rgba(255, 255, 255, 0.15);
+    text-decoration: none;
+  }
+</style>
+{% endblock %}
+
+{% block branding %}
+{{ block.super }}
+{% if user.is_superuser %}
+<a id="unlock-user-link" href="{% url 'admin:users_connectuser_unlock' %}"
+   title="Unlock a locked-out account and issue a new backup code">Unlock user</a>
+{% endif %}
+{% endblock %}
