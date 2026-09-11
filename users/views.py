@@ -41,6 +41,7 @@ from utils.rest_framework import ClientProtectedResourceAuth
 from .auth import DeviceBasicAuthentication, IssuingCredentialsAuth, SessionTokenAuthentication
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
 from .device_utils import DEVICE_RECENT_ACCESS_THRESHOLD
+from .email_utils import mask_email
 from .exceptions import RateLimitedError, RecoveryPinNotSetError
 from .fcm_utils import create_update_device
 from .models import (
@@ -967,12 +968,19 @@ def check_user_similarity(request):
         if not request.auth.invited_user and user_name_is_similar is not None:
             is_same_user = user_name_is_similar
 
-    return JsonResponse(
-        {
-            "account_exists": is_same_user,
-            "photo": existing_user.get_photo() if is_same_user else "",
-        }
-    )
+    response_data = {
+        "account_exists": is_same_user,
+        "photo": existing_user.get_photo() if is_same_user else "",
+    }
+
+    if is_same_user:
+        # Absent when the account has no address, or one we could not send to — mobile
+        # only offers the email recovery factor when this field comes back.
+        masked_email = mask_email(existing_user.email)
+        if masked_email:
+            response_data["masked_email"] = masked_email
+
+    return JsonResponse(response_data)
 
 
 @api_view(["POST"])
