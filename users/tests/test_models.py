@@ -108,17 +108,26 @@ def wind_back(device, elapsed):
     device.save()
 
 
-DEVICE_FACTORIES = [
-    PhoneDeviceFactory,
-    SessionPhoneDeviceFactory,
-    UserEmailOTPDeviceFactory,
-    SessionEmailOTPDeviceFactory,
-]
+PHONE_DEVICE_FACTORIES = [PhoneDeviceFactory, SessionPhoneDeviceFactory]
+EMAIL_DEVICE_FACTORIES = [UserEmailOTPDeviceFactory, SessionEmailOTPDeviceFactory]
+DEVICE_FACTORIES = PHONE_DEVICE_FACTORIES + EMAIL_DEVICE_FACTORIES
 
 
 @pytest.fixture(params=DEVICE_FACTORIES, ids=lambda f: f._meta.model.__name__)
 def otp_device(request, db):
     """One saved device of each concrete BaseOTPDevice subclass."""
+    return request.param()
+
+
+@pytest.fixture(params=EMAIL_DEVICE_FACTORIES, ids=lambda f: f._meta.model.__name__)
+def email_device(request, db):
+    """One saved device of each email subclass — the channel that charges hours."""
+    return request.param()
+
+
+@pytest.fixture(params=PHONE_DEVICE_FACTORIES, ids=lambda f: f._meta.model.__name__)
+def phone_device(request, db):
+    """One saved device of each SMS subclass — a burn there stays on the minute ladder."""
     return request.param()
 
 
@@ -200,46 +209,66 @@ class TestOTPDeviceFailedVerifications:
         # Nothing was burned, so resends stay on the minute ladder.
         assert otp_device.burned_tokens == 0
 
-    def test_burn_delays_the_next_code_by_an_hour(self, otp_device):
-        otp_device.generate_challenge()
-        assert otp_device.attempts == 1
+    def test_burn_delays_the_next_email_by_an_hour(self, email_device):
+        email_device.generate_challenge()
+        assert email_device.attempts == 1
 
-        burn_token(otp_device)
+        burn_token(email_device)
 
         # A burn keeps otp_last_sent, so the wait applies before the next code instead of
-        # the burn earning one straight away. _attempt_send rather than generate_challenge
-        # because the phone devices swallow this error.
+        # the burn earning one straight away.
         with pytest.raises(RateLimitedError) as excinfo:
-            otp_device._attempt_send(valid_secs=1800)
+            email_device._attempt_send(valid_secs=1800)
 
         # Hours, not the minutes an ordinary resend would have cost.
         assert excinfo.value.retry_after_seconds == pytest.approx(3600, abs=5)
 
         # Nothing was committed, so the token is still burned and unusable.
-        otp_device.refresh_from_db()
-        assert otp_device.token is None
-        assert otp_device.is_exhausted
-        assert otp_device.burned_tokens == 1
+        email_device.refresh_from_db()
+        assert email_device.token is None
+        assert email_device.is_exhausted
+        assert email_device.burned_tokens == 1
 
-    def test_burn_cooldown_doubles_in_hours(self, otp_device):
-        otp_device.generate_challenge()
+    def test_email_burn_cooldown_doubles_in_hours(self, email_device):
+        email_device.generate_challenge()
 
         for expected_hours in [1, 2, MAX_OTP_BURN_COOLDOWN_HOURS]:
-            burn_token(otp_device)
+            burn_token(email_device)
 
             with pytest.raises(RateLimitedError) as excinfo:
-                otp_device._attempt_send(valid_secs=1800)
+                email_device._attempt_send(valid_secs=1800)
             assert excinfo.value.retry_after_seconds == pytest.approx(expected_hours * 3600, abs=5)
 
             # Serve the cooldown and collect the replacement code.
-            wind_back(otp_device, timedelta(hours=expected_hours))
-            otp_device.generate_challenge()
-            assert otp_device.token is not None
-            assert not otp_device.is_exhausted
+            wind_back(email_device, timedelta(hours=expected_hours))
+            email_device.generate_challenge()
+            assert email_device.token is not None
+            assert not email_device.is_exhausted
 
         # The third burn's wait outlives the 4-hour configuration session, so that
         # session can never see another code.
-        assert otp_device.burned_tokens == 3
+        assert email_device.burned_tokens == 3
+
+    def test_phone_burn_stays_on_the_minute_ladder(self, phone_device):
+        phone_device.generate_challenge()
+        assert phone_device.attempts == 1
+
+        burn_token(phone_device)
+
+        # SMS was left as it was: a burn still only costs the 2**attempts minutes an
+        # ordinary resend does. _attempt_send rather than generate_challenge because the
+        # phone devices swallow this error.
+        with pytest.raises(RateLimitedError) as excinfo:
+            phone_device._attempt_send(valid_secs=1800)
+        assert excinfo.value.retry_after_seconds == pytest.approx(2 * 60, abs=5)
+
+        wind_back(phone_device, timedelta(minutes=2))
+        phone_device.generate_challenge()
+
+        # The burn was still counted, it just does not buy a longer wait here.
+        assert phone_device.burned_tokens == 1
+        assert phone_device.token is not None
+        assert phone_device.attempts == 2
 
     def test_resend_without_burning_stays_on_the_minute_ladder(self, otp_device):
         otp_device.generate_challenge()
@@ -260,6 +289,7 @@ class TestOTPDeviceFailedVerifications:
         assert otp_device.attempts == 2
 
     def test_successful_verify_resets_the_burn_ladder(self, otp_device):
+        """The counter is cleared on every channel, whatever cooldown it feeds."""
         otp_device.generate_challenge()
         burn_token(otp_device)
         assert otp_device.burned_tokens == 1

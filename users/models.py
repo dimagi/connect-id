@@ -145,6 +145,9 @@ class BaseOTPDevice(SideChannelDevice):
     failed_verifications = models.IntegerField(default=0)
     burned_tokens = models.IntegerField(default=0)
 
+    # Burns are counted on every channel, but only email makes them expensive.
+    burn_cooldown_in_hours = False
+
     class Meta:
         abstract = True
 
@@ -232,10 +235,11 @@ class BaseOTPDevice(SideChannelDevice):
         """How long to wait before the next code goes out.
 
         An ordinary resend — a code that never arrived, or one left to expire — climbs in
-        minutes. Replacing a token burned by wrong guesses climbs in hours instead, so the
-        third burn outlives the configuration session and the flow starts over.
+        minutes. So does a burned one, unless the channel charges hours for a burn, in
+        which case the third one outlives the configuration session and the flow starts
+        over.
         """
-        if not was_burned:
+        if not (was_burned and self.burn_cooldown_in_hours):
             return timedelta(minutes=2**self.attempts)
         # max() covers a device left exhausted before burned_tokens existed.
         burns = max(self.burned_tokens, 1)
@@ -430,6 +434,9 @@ class SessionPhoneDevice(BasePhoneDevice):
 
 class BaseEmailOTPDevice(BaseOTPDevice):
     email = models.EmailField()
+
+    # Burning an email code buys the next one in hours rather than minutes.
+    burn_cooldown_in_hours = True
 
     class Meta:
         abstract = True
