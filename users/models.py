@@ -145,7 +145,6 @@ class BaseOTPDevice(SideChannelDevice):
     failed_verifications = models.IntegerField(default=0)
     burned_tokens = models.IntegerField(default=0)
 
-    # Burns are counted on every channel, but only email makes them expensive.
     burn_cooldown_in_hours = False
 
     class Meta:
@@ -154,7 +153,7 @@ class BaseOTPDevice(SideChannelDevice):
     @property
     def is_otp_close_to_expiry(self):
         if self.valid_until is None:
-            return True  # no token yet — regenerate immediately
+            return True
         return self.valid_until - now() <= timedelta(minutes=5)
 
     @property
@@ -184,8 +183,6 @@ class BaseOTPDevice(SideChannelDevice):
                 return False
             verified = super().verify_token(token)
             if verified:
-                # A good code clears the slate: the wrong-guess count and the burn
-                # ladder the resend cooldown is built from.
                 self.failed_verifications = 0
                 self.burned_tokens = 0
             else:
@@ -215,9 +212,6 @@ class BaseOTPDevice(SideChannelDevice):
                 was_burned = self.is_exhausted  # read before the counter is cleared
                 self.failed_verifications = 0
                 if not was_burned:
-                    # Natural expiry only, failures should apply the backoff. Keeping
-                    # otp_last_sent on a burn is what makes the wait actually bite —
-                    # clearing it would short-circuit the gate below and send at once.
                     self.otp_last_sent = None
                     self.attempts = 0
                 self.generate_token(valid_secs=valid_secs)
@@ -233,15 +227,10 @@ class BaseOTPDevice(SideChannelDevice):
 
     def _resend_cooldown(self, was_burned):
         """How long to wait before the next code goes out.
-
-        An ordinary resend — a code that never arrived, or one left to expire — climbs in
-        minutes. So does a burned one, unless the channel charges hours for a burn, in
-        which case the third one outlives the configuration session and the flow starts
-        over.
+        Email OTPs require cooldown in hours when burned
         """
         if not (was_burned and self.burn_cooldown_in_hours):
             return timedelta(minutes=2**self.attempts)
-        # max() covers a device left exhausted before burned_tokens existed.
         burns = max(self.burned_tokens, 1)
         return timedelta(hours=min(2 ** (burns - 1), MAX_OTP_BURN_COOLDOWN_HOURS))
 
