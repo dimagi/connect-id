@@ -7,7 +7,7 @@ from django.contrib.auth.hashers import check_password
 from django.db import IntegrityError, connection
 from django.utils.timezone import now
 
-from users.const import MAX_OTP_VERIFY_ATTEMPTS
+from users.const import MAX_OTP_BURN_COOLDOWN_HOURS, MAX_OTP_VERIFY_ATTEMPTS
 from users.exceptions import RateLimitedError
 from users.factories import (
     ConfigurationSessionFactory,
@@ -95,23 +95,39 @@ class TestConnectUserEmailUniqueConstraint:
 # A token is always six digits, so this can never accidentally be the right one.
 WRONG_TOKEN = "not-the-token"
 
-DEVICE_FACTORIES = [
-    PhoneDeviceFactory,
-    SessionPhoneDeviceFactory,
-    UserEmailOTPDeviceFactory,
-    SessionEmailOTPDeviceFactory,
-]
+
+def burn_token(device):
+    for _ in range(MAX_OTP_VERIFY_ATTEMPTS):
+        assert not device.verify_token(WRONG_TOKEN)
+
+
+def wind_back(device, elapsed):
+    device.otp_last_sent = now() - elapsed
+    device.save()
+
+
+PHONE_DEVICE_FACTORIES = [PhoneDeviceFactory, SessionPhoneDeviceFactory]
+EMAIL_DEVICE_FACTORIES = [UserEmailOTPDeviceFactory, SessionEmailOTPDeviceFactory]
+DEVICE_FACTORIES = PHONE_DEVICE_FACTORIES + EMAIL_DEVICE_FACTORIES
 
 
 @pytest.fixture(params=DEVICE_FACTORIES, ids=lambda f: f._meta.model.__name__)
 def otp_device(request, db):
-    """One saved device of each concrete BaseOTPDevice subclass."""
+    return request.param()
+
+
+@pytest.fixture(params=EMAIL_DEVICE_FACTORIES, ids=lambda f: f._meta.model.__name__)
+def email_device(request, db):
+    return request.param()
+
+
+@pytest.fixture(params=PHONE_DEVICE_FACTORIES, ids=lambda f: f._meta.model.__name__)
+def phone_device(request, db):
     return request.param()
 
 
 @pytest.fixture(autouse=True)
 def mock_otp_delivery():
-    """Stub out both delivery channels so generate_challenge() does no real sending."""
     with mock.patch("users.models.send_sms"), mock.patch("users.email_utils.send_email_otp_message"):
         yield
 
@@ -144,7 +160,6 @@ class TestOTPDeviceFailedVerifications:
         assert otp_device.token is None
         assert otp_device.valid_until <= now()
 
-        # The correct code is now refused too — the token is gone, not merely rejected.
         assert not otp_device.verify_token(correct_token)
 
     def test_verifying_an_exhausted_device_does_not_climb_further(self, otp_device):
@@ -176,53 +191,91 @@ class TestOTPDeviceFailedVerifications:
         assert not otp_device.verify_token(WRONG_TOKEN)
         assert not otp_device.verify_token(WRONG_TOKEN)
 
-        # Let the token lapse on its own rather than burning it.
         otp_device.valid_until = now() - timedelta(minutes=1)
         otp_device.save()
         otp_device.generate_challenge()
 
         assert otp_device.failed_verifications == 0
-        # attempts was zeroed before this send, so the ladder is back at the bottom.
         assert otp_device.attempts == 1
+        assert otp_device.burned_tokens == 0
 
-    def test_burn_delays_the_next_code(self, otp_device):
+    def test_burn_delays_the_next_email_by_an_hour(self, email_device):
+        email_device.generate_challenge()
+        assert email_device.attempts == 1
+
+        burn_token(email_device)
+
+        with pytest.raises(RateLimitedError) as excinfo:
+            email_device._attempt_send(valid_secs=1800)
+
+        assert excinfo.value.retry_after_seconds == pytest.approx(3600, abs=5)
+
+        email_device.refresh_from_db()
+        assert email_device.token is None
+        assert email_device.is_exhausted
+        assert email_device.burned_tokens == 1
+
+    def test_email_burn_cooldown_doubles_in_hours(self, email_device):
+        email_device.generate_challenge()
+
+        for expected_hours in [1, 2, MAX_OTP_BURN_COOLDOWN_HOURS]:
+            burn_token(email_device)
+
+            with pytest.raises(RateLimitedError) as excinfo:
+                email_device._attempt_send(valid_secs=1800)
+            assert excinfo.value.retry_after_seconds == pytest.approx(expected_hours * 3600, abs=5)
+
+            wind_back(email_device, timedelta(hours=expected_hours))
+            email_device.generate_challenge()
+            assert email_device.token is not None
+            assert not email_device.is_exhausted
+
+        assert email_device.burned_tokens == 3
+
+    def test_phone_burn_stays_on_the_minute_ladder(self, phone_device):
+        phone_device.generate_challenge()
+        assert phone_device.attempts == 1
+
+        burn_token(phone_device)
+
+        with pytest.raises(RateLimitedError) as excinfo:
+            phone_device._attempt_send(valid_secs=1800)
+        assert excinfo.value.retry_after_seconds == pytest.approx(2 * 60, abs=5)
+
+        wind_back(phone_device, timedelta(minutes=2))
+        phone_device.generate_challenge()
+
+        assert phone_device.burned_tokens == 1
+        assert phone_device.token is not None
+        assert phone_device.attempts == 2
+
+    def test_resend_without_burning_stays_on_the_minute_ladder(self, otp_device):
         otp_device.generate_challenge()
         assert otp_device.attempts == 1
 
-        for _ in range(MAX_OTP_VERIFY_ATTEMPTS):
-            assert not otp_device.verify_token(WRONG_TOKEN)
+        assert not otp_device.verify_token(WRONG_TOKEN)
+        assert not otp_device.verify_token(WRONG_TOKEN)
 
-        # A burn keeps otp_last_sent, so the ladder's wait applies before the next code
-        # instead of the burn earning one straight away. _attempt_send rather than
-        # generate_challenge because the phone devices swallow this error.
-        with pytest.raises(RateLimitedError):
+        with pytest.raises(RateLimitedError) as excinfo:
             otp_device._attempt_send(valid_secs=1800)
+        assert excinfo.value.retry_after_seconds == pytest.approx(2 * 60, abs=5)
 
-        # Nothing was committed, so the token is still burned and unusable.
-        otp_device.refresh_from_db()
-        assert otp_device.token is None
-        assert otp_device.is_exhausted
-
-    def test_burned_token_keeps_its_backoff(self, otp_device):
+        wind_back(otp_device, timedelta(minutes=2))
         otp_device.generate_challenge()
-        assert otp_device.attempts == 1
-
-        for _ in range(MAX_OTP_VERIFY_ATTEMPTS):
-            assert not otp_device.verify_token(WRONG_TOKEN)
-
-        # Wind the last send back past the 2**attempts-minute wait the burn preserved.
-        otp_device.otp_last_sent = now() - timedelta(minutes=2**otp_device.attempts)
-        otp_device.save()
-
-        otp_device.generate_challenge()
-
-        # A fresh token, so guesses are allowed again...
-        assert otp_device.failed_verifications == 0
-        assert not otp_device.is_exhausted
-        assert otp_device.token is not None
-        # ...but attempts was not zeroed, so the resend interval keeps doubling. Three
-        # wrong guesses cost a wait that grows on every burn.
+        assert otp_device.burned_tokens == 0
         assert otp_device.attempts == 2
+
+    def test_successful_verify_resets_the_burn_ladder(self, otp_device):
+        otp_device.generate_challenge()
+        burn_token(otp_device)
+        assert otp_device.burned_tokens == 1
+
+        wind_back(otp_device, timedelta(hours=1))
+        otp_device.generate_challenge()
+        assert otp_device.verify_token(otp_device.token)
+
+        otp_device.refresh_from_db()
+        assert otp_device.burned_tokens == 0
 
 
 @pytest.mark.django_db(transaction=True)
@@ -238,7 +291,7 @@ class TestOTPDeviceConcurrentVerification:
             try:
                 start.wait(timeout=10)
                 otp_device.__class__.objects.get(pk=otp_device.pk).verify_token(WRONG_TOKEN)
-            except Exception as e:  # surfaced below rather than lost in the thread
+            except Exception as e:
                 errors.append(e)
             finally:
                 connection.close()
@@ -251,5 +304,4 @@ class TestOTPDeviceConcurrentVerification:
 
         assert not errors, errors
         otp_device.refresh_from_db()
-        # Both increments survived — the row lock stops a read-modify-write from losing one.
         assert otp_device.failed_verifications == racers
