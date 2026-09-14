@@ -40,6 +40,11 @@ MAX_BACKUP_CODE_ATTEMPTS = 3
 
 MAX_OTP_VERIFY_ATTEMPTS = 3
 
+# A token burned by wrong guesses costs hours before the next one is sent: 1, then 2,
+# then 4. The cap matches the configuration session's own 4-hour lifetime, so the third
+# burn outlives the session no matter how far the ladder is allowed to climb.
+MAX_OTP_BURN_COOLDOWN_HOURS = 4
+
 
 class SMSMethods:
     PERSONAL_ID = "personal_id"

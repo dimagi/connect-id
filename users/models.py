@@ -23,7 +23,7 @@ from sms import send_sms
 from users.exceptions import RateLimitedError, RecoveryPinNotSetError
 from users.services import get_user_photo_base64
 
-from .const import MAX_BACKUP_CODE_ATTEMPTS, MAX_OTP_VERIFY_ATTEMPTS
+from .const import MAX_BACKUP_CODE_ATTEMPTS, MAX_OTP_BURN_COOLDOWN_HOURS, MAX_OTP_VERIFY_ATTEMPTS
 
 
 class ConnectUser(AbstractUser):
@@ -143,6 +143,7 @@ class BaseOTPDevice(SideChannelDevice):
     otp_last_sent = models.DateTimeField(null=True, blank=True)
     attempts = models.IntegerField(default=1)
     failed_verifications = models.IntegerField(default=0)
+    burned_tokens = models.IntegerField(default=0)
 
     class Meta:
         abstract = True
@@ -164,6 +165,7 @@ class BaseOTPDevice(SideChannelDevice):
     def _burn_token(self):
         self.token = None
         self.valid_until = now()
+        self.burned_tokens += 1
 
     def verify_token(self, token):
         """Verify a token, counting wrong guesses and burning the token once they run out."""
@@ -172,14 +174,21 @@ class BaseOTPDevice(SideChannelDevice):
             # concurrent wrong guesses each count rather than collapsing into one.
             locked = self.__class__.objects.select_for_update().get(pk=self.pk)
             self.failed_verifications = locked.failed_verifications
+            self.burned_tokens = locked.burned_tokens
             self.token = locked.token
             self.valid_until = locked.valid_until
             if self.is_exhausted:
                 return False
             verified = super().verify_token(token)
-            self.failed_verifications = 0 if verified else self.failed_verifications + 1
-            if self.is_exhausted:
-                self._burn_token()
+            if verified:
+                # A good code clears the slate: the wrong-guess count and the burn
+                # ladder the resend cooldown is built from.
+                self.failed_verifications = 0
+                self.burned_tokens = 0
+            else:
+                self.failed_verifications += 1
+                if self.is_exhausted:
+                    self._burn_token()
             self.save()
             return verified
 
@@ -197,6 +206,8 @@ class BaseOTPDevice(SideChannelDevice):
             self.token = locked.token
             self.valid_until = locked.valid_until
             self.failed_verifications = locked.failed_verifications
+            self.burned_tokens = locked.burned_tokens
+            was_burned = False
             if self.is_otp_close_to_expiry:
                 was_burned = self.is_exhausted  # read before the counter is cleared
                 self.failed_verifications = 0
@@ -207,15 +218,28 @@ class BaseOTPDevice(SideChannelDevice):
                     self.otp_last_sent = None
                     self.attempts = 0
                 self.generate_token(valid_secs=valid_secs)
-            wait_time = 2**self.attempts
-            if self.otp_last_sent is None or now() - self.otp_last_sent >= timedelta(minutes=wait_time):
+            cooldown = self._resend_cooldown(was_burned)
+            if self.otp_last_sent is None or now() - self.otp_last_sent >= cooldown:
                 self._send_otp()
                 self.otp_last_sent = now()
                 self.attempts += 1
                 self.save()
             else:
-                retry_after = int((timedelta(minutes=wait_time) - (now() - self.otp_last_sent)).total_seconds())
+                retry_after = int((cooldown - (now() - self.otp_last_sent)).total_seconds())
                 raise RateLimitedError(retry_after)
+
+    def _resend_cooldown(self, was_burned):
+        """How long to wait before the next code goes out.
+
+        An ordinary resend — a code that never arrived, or one left to expire — climbs in
+        minutes. Replacing a token burned by wrong guesses climbs in hours instead, so the
+        third burn outlives the configuration session and the flow starts over.
+        """
+        if not was_burned:
+            return timedelta(minutes=2**self.attempts)
+        # max() covers a device left exhausted before burned_tokens existed.
+        burns = max(self.burned_tokens, 1)
+        return timedelta(hours=min(2 ** (burns - 1), MAX_OTP_BURN_COOLDOWN_HOURS))
 
 
 class BasePhoneDevice(BaseOTPDevice):
