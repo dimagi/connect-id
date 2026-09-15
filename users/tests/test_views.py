@@ -2399,8 +2399,6 @@ class TestSendEmailOtp:
         assert UserEmailOTPDevice.objects.filter(user=user, email="user@example.com").exists()
         mock_challenge.assert_called_once()
 
-    # ------------------------------------------------------------------ recovery
-
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
     @patch("users.models.SessionEmailOTPDevice.generate_challenge")
     def test_omitted_email_uses_the_address_on_record(self, mock_challenge, authed_client_token, user, valid_token):
@@ -2593,11 +2591,7 @@ class TestVerifyEmailOtp:
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
     @patch("users.models.SessionEmailOTPDevice.verify_token")
     def test_session_with_active_user_is_refused(self, mock_verify, session_client, user):
-        """A session for an existing account is recovering it, and recovery never sets an address.
-
-        Letting it through would move the email factor to a mailbox the caller picked,
-        leaving the phone as the only real factor in complete_recovery.
-        """
+        """A session for an existing account is recovering it, and recovery never sets an address."""
         mock_verify.return_value = True
         user.email = "on-record@example.com"
         user.save()
@@ -2855,8 +2849,6 @@ class TestCompleteRecoveryApi:
         device = self._send_otp(SessionEmailOTPDeviceFactory(session=session, email=self.EMAIL))
         return {"method": method, "otp": device.token}
 
-    # ------------------------------------------------------------------ auth and preconditions
-
     @pytest.mark.parametrize("method", BOTH_METHODS)
     def test_no_auth_header_rejected(self, api_client, method):
         response = api_client.post(self.url, data={"method": method}, format="json")
@@ -2917,8 +2909,6 @@ class TestCompleteRecoveryApi:
 
         response = authed_client_token.post(self.url, data={"method": method}, format="json")
         assert response.status_code == 500
-
-    # ------------------------------------------------------------------ method = backup_code
 
     def test_backup_code_missing(self, authed_client_token, user):
         user.set_recovery_pin(self.BACKUP_CODE)
@@ -2983,8 +2973,6 @@ class TestCompleteRecoveryApi:
         user.refresh_from_db()
         assert user.failed_backup_code_attempts == 0
 
-    # ------------------------------------------------------------------ method = email_otp
-
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
     def test_email_otp_missing(self, authed_client_token, user, valid_token):
         user.email = self.EMAIL
@@ -3040,11 +3028,7 @@ class TestCompleteRecoveryApi:
     def test_valid_otp_for_another_address_is_never_looked_at(
         self, mock_verify, authed_client_token, user, valid_token
     ):
-        """The client cannot nominate the mailbox that stands in for the backup code.
-
-        A correct code for an address the caller controls is not merely rejected — the
-        device is never found, so the code is never even examined.
-        """
+        """The client cannot nominate the mailbox that stands in for the backup code."""
         user.email = self.EMAIL
         user.save()
         attacker_device = self._send_otp(SessionEmailOTPDeviceFactory(session=valid_token, email="attacker@evil.com"))
@@ -3083,8 +3067,7 @@ class TestCompleteRecoveryApi:
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
     def test_phone_factor_alone_cannot_complete_recovery(self, authed_client_token, user, valid_token):
         """The end-to-end chain: a phone-validated session must not be able to install its own
-        email factor and then recover with it. Each step is blocked on its own; this asserts the
-        whole path stays shut, since it only takes one of them reopening to hand over an account.
+        email factor and then recover with it
         """
         user.email = self.EMAIL
         user.set_recovery_pin(self.BACKUP_CODE)
@@ -3165,7 +3148,7 @@ class TestCompleteRecoveryApi:
 
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
     def test_third_wrong_email_otp_burns_token_without_locking(self, authed_client_token, user, valid_token):
-        """The departure from the spec: OTP exhaustion never locks an account."""
+        """OTP exhaustion never locks an account."""
         user.email = self.EMAIL
         user.save()
         device = self._send_otp(SessionEmailOTPDeviceFactory(session=valid_token, email=self.EMAIL))
@@ -3277,8 +3260,6 @@ class TestCompleteRecoveryApi:
             self.url, data={"method": RecoveryMethods.BACKUP_CODE, "backup_code": self.BACKUP_CODE}, format="json"
         )
         assert response.status_code == 200
-
-    # ------------------------------------------------------------------ shared completion
 
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
     @pytest.mark.parametrize("method", BOTH_METHODS)
