@@ -38,6 +38,10 @@ class ErrorCodes:
 
 MAX_BACKUP_CODE_ATTEMPTS = 3
 
+MAX_OTP_VERIFY_ATTEMPTS = 3
+
+MAX_OTP_BURN_COOLDOWN_HOURS = 4
+
 
 class SMSMethods:
     PERSONAL_ID = "personal_id"
