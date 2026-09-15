@@ -998,6 +998,8 @@ def confirm_session_otp(request):
     data = request.data
     verified = device.verify_token(data.get("otp"))
     if not verified:
+        if device.is_exhausted:
+            return JsonResponse({"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}, status=401)
         return JsonResponse({"error": ErrorCodes.INCORRECT_OTP}, status=401)
     request.auth.is_phone_validated = True
     request.auth.save()
@@ -1057,6 +1059,8 @@ def verify_email_otp(request):
 
     if not device.verify_token(otp):
         logger.warning("Failed email OTP verification for email %s***", email.split("@")[0][:3])
+        if device.is_exhausted:
+            return JsonResponse({"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}, status=401)
         return JsonResponse({"error_code": ErrorCodes.INCORRECT_OTP}, status=401)
 
     if isinstance(request.auth, ConfigurationSession):
