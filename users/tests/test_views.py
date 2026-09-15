@@ -2516,11 +2516,7 @@ WRONG_OTP = "not-the-token"
 
 @pytest.mark.django_db
 class TestOtpVerifyLimit:
-    """The failed-verify limit as the OTP endpoints surface it.
-
-    These drive real tokens rather than patching verify_token — a mocked failure leaves
-    the counter untouched, so the exhaustion branch would never be exercised.
-    """
+    """The failed-verify limit as the OTP endpoints surface it."""
 
     @staticmethod
     def _exhaust(client, url, data, expected_incorrect_code):
@@ -2620,8 +2616,6 @@ class TestOtpVerifyLimit:
         valid_token.refresh_from_db()
         assert not valid_token.is_phone_validated
 
-        # Locking on a phone OTP is deliberately out of scope — the session phone factor
-        # sits in front of phone validation, so anyone knowing the number could trigger it.
         user.refresh_from_db()
         assert user.is_active
         assert not user.is_locked

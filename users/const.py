@@ -34,8 +34,6 @@ class ErrorCodes:
     LOGIN_FROM_DIFFERENT_DEVICE = "LOGIN_FROM_DIFFERENT_DEVICE"
     RATE_LIMITED = "RATE_LIMITED"
     EMAIL_ALREADY_IN_USE = "EMAIL_ALREADY_IN_USE"
-    # The OTP ran out of verify attempts and its token was burned. Distinct from
-    # TOKEN_EXPIRED, which the client answers by restarting the whole workflow.
     OTP_LIMIT_EXCEEDED = "OTP_LIMIT_EXCEEDED"
 
 
