@@ -24,6 +24,7 @@ from users.const import (
     NO_RECOVERY_PHONE_ERROR,
     TEST_NUMBER_PREFIX,
     ErrorCodes,
+    RecoveryMethods,
     SMSMethods,
 )
 from users.exceptions import RateLimitedError
@@ -2355,6 +2356,7 @@ class TestSendEmailOtp:
         "data,error_code",
         [
             ({}, "MISSING_DATA"),
+            ({"email": None}, "MISSING_DATA"),
             ({"email": "not-an-email"}, "INVALID_DATA"),
         ],
     )
@@ -2396,6 +2398,141 @@ class TestSendEmailOtp:
         assert response.status_code == 200
         assert UserEmailOTPDevice.objects.filter(user=user, email="user@example.com").exists()
         mock_challenge.assert_called_once()
+
+    # ------------------------------------------------------------------ recovery
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.generate_challenge")
+    def test_omitted_email_uses_the_address_on_record(self, mock_challenge, authed_client_token, user, valid_token):
+        """Recovery: mobile has only the masked address, so it sends none and the server resolves it."""
+        user.email = "on-record@example.com"
+        user.save()
+
+        response = authed_client_token.post(self.url, data={}, format="json")
+
+        assert response.status_code == 200
+        assert SessionEmailOTPDevice.objects.filter(session=valid_token, email=user.email).exists()
+        mock_challenge.assert_called_once()
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.generate_challenge")
+    def test_recovery_send_is_the_only_device_created(self, mock_challenge, authed_client_token, user, valid_token):
+        """No device for any other address, so complete_recovery has exactly one to verify."""
+        user.email = "on-record@example.com"
+        user.save()
+
+        authed_client_token.post(self.url, data={}, format="json")
+
+        assert list(SessionEmailOTPDevice.objects.values_list("email", flat=True)) == [user.email]
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.generate_challenge")
+    def test_account_without_email_returns_400(self, mock_challenge, authed_client_token, user, valid_token):
+        """Mobile only offers "Forgot backup code?" when an address exists, so this is defensive."""
+        user.email = ""
+        user.save()
+
+        response = authed_client_token.post(self.url, data={}, format="json")
+
+        assert response.status_code == 400
+        assert response.json()["error_code"] == ErrorCodes.MISSING_DATA
+        mock_challenge.assert_not_called()
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.generate_challenge")
+    def test_registration_session_without_email_still_returns_400(self, mock_challenge, session_client):
+        """No account behind the phone number means nothing to fall back to — the old behaviour."""
+        session = ConfigurationSessionFactory(is_phone_validated=True)
+
+        response = session_client(session).post(self.url, data={}, format="json")
+
+        assert response.status_code == 400
+        assert response.json()["error_code"] == ErrorCodes.MISSING_DATA
+        mock_challenge.assert_not_called()
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.generate_challenge")
+    def test_inactive_account_is_not_a_fallback(self, mock_challenge, session_client):
+        """Deactivated accounts are not recoverable, so their address is not on offer."""
+        deactivated = UserFactory(is_active=False, email="deactivated@example.com")
+        session = ConfigurationSessionFactory(phone_number=deactivated.phone_number, is_phone_validated=True)
+
+        response = session_client(session).post(self.url, data={}, format="json")
+
+        assert response.status_code == 400
+        assert response.json()["error_code"] == ErrorCodes.MISSING_DATA
+        mock_challenge.assert_not_called()
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_recovery_ignores_a_supplied_email(self, authed_client_token, user, valid_token):
+        """A recovering caller cannot nominate the mailbox its own OTP is sent to."""
+        user.email = "on-record@example.com"
+        user.save()
+
+        with mock.patch("users.email_utils.send_email_otp_message") as mock_send:
+            response = authed_client_token.post(self.url, data={"email": "attacker@evil.com"}, format="json")
+
+        assert response.status_code == 200
+        assert mock_send.call_args.args[0] == user.email
+        assert not SessionEmailOTPDevice.objects.filter(email="attacker@evil.com").exists()
+        assert SessionEmailOTPDevice.objects.filter(session=valid_token, email=user.email).exists()
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.generate_challenge")
+    def test_registration_uses_the_supplied_email(self, mock_challenge, session_client):
+        """With no account behind the number there is nothing to recover, so the caller sets it."""
+        session = ConfigurationSessionFactory(is_phone_validated=True)
+
+        response = session_client(session).post(self.url, data={"email": "new@example.com"}, format="json")
+
+        assert response.status_code == 200
+        assert SessionEmailOTPDevice.objects.filter(session=session, email="new@example.com").exists()
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.UserEmailOTPDevice.generate_challenge")
+    def test_logged_in_user_can_still_change_their_email(self, mock_challenge, user_bearer_client, user):
+        """The profile-edit path is not recovery: an authenticated user names the new address."""
+        user.email = "on-record@example.com"
+        user.save()
+
+        response = user_bearer_client.post(self.url, data={"email": "new@example.com"}, format="json")
+
+        assert response.status_code == 200
+        assert UserEmailOTPDevice.objects.filter(user=user, email="new@example.com").exists()
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_phone_not_validated_returns_403_before_resolving(self, authed_client_token, user, valid_token):
+        user.email = "on-record@example.com"
+        user.save()
+        valid_token.is_phone_validated = False
+        valid_token.save()
+
+        response = authed_client_token.post(self.url, data={}, format="json")
+
+        assert response.status_code == 403
+        assert response.json()["error_code"] == ErrorCodes.PHONE_NOT_VALIDATED
+        assert not SessionEmailOTPDevice.objects.exists()
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_sent_otp_completes_recovery(self, authed_client_token, user, valid_token):
+        """The halves line up: the OTP this endpoint sends is the one complete_recovery accepts."""
+        user.email = "on-record@example.com"
+        user.save()
+
+        with mock.patch("users.email_utils.send_email_otp_message") as mock_send:
+            response = authed_client_token.post(self.url, data={}, format="json")
+        assert response.status_code == 200
+
+        sent_to, token = mock_send.call_args.args[0], mock_send.call_args.args[1]
+        assert sent_to == user.email
+
+        response = authed_client_token.post(
+            reverse("complete_recovery"),
+            data={"method": RecoveryMethods.EMAIL_OTP, "otp": token},
+            format="json",
+        )
+        assert response.status_code == 200
+        assert response.json()["email"] == user.email
 
 
 @pytest.mark.django_db
@@ -2455,18 +2592,48 @@ class TestVerifyEmailOtp:
 
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
     @patch("users.models.SessionEmailOTPDevice.verify_token")
-    def test_session_success_with_active_user_updates_user_email(self, mock_verify, session_client, user):
+    def test_session_with_active_user_is_refused(self, mock_verify, session_client, user):
+        """A session for an existing account is recovering it, and recovery never sets an address.
+
+        Letting it through would move the email factor to a mailbox the caller picked,
+        leaving the phone as the only real factor in complete_recovery.
+        """
         mock_verify.return_value = True
+        user.email = "on-record@example.com"
+        user.save()
         session = ConfigurationSessionFactory(phone_number=user.phone_number, is_phone_validated=True)
-        SessionEmailOTPDeviceFactory(session=session, email="verified@example.com")
+        SessionEmailOTPDeviceFactory(session=session, email="attacker@evil.com")
+
         response = session_client(session).post(
-            self.url, data={"email": "verified@example.com", "otp": "123456"}, format="json"
+            self.url, data={"email": "attacker@evil.com", "otp": "123456"}, format="json"
         )
-        assert response.status_code == 200
+
+        assert response.status_code == 403
+        assert response.json()["error_code"] == ErrorCodes.NOT_ALLOWED
         user.refresh_from_db()
-        assert user.email == "verified@example.com"
+        assert user.email == "on-record@example.com"
         session.refresh_from_db()
         assert not session.verified_email
+        mock_verify.assert_not_called()
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.verify_token")
+    def test_session_with_emailless_active_user_is_refused(self, mock_verify, session_client, user):
+        """Also refused with no address on record: otherwise the caller installs the factor itself."""
+        mock_verify.return_value = True
+        user.email = ""
+        user.save()
+        session = ConfigurationSessionFactory(phone_number=user.phone_number, is_phone_validated=True)
+        SessionEmailOTPDeviceFactory(session=session, email="attacker@evil.com")
+
+        response = session_client(session).post(
+            self.url, data={"email": "attacker@evil.com", "otp": "123456"}, format="json"
+        )
+
+        assert response.status_code == 403
+        assert response.json()["error_code"] == ErrorCodes.NOT_ALLOWED
+        user.refresh_from_db()
+        assert not user.email
 
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
     @patch("users.models.SessionEmailOTPDevice.verify_token")
@@ -2658,3 +2825,560 @@ class TestOtpVerifyLimit:
         assert response.status_code == 401
         profile.refresh_from_db()
         assert not profile.is_verified
+
+
+BOTH_METHODS = [RecoveryMethods.BACKUP_CODE, RecoveryMethods.EMAIL_OTP]
+
+
+@pytest.mark.django_db
+class TestCompleteRecoveryApi:
+    url = reverse_lazy("complete_recovery")
+
+    BACKUP_CODE = "123456"
+    EMAIL = "user@example.com"
+
+    @staticmethod
+    def _send_otp(device):
+        with mock.patch("users.email_utils.send_email_otp_message"):
+            device.generate_challenge()
+        return device
+
+    def _prepare(self, method, user, session):
+        """Put the account and session where `method` will verify, and return a valid payload."""
+        if method == RecoveryMethods.BACKUP_CODE:
+            user.set_recovery_pin(self.BACKUP_CODE)
+            user.save()
+            return {"method": method, "backup_code": self.BACKUP_CODE}
+
+        user.email = self.EMAIL
+        user.save()
+        device = self._send_otp(SessionEmailOTPDeviceFactory(session=session, email=self.EMAIL))
+        return {"method": method, "otp": device.token}
+
+    # ------------------------------------------------------------------ auth and preconditions
+
+    @pytest.mark.parametrize("method", BOTH_METHODS)
+    def test_no_auth_header_rejected(self, api_client, method):
+        response = api_client.post(self.url, data={"method": method}, format="json")
+        assert response.status_code == 401
+
+    @pytest.mark.parametrize("method", BOTH_METHODS)
+    def test_expired_session_rejected(self, api_client, expired_token, method):
+        api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {expired_token.key}")
+        response = api_client.post(self.url, data={"method": method}, format="json")
+        assert response.status_code == 401
+        assert response.json() == {"error_code": ErrorCodes.TOKEN_EXPIRED}
+
+    @pytest.mark.parametrize("method", BOTH_METHODS)
+    def test_locked_account_rejected(self, api_client, locked_user, method):
+        session = ConfigurationSessionFactory(phone_number=locked_user.phone_number, is_phone_validated=True)
+        api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {session.key}")
+        response = api_client.post(self.url, data={"method": method}, format="json")
+        assert response.status_code == 401
+        assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
+
+    @pytest.mark.parametrize("method", BOTH_METHODS)
+    def test_basic_auth_rejected(self, auth_device, method):
+        """Only the configuration session is a meaningful credential here."""
+        response = auth_device.post(self.url, data={"method": method}, format="json")
+        assert response.status_code == 401
+
+    @pytest.mark.parametrize("method", BOTH_METHODS)
+    def test_oauth2_rejected(self, user_bearer_client, method):
+        response = user_bearer_client.post(self.url, data={"method": method}, format="json")
+        assert response.status_code == 401
+        assert response.json() == {"error_code": ErrorCodes.INVALID_TOKEN}
+
+    @pytest.mark.parametrize("method", BOTH_METHODS)
+    def test_phone_not_validated(self, authed_client_token, valid_token, method):
+        valid_token.is_phone_validated = False
+        valid_token.save()
+
+        response = authed_client_token.post(self.url, data={"method": method}, format="json")
+        assert response.status_code == 403
+        assert response.json() == {"error_code": ErrorCodes.PHONE_NOT_VALIDATED}
+
+    def test_missing_method(self, authed_client_token):
+        response = authed_client_token.post(self.url, data={}, format="json")
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
+
+    def test_unknown_method(self, authed_client_token):
+        response = authed_client_token.post(self.url, data={"method": "telepathy"}, format="json")
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.INVALID_DATA}
+
+    @pytest.mark.parametrize("method", BOTH_METHODS)
+    def test_no_active_user_is_a_server_error(self, authed_client_token, valid_token, method):
+        """Mobile should never allow this, so it is left unguarded as in confirm_backup_code."""
+        valid_token.phone_number = "+15550001111"
+        valid_token.save()
+        authed_client_token.raise_request_exception = False
+
+        response = authed_client_token.post(self.url, data={"method": method}, format="json")
+        assert response.status_code == 500
+
+    # ------------------------------------------------------------------ method = backup_code
+
+    def test_backup_code_missing(self, authed_client_token, user):
+        user.set_recovery_pin(self.BACKUP_CODE)
+        user.save()
+
+        response = authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.BACKUP_CODE, "backup_code": "  "}, format="json"
+        )
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
+
+        user.refresh_from_db()
+        assert user.failed_backup_code_attempts == 0
+
+    def test_backup_code_not_set(self, authed_client_token, user):
+        response = authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.BACKUP_CODE, "backup_code": "4321"}, format="json"
+        )
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}
+
+    def test_wrong_backup_code(self, authed_client_token, user):
+        user.set_recovery_pin(self.BACKUP_CODE)
+        user.save()
+
+        response = authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.BACKUP_CODE, "backup_code": "999999"}, format="json"
+        )
+        # A 200 for a wrong code, exactly as confirm_backup_code answers today.
+        assert response.status_code == 200
+        assert response.json() == {"attempts_left": 2}
+
+        user.refresh_from_db()
+        assert user.failed_backup_code_attempts == 1
+        assert user.is_active
+
+    def test_third_wrong_backup_code_locks_account(self, authed_client_token, user):
+        user.set_recovery_pin(self.BACKUP_CODE)
+        user.failed_backup_code_attempts = 2
+        user.save()
+
+        response = authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.BACKUP_CODE, "backup_code": "999999"}, format="json"
+        )
+        assert response.status_code == 401
+        assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
+
+        user.refresh_from_db()
+        assert not user.is_active
+        assert user.is_locked
+
+    def test_correct_backup_code_resets_counter(self, authed_client_token, user):
+        user.set_recovery_pin(self.BACKUP_CODE)
+        user.failed_backup_code_attempts = 2
+        user.save()
+
+        response = authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.BACKUP_CODE, "backup_code": self.BACKUP_CODE}, format="json"
+        )
+        assert response.status_code == 200
+
+        user.refresh_from_db()
+        assert user.failed_backup_code_attempts == 0
+
+    # ------------------------------------------------------------------ method = email_otp
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_email_otp_missing(self, authed_client_token, user, valid_token):
+        user.email = self.EMAIL
+        user.save()
+        SessionEmailOTPDeviceFactory(session=valid_token, email=self.EMAIL)
+
+        response = authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": "  "}, format="json"
+        )
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.verify_token")
+    def test_no_email_on_account(self, mock_verify, authed_client_token, user, valid_token):
+        assert not user.email
+        SessionEmailOTPDeviceFactory(session=valid_token, email=self.EMAIL)
+
+        response = authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": "123456"}, format="json"
+        )
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.NO_EMAIL_SET}
+        mock_verify.assert_not_called()
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_no_pending_device(self, authed_client_token, user):
+        user.email = self.EMAIL
+        user.save()
+
+        response = authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": "123456"}, format="json"
+        )
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.INVALID_DATA}
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_device_on_another_session_is_not_redeemable(self, authed_client_token, user):
+        """Cross-session redemption is blocked: the device must belong to this session."""
+        user.email = self.EMAIL
+        user.save()
+        other_session = ConfigurationSessionFactory(phone_number=user.phone_number, is_phone_validated=True)
+        device = self._send_otp(SessionEmailOTPDeviceFactory(session=other_session, email=self.EMAIL))
+
+        response = authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": device.token}, format="json"
+        )
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.INVALID_DATA}
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.verify_token")
+    def test_valid_otp_for_another_address_is_never_looked_at(
+        self, mock_verify, authed_client_token, user, valid_token
+    ):
+        """The client cannot nominate the mailbox that stands in for the backup code.
+
+        A correct code for an address the caller controls is not merely rejected — the
+        device is never found, so the code is never even examined.
+        """
+        user.email = self.EMAIL
+        user.save()
+        attacker_device = self._send_otp(SessionEmailOTPDeviceFactory(session=valid_token, email="attacker@evil.com"))
+
+        response = authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": attacker_device.token}, format="json"
+        )
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.INVALID_DATA}
+        mock_verify.assert_not_called()
+
+        user.refresh_from_db()
+        assert user.is_active
+        assert not user.is_locked
+        assert user.email == self.EMAIL
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_email_key_in_body_is_ignored_on_success(self, authed_client_token, user, valid_token):
+        """The address is resolved from the account, so a body key naming another cannot steer it."""
+        user.email = self.EMAIL
+        user.save()
+        device = self._send_otp(SessionEmailOTPDeviceFactory(session=valid_token, email=self.EMAIL))
+
+        response = authed_client_token.post(
+            self.url,
+            data={
+                "method": RecoveryMethods.EMAIL_OTP,
+                "otp": device.token,
+                "email": "attacker@evil.com",
+            },
+            format="json",
+        )
+        assert response.status_code == 200
+        assert response.json()["email"] == self.EMAIL
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_phone_factor_alone_cannot_complete_recovery(self, authed_client_token, user, valid_token):
+        """The end-to-end chain: a phone-validated session must not be able to install its own
+        email factor and then recover with it. Each step is blocked on its own; this asserts the
+        whole path stays shut, since it only takes one of them reopening to hand over an account.
+        """
+        user.email = self.EMAIL
+        user.set_recovery_pin(self.BACKUP_CODE)
+        user.save()
+
+        # 1. Ask for an OTP at an address the caller controls: answered at the one on record.
+        with mock.patch("users.email_utils.send_email_otp_message") as mock_send:
+            response = authed_client_token.post(
+                reverse("send_email_otp"), data={"email": "attacker@evil.com"}, format="json"
+            )
+        assert response.status_code == 200
+        assert mock_send.call_args.args[0] == self.EMAIL
+        stolen_otp = mock_send.call_args.args[1]
+
+        # 2. Try to make that address the one on record.
+        response = authed_client_token.post(
+            reverse("verify_email_otp"),
+            data={"email": "attacker@evil.com", "otp": stolen_otp},
+            format="json",
+        )
+        assert response.status_code == 403
+        user.refresh_from_db()
+        assert user.email == self.EMAIL
+
+        # 3. The OTP that did get sent still only reaches the real address, and recovery with
+        #    it is a legitimate recovery by the account owner — not the caller's to hold.
+        response = authed_client_token.post(
+            self.url,
+            data={"method": RecoveryMethods.EMAIL_OTP, "otp": "000000"},
+            format="json",
+        )
+        assert response.status_code == 401
+        user.refresh_from_db()
+        assert user.email == self.EMAIL
+        assert user.check_recovery_pin(self.BACKUP_CODE)
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_email_key_in_body_cannot_nominate_a_device(self, authed_client_token, user, valid_token):
+        """The mirror case: naming the attacker's address does not make its device eligible."""
+        user.email = self.EMAIL
+        user.save()
+        device = self._send_otp(SessionEmailOTPDeviceFactory(session=valid_token, email="attacker@evil.com"))
+
+        response = authed_client_token.post(
+            self.url,
+            data={
+                "method": RecoveryMethods.EMAIL_OTP,
+                "otp": device.token,
+                "email": "attacker@evil.com",
+            },
+            format="json",
+        )
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.INVALID_DATA}
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_wrong_email_otp_counts_down(self, authed_client_token, user, valid_token):
+        user.email = self.EMAIL
+        user.save()
+        device = self._send_otp(SessionEmailOTPDeviceFactory(session=valid_token, email=self.EMAIL))
+
+        for expected_left in (2, 1):
+            response = authed_client_token.post(
+                self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": WRONG_OTP}, format="json"
+            )
+            assert response.status_code == 401
+            assert response.json() == {
+                "error_code": ErrorCodes.INCORRECT_OTP,
+                "attempts_left": expected_left,
+            }
+
+            user.refresh_from_db()
+            assert user.is_active
+            assert not user.is_locked
+
+        device.refresh_from_db()
+        assert device.failed_verifications == 2
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_third_wrong_email_otp_burns_token_without_locking(self, authed_client_token, user, valid_token):
+        """The departure from the spec: OTP exhaustion never locks an account."""
+        user.email = self.EMAIL
+        user.save()
+        device = self._send_otp(SessionEmailOTPDeviceFactory(session=valid_token, email=self.EMAIL))
+        correct_token = device.token
+
+        for _ in range(MAX_OTP_VERIFY_ATTEMPTS - 1):
+            authed_client_token.post(
+                self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": WRONG_OTP}, format="json"
+            )
+
+        response = authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": WRONG_OTP}, format="json"
+        )
+        assert response.status_code == 401
+        assert response.json() == {"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}
+
+        device.refresh_from_db()
+        assert device.token is None
+
+        user.refresh_from_db()
+        assert user.is_active
+        assert not user.is_locked
+
+        # The burned token is dead even for the right code.
+        response = authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": correct_token}, format="json"
+        )
+        assert response.status_code == 401
+        assert response.json() == {"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_wrong_email_otp_leaves_backup_code_counter_alone(self, authed_client_token, user, valid_token):
+        """The two counters are independent, or the attempts_left the client shows would be wrong."""
+        user.email = self.EMAIL
+        user.set_recovery_pin(self.BACKUP_CODE)
+        user.save()
+        self._send_otp(SessionEmailOTPDeviceFactory(session=valid_token, email=self.EMAIL))
+
+        authed_client_token.post(self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": WRONG_OTP}, format="json")
+
+        user.refresh_from_db()
+        assert user.failed_backup_code_attempts == 0
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_wrong_backup_code_leaves_otp_counter_alone(self, authed_client_token, user, valid_token):
+        user.email = self.EMAIL
+        user.set_recovery_pin(self.BACKUP_CODE)
+        user.save()
+        device = self._send_otp(SessionEmailOTPDeviceFactory(session=valid_token, email=self.EMAIL))
+
+        authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.BACKUP_CODE, "backup_code": "999999"}, format="json"
+        )
+
+        device.refresh_from_db()
+        assert device.failed_verifications == 0
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_email_recovery_clears_backup_code_attempts(self, authed_client_token, user, valid_token):
+        """Shared completion resets the backup-code counter on the email path too."""
+        user.email = self.EMAIL
+        user.failed_backup_code_attempts = 2
+        user.save()
+        device = self._send_otp(SessionEmailOTPDeviceFactory(session=valid_token, email=self.EMAIL))
+
+        response = authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": device.token}, format="json"
+        )
+        assert response.status_code == 200
+
+        user.refresh_from_db()
+        assert user.failed_backup_code_attempts == 0
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_successful_email_otp_resets_verify_counter(self, authed_client_token, user, valid_token):
+        user.email = self.EMAIL
+        user.save()
+        device = self._send_otp(SessionEmailOTPDeviceFactory(session=valid_token, email=self.EMAIL))
+        correct_token = device.token
+
+        authed_client_token.post(self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": WRONG_OTP}, format="json")
+        response = authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": correct_token}, format="json"
+        )
+        assert response.status_code == 200
+
+        device.refresh_from_db()
+        assert device.failed_verifications == 0
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=False)
+    def test_email_otp_blocked_when_switch_off(self, authed_client_token, user, valid_token):
+        user.email = self.EMAIL
+        user.save()
+        device = self._send_otp(SessionEmailOTPDeviceFactory(session=valid_token, email=self.EMAIL))
+
+        response = authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": device.token}, format="json"
+        )
+        assert response.status_code == 403
+        assert response.json() == {"error_code": ErrorCodes.NOT_ALLOWED}
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=False)
+    def test_backup_code_still_works_when_switch_off(self, authed_client_token, user):
+        """The switch is checked inside the email branch, so it must not 404 the whole view."""
+        user.set_recovery_pin(self.BACKUP_CODE)
+        user.save()
+
+        response = authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.BACKUP_CODE, "backup_code": self.BACKUP_CODE}, format="json"
+        )
+        assert response.status_code == 200
+
+    # ------------------------------------------------------------------ shared completion
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @pytest.mark.parametrize("method", BOTH_METHODS)
+    def test_success_payload(self, authed_client_token, user, valid_token, method):
+        payload = self._prepare(method, user, valid_token)
+
+        response = authed_client_token.post(self.url, data=payload, format="json")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["username"] == user.username
+        assert len(data["password"]) == 32
+        assert UserKey.objects.filter(key=data["db_key"]).exists()
+        assert data["invited_user"] == valid_token.invited_user
+
+        user.refresh_from_db()
+        assert user.check_password(data["password"])
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @pytest.mark.parametrize("method", BOTH_METHODS)
+    def test_recovery_pin_is_not_cleared(self, authed_client_token, user, valid_token, method):
+        """The account keeps its old code; the client sets a new one with set_recovery_pin."""
+        user.set_recovery_pin(self.BACKUP_CODE)
+        user.save()
+        payload = self._prepare(method, user, valid_token)
+        recovery_pin_before = ConnectUser.objects.get(pk=user.pk).recovery_pin
+
+        response = authed_client_token.post(self.url, data=payload, format="json")
+        assert response.status_code == 200
+
+        user.refresh_from_db()
+        assert user.recovery_pin == recovery_pin_before
+
+    def test_email_omitted_when_account_has_none(self, authed_client_token, user, valid_token):
+        payload = self._prepare(RecoveryMethods.BACKUP_CODE, user, valid_token)
+        assert not user.email
+
+        response = authed_client_token.post(self.url, data=payload, format="json")
+        assert response.status_code == 200
+        assert "email" not in response.json()
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @pytest.mark.parametrize("method", BOTH_METHODS)
+    def test_no_device_info_when_session_has_no_device(self, authed_client_token, user, valid_token, method):
+        valid_token.device = None
+        valid_token.save()
+        payload = self._prepare(method, user, valid_token)
+
+        response = authed_client_token.post(self.url, data=payload, format="json")
+        assert response.status_code == 200
+        assert "previous_device" not in response.json()
+        assert not user.devices.exists()
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @pytest.mark.parametrize("method", BOTH_METHODS)
+    def test_same_device_updates_existing_record(self, authed_client_token, user, valid_token, method):
+        valid_token.device = "Same Phone"
+        valid_token.save()
+        payload = self._prepare(method, user, valid_token)
+        old_device = UserDeviceInfoFactory(
+            user=user, raw_password="old_pass", device="Same Phone", last_accessed=now() - timedelta(days=5)
+        )
+
+        response = authed_client_token.post(self.url, data=payload, format="json")
+        assert response.status_code == 200
+        assert "previous_device" not in response.json()
+
+        assert user.devices.count() == 1
+        old_device.refresh_from_db()
+        assert old_device.check_password(response.json()["password"])
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @pytest.mark.parametrize("method", BOTH_METHODS)
+    def test_different_recent_device_is_reported(self, authed_client_token, user, valid_token, method):
+        valid_token.device = "New Phone"
+        valid_token.save()
+        payload = self._prepare(method, user, valid_token)
+        UserDeviceInfoFactory(
+            user=user, raw_password="old_pass", device="Old Phone", last_accessed=now() - timedelta(days=5)
+        )
+
+        response = authed_client_token.post(self.url, data=payload, format="json")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["previous_device"] == "Old Phone"
+        assert "last_accessed" in data
+        assert user.devices.count() == 2
+        assert user.devices.first().device == "New Phone"
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @pytest.mark.parametrize("method", BOTH_METHODS)
+    def test_different_stale_device_is_not_reported(self, authed_client_token, user, valid_token, method):
+        valid_token.device = "New Phone"
+        valid_token.save()
+        payload = self._prepare(method, user, valid_token)
+        UserDeviceInfoFactory(
+            user=user, raw_password="old_pass", device="Old Phone", last_accessed=now() - timedelta(days=31)
+        )
+
+        response = authed_client_token.post(self.url, data=payload, format="json")
+        assert response.status_code == 200
+        assert "previous_device" not in response.json()

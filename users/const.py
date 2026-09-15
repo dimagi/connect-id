@@ -31,6 +31,7 @@ class ErrorCodes:
     INVALID_DATA = "INVALID_DATA"
     ACTIVE_USER_EXISTS = "ACTIVE_USER_EXISTS"
     NOT_ALLOWED = "NOT_ALLOWED"
+    NO_EMAIL_SET = "NO_EMAIL_SET"
     LOGIN_FROM_DIFFERENT_DEVICE = "LOGIN_FROM_DIFFERENT_DEVICE"
     RATE_LIMITED = "RATE_LIMITED"
     EMAIL_ALREADY_IN_USE = "EMAIL_ALREADY_IN_USE"
@@ -42,6 +43,13 @@ MAX_BACKUP_CODE_ATTEMPTS = 3
 MAX_OTP_VERIFY_ATTEMPTS = 3
 
 MAX_OTP_BURN_COOLDOWN_HOURS = 4
+
+
+class RecoveryMethods:
+    """The factors complete_recovery accepts in place of one another."""
+
+    BACKUP_CODE = "backup_code"
+    EMAIL_OTP = "email_otp"
 
 
 class SMSMethods:
