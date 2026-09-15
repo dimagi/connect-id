@@ -11,6 +11,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import validate_email
+from django.db import transaction
 from django.db.models import Count, Exists, F, OuterRef
 from django.db.models.functions import TruncMonth
 from django.db.utils import IntegrityError
@@ -25,6 +26,7 @@ from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
+from waffle import switch_is_active
 from waffle.decorators import waffle_switch
 
 from flags.const import EMAIL_OTP_VERIFICATION
@@ -39,7 +41,13 @@ from utils.app_integrity.google_play_integrity import AppIntegrityService
 from utils.rest_framework import ClientProtectedResourceAuth
 
 from .auth import DeviceBasicAuthentication, IssuingCredentialsAuth, SessionTokenAuthentication
-from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
+from .const import (
+    NO_RECOVERY_PHONE_ERROR,
+    TEST_NUMBER_PREFIX,
+    ErrorCodes,
+    RecoveryMethods,
+    SMSMethods,
+)
 from .device_utils import DEVICE_RECENT_ACCESS_THRESHOLD
 from .exceptions import RateLimitedError, RecoveryPinNotSetError
 from .fcm_utils import create_update_device
@@ -562,6 +570,99 @@ def confirm_recovery_pin(request):
     return JsonResponse(user_data(user))
 
 
+def _verify_backup_code(user, backup_code):
+    try:
+        if user.check_recovery_pin(backup_code):
+            return None
+    except RecoveryPinNotSetError:
+        return JsonResponse({"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}, status=400)
+
+    user.add_failed_backup_code_attempt()
+
+    if user.backup_code_attempts_left == 0:
+        user.is_active = False
+        user.is_locked = True
+        user.save()
+        return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=401)
+
+    # NOTE: 200 for a wrong code is odd, but it's what the mobile client expects
+    return JsonResponse({"attempts_left": user.backup_code_attempts_left}, status=200)
+
+
+def _apply_device_info(user, session, password, response_data):
+    if not session.device:
+        return
+
+    old_device = user.devices.first()
+
+    if old_device and old_device.device == session.device:
+        old_device.set_password(password)
+        old_device.last_accessed = now()
+        old_device.save()
+    else:
+        new_device = UserDeviceInfo(
+            user=user,
+            device=session.device,
+            last_accessed=now(),
+        )
+        new_device.set_password(password)
+        new_device.save()
+
+    if old_device and old_device.device != session.device:
+        if old_device.last_accessed > now() - DEVICE_RECENT_ACCESS_THRESHOLD:
+            response_data["previous_device"] = old_device.device
+            response_data["last_accessed"] = old_device.last_accessed.isoformat()
+
+
+def _complete_recovery_for_user(user, session):
+    """Rotate the password, clear the backup-code counter, and build the config payload."""
+    with transaction.atomic():
+        password = token_hex(16)
+        user.set_password(password)
+        user.reset_failed_backup_code_attempts()
+        user.save()
+
+        response_data = {
+            "username": user.username,
+            "db_key": UserKey.get_or_create_key_for_user(user).key,
+            "password": password,
+            "invited_user": session.invited_user,
+        }
+
+        _apply_device_info(user, session, password, response_data)
+
+        if user.email:
+            response_data["email"] = user.email
+
+        return response_data
+
+
+def _verify_recovery_email_otp(session, user, otp):
+    if not switch_is_active(EMAIL_OTP_VERIFICATION):
+        return JsonResponse({"error_code": ErrorCodes.NOT_ALLOWED}, status=403)
+
+    if not otp:
+        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+
+    if not user.email:
+        return JsonResponse({"error_code": ErrorCodes.NO_EMAIL_SET}, status=400)
+
+    try:
+        device = SessionEmailOTPDevice.objects.get(session=session, email=user.email)
+    except SessionEmailOTPDevice.DoesNotExist:
+        return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
+
+    if device.verify_token(otp):
+        return None
+
+    logger.warning("Failed recovery email OTP verification for email %s***", user.email.split("@")[0][:3])
+    if device.is_exhausted:
+        return JsonResponse({"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}, status=401)
+    return JsonResponse(
+        {"error_code": ErrorCodes.INCORRECT_OTP, "attempts_left": device.verify_attempts_left}, status=401
+    )
+
+
 @api_view(["POST"])
 @authentication_classes([SessionTokenAuthentication])
 def confirm_backup_code(request):
@@ -573,63 +674,42 @@ def confirm_backup_code(request):
     data = request.data
     user = ConnectUser.objects.get(phone_number=session.phone_number, is_active=True)
 
-    try:
-        if not user.check_recovery_pin(data.get("recovery_pin")):
-            user.add_failed_backup_code_attempt()
+    error_response = _verify_backup_code(user, data.get("recovery_pin"))
+    if error_response:
+        return error_response
 
-            if user.backup_code_attempts_left == 0:
-                user.is_active = False
-                user.is_locked = True
-                user.save()
-                return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=401)
+    return JsonResponse(_complete_recovery_for_user(user, session))
 
-            return JsonResponse({"attempts_left": user.backup_code_attempts_left}, status=200)
 
-    except RecoveryPinNotSetError:
-        return JsonResponse({"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}, status=400)
+@api_view(["POST"])
+@authentication_classes([SessionTokenAuthentication])
+def complete_recovery(request):
+    session = request.auth
 
-    password = token_hex(16)
-    user.set_password(password)
-    user.reset_failed_backup_code_attempts()
-    user.save()
+    if not session.is_phone_validated:
+        return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
 
-    response_data = {
-        "username": user.username,
-        "db_key": UserKey.get_or_create_key_for_user(user).key,
-        "password": password,
-        "invited_user": session.invited_user,
-    }
+    data = request.data
+    method = data.get("method")
+    if not method:
+        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+    if method not in (RecoveryMethods.BACKUP_CODE, RecoveryMethods.EMAIL_OTP):
+        return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
 
-    if session.device:
-        # Get the old device info before creating/updating
-        old_device = user.devices.first()
+    user = ConnectUser.objects.get(phone_number=session.phone_number, is_active=True)
 
-        # Create or update device info
-        if old_device and old_device.device == session.device:
-            # Same device — update the existing record
-            old_device.set_password(password)
-            old_device.last_accessed = now()
-            old_device.save()
-        else:
-            # Different device — create a new record
-            new_device = UserDeviceInfo(
-                user=user,
-                device=session.device,
-                last_accessed=now(),
-            )
-            new_device.set_password(password)
-            new_device.save()
+    if method == RecoveryMethods.BACKUP_CODE:
+        backup_code = (data.get("backup_code") or "").strip()
+        if not backup_code:
+            return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+        error_response = _verify_backup_code(user, backup_code)
+    else:
+        error_response = _verify_recovery_email_otp(session, user, (data.get("otp") or "").strip())
 
-        # Check if old device is different and was recently accessed
-        if old_device and old_device.device != session.device:
-            if old_device.last_accessed > now() - DEVICE_RECENT_ACCESS_THRESHOLD:
-                response_data["previous_device"] = old_device.device
-                response_data["last_accessed"] = old_device.last_accessed.isoformat()
+    if error_response:
+        return error_response
 
-    if user.email:
-        response_data["email"] = user.email
-
-    return JsonResponse(response_data)
+    return JsonResponse(_complete_recovery_for_user(user, session))
 
 
 @api_view(["GET"])
@@ -1006,22 +1086,38 @@ def confirm_session_otp(request):
     return HttpResponse()
 
 
+def _recovering_account(request):
+    if not isinstance(request.auth, ConfigurationSession):
+        return None
+    return ConnectUser.objects.filter(phone_number=request.auth.phone_number, is_active=True).first()
+
+
 @api_view(["POST"])
 @authentication_classes([DeviceBasicAuthentication, OAuth2Authentication, SessionTokenAuthentication])
 @waffle_switch(EMAIL_OTP_VERIFICATION)
 def send_email_otp(request):
-    if isinstance(request.auth, ConfigurationSession) and not request.auth.is_phone_validated:
+    is_session = isinstance(request.auth, ConfigurationSession)
+    if is_session and not request.auth.is_phone_validated:
         return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
 
-    email = request.data.get("email", "").strip()
-    if not email:
-        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
-    try:
-        validate_email(email)
-    except DjangoValidationError:
-        return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
+    email = (request.data.get("email") or "").strip()
+    recovering_account = _recovering_account(request)
 
-    if isinstance(request.auth, ConfigurationSession):
+    if recovering_account:
+        if email and email != recovering_account.email:
+            logger.warning("Ignoring caller-supplied email on a recovery OTP request; using the address on record")
+        email = recovering_account.email
+        if not email:
+            return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+    else:
+        if not email:
+            return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+        try:
+            validate_email(email)
+        except DjangoValidationError:
+            return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
+
+    if is_session:
         device, _ = SessionEmailOTPDevice.objects.get_or_create(session=request.auth, email=email)
     else:
         device, _ = UserEmailOTPDevice.objects.get_or_create(user=request.user, email=email)
@@ -1041,16 +1137,20 @@ def send_email_otp(request):
 @authentication_classes([DeviceBasicAuthentication, OAuth2Authentication, SessionTokenAuthentication])
 @waffle_switch(EMAIL_OTP_VERIFICATION)
 def verify_email_otp(request):
-    if isinstance(request.auth, ConfigurationSession) and not request.auth.is_phone_validated:
+    is_session = isinstance(request.auth, ConfigurationSession)
+    if is_session and not request.auth.is_phone_validated:
         return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
 
-    email = request.data.get("email", "").strip()
-    otp = request.data.get("otp", "").strip()
+    if _recovering_account(request):
+        return JsonResponse({"error_code": ErrorCodes.NOT_ALLOWED}, status=403)
+
+    email = (request.data.get("email") or "").strip()
+    otp = (request.data.get("otp") or "").strip()
     if not email or not otp:
         return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
     try:
-        if isinstance(request.auth, ConfigurationSession):
+        if is_session:
             device = SessionEmailOTPDevice.objects.get(session=request.auth, email=email)
         else:
             device = UserEmailOTPDevice.objects.get(user=request.user, email=email)
@@ -1063,15 +1163,12 @@ def verify_email_otp(request):
             return JsonResponse({"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}, status=401)
         return JsonResponse({"error_code": ErrorCodes.INCORRECT_OTP}, status=401)
 
-    if isinstance(request.auth, ConfigurationSession):
-        user = ConnectUser.objects.filter(phone_number=request.auth.phone_number, is_active=True).first()
-        if not user:
-            request.auth.verified_email = email
-            request.auth.save()
-            return HttpResponse()
-    else:
-        user = request.user
+    if is_session:
+        request.auth.verified_email = email
+        request.auth.save()
+        return HttpResponse()
 
+    user = request.user
     user.email = email
     try:
         user.save()
