@@ -46,8 +46,6 @@ MAX_OTP_BURN_COOLDOWN_HOURS = 4
 
 
 class RecoveryMethods:
-    """The factors complete_recovery accepts in place of one another."""
-
     BACKUP_CODE = "backup_code"
     EMAIL_OTP = "email_otp"
 

@@ -571,10 +571,6 @@ def confirm_recovery_pin(request):
 
 
 def _verify_backup_code(user, backup_code):
-    """Check a backup code, counting the failure and locking the account on the third one.
-
-    Returns the response to send back on failure, or None when the code was correct.
-    """
     try:
         if user.check_recovery_pin(backup_code):
             return None
@@ -589,27 +585,21 @@ def _verify_backup_code(user, backup_code):
         user.save()
         return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=401)
 
-    # A 200 for a wrong code is odd, but it is the contract the client's success test
-    # (a non-null db_key) already relies on.
+    # NOTE: 200 for a wrong code is odd, but it's what the mobile client expects
     return JsonResponse({"attempts_left": user.backup_code_attempts_left}, status=200)
 
 
 def _apply_device_info(user, session, password, response_data):
-    """Record this device against the account, and report a different recent one back."""
     if not session.device:
         return
 
-    # Get the old device info before creating/updating
     old_device = user.devices.first()
 
-    # Create or update device info
     if old_device and old_device.device == session.device:
-        # Same device — update the existing record
         old_device.set_password(password)
         old_device.last_accessed = now()
         old_device.save()
     else:
-        # Different device — create a new record
         new_device = UserDeviceInfo(
             user=user,
             device=session.device,
@@ -618,7 +608,6 @@ def _apply_device_info(user, session, password, response_data):
         new_device.set_password(password)
         new_device.save()
 
-    # Check if old device is different and was recently accessed
     if old_device and old_device.device != session.device:
         if old_device.last_accessed > now() - DEVICE_RECENT_ACCESS_THRESHOLD:
             response_data["previous_device"] = old_device.device
@@ -626,12 +615,7 @@ def _apply_device_info(user, session, password, response_data):
 
 
 def _complete_recovery_for_user(user, session):
-    """Rotate the password, clear the backup-code counter, and build the config payload.
-
-    Shared by confirm_backup_code and complete_recovery so the two cannot drift. Atomic
-    because a failure between the rotation and the device write would leave the client
-    without the password that now authenticates the account.
-    """
+    """Rotate the password, clear the backup-code counter, and build the config payload."""
     with transaction.atomic():
         password = token_hex(16)
         user.set_password(password)
@@ -654,25 +638,13 @@ def _complete_recovery_for_user(user, session):
 
 
 def _verify_recovery_email_otp(session, user, otp):
-    """Verify a recovery email OTP against the address held on the account.
-
-    The address comes from user.email and never from the request, so a caller cannot
-    nominate which mailbox stands in for the backup code.
-
-    Returns the response to send back on failure, or None when the OTP was correct.
-    """
     if not switch_is_active(EMAIL_OTP_VERIFICATION):
-        # The switch already reaches the client in start_configuration's toggles, so this
-        # is a backstop rather than a UX path. Checked here rather than with
-        # @waffle_switch on the view, which would 404 the backup_code path too.
         return JsonResponse({"error_code": ErrorCodes.NOT_ALLOWED}, status=403)
 
     if not otp:
         return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
     if not user.email:
-        # Mobile only offers "Forgot backup code?" when an email exists, so this is
-        # defensive rather than a path the client should reach.
         return JsonResponse({"error_code": ErrorCodes.NO_EMAIL_SET}, status=400)
 
     try:
@@ -685,7 +657,6 @@ def _verify_recovery_email_otp(session, user, otp):
 
     logger.warning("Failed recovery email OTP verification for email %s***", user.email.split("@")[0][:3])
     if device.is_exhausted:
-        # Only the token is spent — running out of OTP guesses never locks an account.
         return JsonResponse({"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}, status=401)
     return JsonResponse(
         {"error_code": ErrorCodes.INCORRECT_OTP, "attempts_left": device.verify_attempts_left}, status=401
@@ -713,16 +684,9 @@ def confirm_backup_code(request):
 @api_view(["POST"])
 @authentication_classes([SessionTokenAuthentication])
 def complete_recovery(request):
-    """Complete account recovery with either of the two factors that can stand in for it.
-
-    The configuration session is the only credential — this endpoint exists to recover an
-    account you cannot currently log into. Everything after the per-method verification is
-    shared, which is where the subtle behaviour lives.
-    """
     session = request.auth
 
     if not session.is_phone_validated:
-        # The phone factor is a precondition for both methods; neither replaces it.
         return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
 
     data = request.data
@@ -732,8 +696,6 @@ def complete_recovery(request):
     if method not in (RecoveryMethods.BACKUP_CODE, RecoveryMethods.EMAIL_OTP):
         return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
 
-    # Unguarded, as in confirm_backup_code: mobile should never reach this without an
-    # active account, so no user is a 500 rather than a handled response.
     user = ConnectUser.objects.get(phone_number=session.phone_number, is_active=True)
 
     if method == RecoveryMethods.BACKUP_CODE:
@@ -1125,15 +1087,6 @@ def confirm_session_otp(request):
 
 
 def _recovering_account(request):
-    """The active account a configuration session is recovering, or None.
-
-    This is the line between the two session flows. A session whose phone number already
-    has an active account cannot be registering — complete_profile refuses that outright
-    with ACTIVE_USER_EXISTS — so it can only be recovering that account. Registration
-    *sets* an email; recovery *proves* the one on record. Which means the phone factor on
-    its own must never be able to move the address the email factor lives at, or it stops
-    being a second factor at all.
-    """
     if not isinstance(request.auth, ConfigurationSession):
         return None
     return ConnectUser.objects.filter(phone_number=request.auth.phone_number, is_active=True).first()
@@ -1151,17 +1104,10 @@ def send_email_otp(request):
     recovering_account = _recovering_account(request)
 
     if recovering_account:
-        # Recovery: the address is the factor being tested, so it comes from the record and
-        # never from the request — mobile has only ever seen check_name's masked_email. A
-        # request that names one anyway is answered at the address on record, so no device
-        # for a caller-chosen address is ever created in this session. Already validated by
-        # the EmailField that stored it.
         if email and email != recovering_account.email:
             logger.warning("Ignoring caller-supplied email on a recovery OTP request; using the address on record")
         email = recovering_account.email
         if not email:
-            # Mobile only offers "Forgot backup code?" when check_name returned a masked
-            # address, so an account with none should not reach this.
             return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
     else:
         if not email:
@@ -1196,12 +1142,6 @@ def verify_email_otp(request):
         return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
 
     if _recovering_account(request):
-        # This endpoint's whole job is to *set* an address, which recovery never does: it
-        # proves the one on record, through complete_recovery, which leaves user.email
-        # alone. Allowing it here would let a phone-validated session point the email
-        # factor at a mailbox the caller controls and then recover with it, reducing
-        # recovery to the single factor the email OTP exists to supplement. Refused before
-        # the token is checked, so a probe cannot spend an OTP either.
         return JsonResponse({"error_code": ErrorCodes.NOT_ALLOWED}, status=403)
 
     email = (request.data.get("email") or "").strip()
@@ -1224,9 +1164,6 @@ def verify_email_otp(request):
         return JsonResponse({"error_code": ErrorCodes.INCORRECT_OTP}, status=401)
 
     if is_session:
-        # No active account behind this number, so there is nothing to overwrite: either no
-        # ConnectUser yet, or a deactivated one that complete_profile will register over.
-        # Park the verified address on the session for complete_profile to copy across.
         request.auth.verified_email = email
         request.auth.save()
         return HttpResponse()
