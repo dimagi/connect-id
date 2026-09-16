@@ -2634,9 +2634,9 @@ class TestOtpVerifyLimit:
                 {"email": "new@example.com", "otp": WRONG_OTP},
                 {"error_code": ErrorCodes.INCORRECT_OTP},
             )
-            # The resend backoff survived the burn, so step past it to get a new code.
+            # A burned email code triggers a one hour cooldown, so step past that to get a new one.
             device.refresh_from_db()
-            device.otp_last_sent = now() - timedelta(minutes=2**device.attempts)
+            device.otp_last_sent = now() - timedelta(hours=1)
             device.save()
             device.generate_challenge()
 
