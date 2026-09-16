@@ -424,7 +424,6 @@ class SessionPhoneDevice(BasePhoneDevice):
 class BaseEmailOTPDevice(BaseOTPDevice):
     email = models.EmailField()
 
-    # Burning an email code buys the next one in hours rather than minutes.
     burn_cooldown_in_hours = True
 
     class Meta:
