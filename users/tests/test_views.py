@@ -1702,6 +1702,58 @@ class TestCheckUserSimilarity:
         assert response.json()["account_exists"] is False
         assert response.json()["photo"] == ""
 
+    @patch.object(ConnectUser, "get_photo")
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_masked_email_returned_for_matched_account(
+        self, check_similarity_mock, get_photo_mock, authed_client_token, user, valid_token
+    ):
+        check_similarity_mock.return_value = True
+        get_photo_mock.return_value = ""
+
+        user.name = "ExistingUser"
+        user.email = "someone@dimagi.com"
+        user.save()
+
+        response = authed_client_token.post(reverse(self.urlname), data={"name": user.name})
+        assert response.status_code == 200
+        assert response.json()["masked_email"] == "s*****e@dimagi.com"
+        # Never the real address.
+        assert "someone@" not in json.dumps(response.json())
+
+    @patch.object(ConnectUser, "get_photo")
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_masked_email_omitted_when_account_has_no_email(
+        self, check_similarity_mock, get_photo_mock, authed_client_token, user, valid_token
+    ):
+        check_similarity_mock.return_value = True
+        get_photo_mock.return_value = ""
+
+        user.name = "ExistingUser"
+        user.save()
+        assert not user.email
+
+        response = authed_client_token.post(reverse(self.urlname), data={"name": user.name})
+        assert response.status_code == 200
+        assert "masked_email" not in response.json()
+
+    @patch.object(ConnectUser, "get_photo")
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_masked_email_omitted_when_account_email_is_unusable(
+        self, check_similarity_mock, get_photo_mock, authed_client_token, user, valid_token
+    ):
+        check_similarity_mock.return_value = True
+        get_photo_mock.return_value = ""
+
+        user.name = "ExistingUser"
+        # Nothing validates on the way in, so an address we could never send to can sit on
+        # an account. Offer no email factor at all rather than a mailbox we cannot reach.
+        user.email = "notanemail"
+        user.save()
+
+        response = authed_client_token.post(reverse(self.urlname), data={"name": user.name})
+        assert response.status_code == 200
+        assert "masked_email" not in response.json()
+
 
 class TestCompleteProfileView:
     url = reverse("complete_profile")
@@ -2743,9 +2795,9 @@ class TestOtpVerifyLimit:
                 {"email": "new@example.com", "otp": WRONG_OTP},
                 {"error_code": ErrorCodes.INCORRECT_OTP},
             )
-            # The resend backoff survived the burn, so step past it to get a new code.
+            # A burned email code triggers a one hour cooldown, so step past that to get a new one.
             device.refresh_from_db()
-            device.otp_last_sent = now() - timedelta(minutes=2**device.attempts)
+            device.otp_last_sent = now() - timedelta(hours=1)
             device.save()
             device.generate_challenge()
 
