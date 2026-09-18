@@ -638,6 +638,23 @@ def _complete_recovery_for_user(user, session):
         return response_data
 
 
+def rate_limited_response(retry_after_seconds):
+    return JsonResponse(
+        {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": retry_after_seconds}, status=429
+    )
+
+
+def otp_limit_exceeded_response(device):
+    """The code is gone, so the caller's next move is a resend; tell it how long that will take."""
+    return JsonResponse(
+        {
+            "error_code": ErrorCodes.OTP_LIMIT_EXCEEDED,
+            "retry_after_seconds": device.resend_retry_after_seconds,
+        },
+        status=401,
+    )
+
+
 def _verify_recovery_email_otp(session, user, otp):
     if not switch_is_active(EMAIL_OTP_VERIFICATION):
         return JsonResponse({"error_code": ErrorCodes.NOT_ALLOWED}, status=403)
@@ -658,7 +675,7 @@ def _verify_recovery_email_otp(session, user, otp):
 
     logger.warning("Failed recovery email OTP verification for email %s***", user.email.split("@")[0][:3])
     if device.is_exhausted:
-        return JsonResponse({"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}, status=401)
+        return otp_limit_exceeded_response(device)
     return JsonResponse(
         {"error_code": ErrorCodes.INCORRECT_OTP, "attempts_left": device.verify_attempts_left}, status=401
     )
@@ -1061,23 +1078,6 @@ def check_user_similarity(request):
             response_data["masked_email"] = masked_email
 
     return JsonResponse(response_data)
-
-
-def rate_limited_response(retry_after_seconds):
-    return JsonResponse(
-        {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": retry_after_seconds}, status=429
-    )
-
-
-def otp_limit_exceeded_response(device):
-    """The code is gone, so the caller's next move is a resend; tell it how long that will take."""
-    return JsonResponse(
-        {
-            "error_code": ErrorCodes.OTP_LIMIT_EXCEEDED,
-            "retry_after_seconds": device.resend_retry_after_seconds,
-        },
-        status=401,
-    )
 
 
 @api_view(["POST"])

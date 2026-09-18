@@ -3255,7 +3255,9 @@ class TestCompleteRecoveryApi:
             self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": WRONG_OTP}, format="json"
         )
         assert response.status_code == 401
-        assert response.json() == {"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}
+        assert response.json()["error_code"] == ErrorCodes.OTP_LIMIT_EXCEEDED
+        # A burned email code cannot be replaced for an hour, and the caller is told so.
+        assert response.json()["retry_after_seconds"] == pytest.approx(3600, abs=5)
 
         device.refresh_from_db()
         assert device.token is None
@@ -3269,7 +3271,8 @@ class TestCompleteRecoveryApi:
             self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": correct_token}, format="json"
         )
         assert response.status_code == 401
-        assert response.json() == {"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}
+        assert response.json()["error_code"] == ErrorCodes.OTP_LIMIT_EXCEEDED
+        assert response.json()["retry_after_seconds"] == pytest.approx(3600, abs=5)
 
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
     def test_wrong_email_otp_leaves_backup_code_counter_alone(self, authed_client_token, user, valid_token):
