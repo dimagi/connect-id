@@ -1063,6 +1063,23 @@ def check_user_similarity(request):
     return JsonResponse(response_data)
 
 
+def rate_limited_response(retry_after_seconds):
+    return JsonResponse(
+        {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": retry_after_seconds}, status=429
+    )
+
+
+def otp_limit_exceeded_response(device):
+    """The code is gone, so the caller's next move is a resend; tell it how long that will take."""
+    return JsonResponse(
+        {
+            "error_code": ErrorCodes.OTP_LIMIT_EXCEEDED,
+            "retry_after_seconds": device.resend_retry_after_seconds,
+        },
+        status=401,
+    )
+
+
 @api_view(["POST"])
 @authentication_classes([SessionTokenAuthentication])
 def send_session_otp(request):
@@ -1072,7 +1089,12 @@ def send_session_otp(request):
     otp_device, _ = SessionPhoneDevice.objects.get_or_create(
         phone_number=request.auth.phone_number, session=request.auth
     )
-    otp_device.generate_challenge()
+    try:
+        otp_device.generate_challenge()
+    except RateLimitedError as e:
+        logger.warning("Rate limit hit for session OTP request")
+        return rate_limited_response(e.retry_after_seconds)
+
     return HttpResponse()
 
 
@@ -1087,7 +1109,7 @@ def confirm_session_otp(request):
     verified = device.verify_token(data.get("otp"))
     if not verified:
         if device.is_exhausted:
-            return JsonResponse({"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}, status=401)
+            return otp_limit_exceeded_response(device)
         return JsonResponse({"error": ErrorCodes.INCORRECT_OTP}, status=401)
     request.auth.is_phone_validated = True
     request.auth.save()
@@ -1134,9 +1156,7 @@ def send_email_otp(request):
         device.generate_challenge()
     except RateLimitedError as e:
         logger.warning("Rate limit hit for email OTP request for email %s***", email.split("@")[0][:3])
-        return JsonResponse(
-            {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": e.retry_after_seconds}, status=429
-        )
+        return rate_limited_response(e.retry_after_seconds)
 
     return HttpResponse()
 
@@ -1168,7 +1188,7 @@ def verify_email_otp(request):
     if not device.verify_token(otp):
         logger.warning("Failed email OTP verification for email %s***", email.split("@")[0][:3])
         if device.is_exhausted:
-            return JsonResponse({"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}, status=401)
+            return otp_limit_exceeded_response(device)
         return JsonResponse({"error_code": ErrorCodes.INCORRECT_OTP}, status=401)
 
     if is_session:
