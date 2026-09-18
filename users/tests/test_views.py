@@ -208,6 +208,18 @@ class TestValidatePhone:
         assert PhoneDevice.objects.all().exists()
         generate_challenge_mock.assert_called_once()
 
+    @pytest.mark.django_db
+    def test_resend_inside_cooldown_still_succeeds(self, auth_device, user):
+        """The legacy clients cannot read a 429, so PhoneDevice keeps swallowing the rate limit."""
+        device = PhoneDeviceFactory(user=user, phone_number=user.phone_number)
+        with mock.patch("users.models.send_sms") as mock_send_sms:
+            device.generate_challenge()
+            assert mock_send_sms.call_count == 1
+
+            response = auth_device.post(reverse("validate_phone"))
+            assert response.status_code == 200
+            assert mock_send_sms.call_count == 1
+
 
 class TestValidateSecondaryPhone:
     def test_no_recovery_phone(self, auth_device):
@@ -1876,6 +1888,29 @@ class TestSendSessionOtp:
             assert SessionPhoneDevice.objects.filter(session=valid_token).exists()
             mock_generate_challenge.assert_called_once()
 
+    @patch("users.models.SessionPhoneDevice.generate_challenge")
+    def test_rate_limited_returns_429(self, mock_generate_challenge, authed_client_token, valid_token):
+        SessionPhoneDeviceFactory(session=valid_token, phone_number=valid_token.phone_number)
+        mock_generate_challenge.side_effect = RateLimitedError(retry_after_seconds=120)
+
+        response = authed_client_token.post(self.url)
+        assert response.status_code == 429
+        assert response.json() == {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": 120}
+
+    def test_resend_inside_cooldown_reports_the_wait_instead_of_silently_dropping_it(
+        self, authed_client_token, valid_token
+    ):
+        device = SessionPhoneDeviceFactory(session=valid_token, phone_number=valid_token.phone_number)
+        with mock.patch("users.models.send_sms") as mock_send_sms:
+            device.generate_challenge()
+            assert mock_send_sms.call_count == 1
+
+            response = authed_client_token.post(self.url)
+            assert response.status_code == 429
+            assert response.json()["error_code"] == ErrorCodes.RATE_LIMITED
+            assert response.json()["retry_after_seconds"] == pytest.approx(2 * 60, abs=5)
+            assert mock_send_sms.call_count == 1
+
 
 @pytest.mark.django_db
 class TestConfirmSessionOtp:
@@ -2593,7 +2628,9 @@ class TestOtpVerifyLimit:
             {"email": "new@example.com", "otp": WRONG_OTP},
             {"error_code": ErrorCodes.INCORRECT_OTP},
         )
-        assert response.json() == {"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}
+        assert response.json()["error_code"] == ErrorCodes.OTP_LIMIT_EXCEEDED
+        # A burned email code cannot be replaced for an hour, and the caller is told so.
+        assert response.json()["retry_after_seconds"] == pytest.approx(3600, abs=5)
 
         device.refresh_from_db()
         assert device.token is None
@@ -2617,7 +2654,8 @@ class TestOtpVerifyLimit:
             {"email": "new@example.com", "otp": WRONG_OTP},
             {"error_code": ErrorCodes.INCORRECT_OTP},
         )
-        assert response.json() == {"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}
+        assert response.json()["error_code"] == ErrorCodes.OTP_LIMIT_EXCEEDED
+        assert response.json()["retry_after_seconds"] == pytest.approx(3600, abs=5)
 
         session.refresh_from_db()
         assert not session.verified_email
@@ -2663,7 +2701,9 @@ class TestOtpVerifyLimit:
             {"otp": WRONG_OTP},
             {"error": ErrorCodes.INCORRECT_OTP},
         )
-        assert response.json() == {"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}
+        assert response.json()["error_code"] == ErrorCodes.OTP_LIMIT_EXCEEDED
+        # Phone codes keep the ordinary resend backoff after a burn, not the email hours.
+        assert response.json()["retry_after_seconds"] == pytest.approx(2 * 60, abs=5)
 
         valid_token.refresh_from_db()
         assert not valid_token.is_phone_validated

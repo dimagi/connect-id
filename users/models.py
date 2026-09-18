@@ -164,6 +164,14 @@ class BaseOTPDevice(SideChannelDevice):
     def is_exhausted(self):
         return self.verify_attempts_left == 0
 
+    @property
+    def resend_retry_after_seconds(self):
+        """Seconds until the next code may be sent, or 0 if one may be sent now."""
+        if self.otp_last_sent is None:
+            return 0
+        cooldown = self._resend_cooldown(self.is_exhausted)
+        return max(int((cooldown - (now() - self.otp_last_sent)).total_seconds()), 0)
+
     def _burn_token(self):
         self.token = None
         self.valid_until = now()
@@ -222,8 +230,7 @@ class BaseOTPDevice(SideChannelDevice):
                 self.attempts += 1
                 self.save()
             else:
-                retry_after = int((cooldown - (now() - self.otp_last_sent)).total_seconds())
-                raise RateLimitedError(retry_after)
+                raise RateLimitedError(int((cooldown - (now() - self.otp_last_sent)).total_seconds()))
 
     def _resend_cooldown(self, was_burned):
         """How long to wait before the next code goes out.
@@ -249,10 +256,7 @@ class BasePhoneDevice(BaseOTPDevice):
         send_sms(self.phone_number, self.otp_message)
 
     def generate_challenge(self):
-        try:
-            self._attempt_send(valid_secs=1800)
-        except RateLimitedError:
-            pass
+        self._attempt_send(valid_secs=1800)
         return self.otp_message
 
 
@@ -261,6 +265,13 @@ class PhoneDevice(BasePhoneDevice):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["phone_number", "user"], name="phone_number_user")]
+
+    def generate_challenge(self):
+        """The legacy phone endpoints have no way to report a wait, so a rate limit is a no-op."""
+        try:
+            return super().generate_challenge()
+        except RateLimitedError:
+            return self.otp_message
 
 
 class RecoveryStatus(models.Model):
