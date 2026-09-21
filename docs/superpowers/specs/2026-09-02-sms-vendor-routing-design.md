@@ -399,52 +399,6 @@ It stays correct under configuration change because history is recorded by vendo
 ordering is always read live. An admin re-ordering a chain between two sends cannot cause
 a vendor to be retried or wrongly skipped.
 
-### Worked example
-
-Malawi is the only configured country; every other country falls back to the default
-vendor.
-
-| `country` | `vendor` | `vendor_rank` | `is_active` |
-|---|---|---|---|
-| `MW` | `twilio` | 1 | ✓ |
-| `MW` | `vendorB` | 2 | ✓ |
-
-**Send 1 — a user on `+265991234567` requests their first OTP.**
-
-- No token exists yet, so `is_otp_close_to_expiry` is true
-- `tried_vendors` returns an empty set — no OTP has gone to this number in the last four hours
-- `resolve_chain` returns `[twilio(rank 1), vendorB(rank 2)]`
-- `candidates` is the whole chain, so `get_vendor` is handed `"twilio"`
-- The Twilio request succeeds
-- One buffered row — `twilio`, rank 1, `otp`, `success`, linked to this
-  `SessionPhoneDevice` — is written after the atomic block commits, alongside the existing
-  `attempts` and `otp_last_sent` update
-
-**Send 2 — no SMS arrives and the user taps resend.** Twilio accepted the message but
-never delivered it.
-
-- Two minutes have passed, clearing the `2**attempts` gate
-- `tried_vendors` returns `{"twilio"}` — the row written two minutes ago for this number
-  and purpose
-- `resolve_chain` returns the same two entries; it reads configuration, not history
-- `candidates` drops twilio, leaving `[vendorB(rank 2)]`
-- vendorB succeeds, and a row for `vendorB`, rank 2, `success` is written
-- The resend reached a different vendor. Only `SmsLog` knows about the first attempt — the
-  view, the user and `VendorRoute` are all unchanged
-
-**Send 2b — an admin re-orders the chain in between.** Suppose between Send 1 and Send 2
-the chain became `vendorB(rank 1), twilio(rank 2)`. Nothing changes: the already-tried set
-is still `{"twilio"}` by name, so `candidates` is `[vendorB(rank 1)]` and vendorB is still
-chosen. The same holds if a vendor is added, deleted or deactivated, because ranking always
-re-reads the live table.
-
-**Send 3 — the same user returns a week later.**
-
-- The week-old rows are outside the four-hour window, so nothing is excluded. They stay on
-  file for reporting
-- The token expired long ago, so it is regenerated and `attempts` resets
-- The send goes to twilio at rank 1 for Malawi
-
 ### Situations worth spelling out
 
 | Scenario | What the system does | What the user sees |
@@ -468,24 +422,3 @@ re-reads the live table.
 | Every vendor for a non-OTP purpose is excluded | `candidates` falls back to the full chain and rank 1 is retried; a success replaces its latest row | The chain resets rather than erroring |
 | The `ConfigurationSession` behind a logged device is deleted | `SET_NULL` blanks the foreign key; `phone_number`, `country`, `vendor`, `vendor_rank` and `status` all survive | Nothing; reporting is unaffected |
 | A test number | Returns before any database read or vendor call, and logs nothing | Unchanged |
-
-### Who owns what
-
-| Question | Answered by | Read | Written |
-|---|---|---|---|
-| Which vendors serve this country, in what order? | `VendorRoute` rows | Every send | Django admin only |
-| Which vendors has this number already tried? | `SmsLog.vendor` for this number and purpose inside `SMS_VENDOR_RETRY_WINDOW` — every attempt for `otp`, only latest-attempt failures otherwise | Every send | Once per vendor attempt, after the transaction |
-| How is a vendor performing, by country? | `SmsLog` aggregates | Reporting | Once per vendor attempt |
-| What happens if a country has no rows? | `settings.DEFAULT_VENDOR` | When resolution finds nothing | Deploy only |
-
-### Risks
-
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Concurrent resends on one device now wait behind a longer lock, because the `select_for_update` lock is held across the whole chain walk instead of one vendor call | A second request can block for up to `len(chain) × SMS_VENDOR_TIMEOUT_SECONDS` before getting its `RateLimitedError`, where today it returns almost immediately. The `retry_after` value itself is unaffected | `SMS_VENDOR_TIMEOUT_SECONDS = 5` bounds it at 15s for a three-vendor chain. Chains are expected to be 2–3 vendors |
-| A 5-second cap may cut off a vendor that is slow but working | An unnecessary failover, a misleading `vendor_error` row, and that vendor sidelined for the window | The cap is a setting and can be raised per environment. `SmsLog` makes the pattern visible — a spike in timeouts for one vendor is reportable |
-| We cannot tell "accepted" from "delivered" without delivery webhooks | Reliability figures overstate how well vendors do, and non-OTP messages that vanish are never detected | Accepted as a known limitation. For OTPs the user's resend acts as the missing signal. Delivery webhooks are separate future work |
-| Admin edits change live routing with no deploy or review step | A bad rank or an accidental deactivation misroutes real traffic immediately | Database constraints block duplicate vendors and duplicate active ranks, and `clean()` blocks invalid countries. An empty or broken chain falls back to the default vendor rather than failing |
-| Buffered log rows are lost if the process dies mid-send | A gap in reliability data | Device state is rolled back in the same case, so nothing is left half-recorded. Losing a row in a crash is preferable to holding the whole send open for a separate write |
-| A single non-OTP failure sidelines a vendor for that number for four hours | A working vendor is skipped for longer than needed | Deliberate. The fallback to the full chain when everything is excluded means it can never block a send outright |
-| `SmsLog` grows with SMS volume, and three indexes grow with it | Table and index bloat | 90-day retention sweep on a `created_at` index, following the existing `delete_old_messages` pattern |
