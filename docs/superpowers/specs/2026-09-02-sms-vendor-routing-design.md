@@ -233,18 +233,6 @@ in `ESCALATE_ON_SUCCESS`:
 | `otp` | it was attempted at all inside the window, whether it succeeded or failed | A resend tells us the first OTP never arrived. We have no delivery webhooks, so a `success` row only means the vendor accepted the message, not that the user got it |
 | everything else | its **most recent** attempt inside the window was not a success | Nothing in these flows tells us a message failed to arrive, so acceptance is the best signal we have. A vendor that is working should not be pushed aside over a failure we cannot see |
 
-Once a vendor is excluded it stays excluded until the window passes. Looking at the latest
-row per vendor, rather than "any failure in the window", is not a way of re-testing a
-vendor: an excluded vendor is never selected, so it never produces a newer row, so nothing
-replaces its failure. The single exception is when every vendor in the chain is excluded —
-`candidates` returns `untried or chain`, the full chain is walked from rank 1, the
-excluded vendor is retried there, and a success replaces its latest row. Otherwise a
-non-OTP vendor that errored stays out for the rest of the window.
-
-That is deliberate — a vendor that just failed this number should not be first choice
-again minutes later — but it does mean `SMS_VENDOR_RETRY_WINDOW` doubles as "how long a
-single non-OTP failure sidelines a vendor for that number".
-
 ### Vendor call timeout
 
 A new setting, `SMS_VENDOR_TIMEOUT_SECONDS = 5`, caps how long any single vendor API call
@@ -259,12 +247,6 @@ chain. Without a per-call cap, one unresponsive vendor could hold that lock inde
 and block every concurrent resend for the same device. With the cap, the worst case is
 bounded at `len(chain) × SMS_VENDOR_TIMEOUT_SECONDS` — 15 seconds for a three-vendor
 chain.
-
-The side effect: a vendor that is working but slower than 5 seconds is treated as an
-error. We fail over to the next vendor, write a `vendor_error` row, and sideline it for
-the rest of the window. Five seconds is generous next to Twilio's normal sub-second
-response, so this should be rare, but it is a real behaviour change and the setting is
-tunable per environment.
 
 ### Making sure log rows survive a failure
 
