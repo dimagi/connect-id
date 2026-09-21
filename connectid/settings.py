@@ -271,10 +271,22 @@ ALLOWED_CIDR_NETS = env.list("DJANGO_ALLOWED_CIDR_NETS", default=[])
 
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
-# Twilio settings
+# Twilio settings. Still read directly by the carrier lookup in utils/twilio.py.
 TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default=None)
 TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default=None)
 TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default=None)
+
+# Credentials for each SMS vendor, keyed by vendor name. Each entry is passed as
+# keyword arguments to the vendor class registered under that name in sms/registry.py.
+# This, not the TWILIO_* names above, is what the send path reads: override it as a
+# whole rather than overriding an individual TWILIO_* setting.
+SMS_VENDORS = {
+    "twilio": {
+        "account_sid": TWILIO_ACCOUNT_SID,
+        "auth_token": TWILIO_AUTH_TOKEN,
+        "messaging_service": TWILIO_MESSAGING_SERVICE,
+    },
+}
 
 EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Connect <noreply@commcare-connect.org>")
@@ -315,7 +327,12 @@ if FCM_PRIVATE_KEY:
     from firebase_admin import credentials, initialize_app
 
     creds = credentials.Certificate(FCM_CREDENTIALS)
-    default_app = initialize_app(credential=creds)
+    # Cap the FCM HTTP timeout well under Gunicorn's worker timeout (default 120s otherwise),
+    # so a slow Firebase round-trip fails fast instead of outliving the worker.
+    default_app = initialize_app(
+        credential=creds,
+        options={"httpTimeout": env.int("FCM_HTTP_TIMEOUT_SECONDS", default=15)},
+    )
 
 GOOGLE_APPLICATION_CREDENTIALS = {
     "type": "service_account",
@@ -349,6 +366,7 @@ COMMCARE_CONNECT_CLIENT_SECRET = env("COMMCARE_CONNECT_CLIENT_SECRET", default="
 CONNECT_INVITED_USER_URL = "https://connect.dimagi.com/users/invited_user/"
 CONNECT_RESEND_INVITES_URL = "https://connect.dimagi.com/users/resend_invites/"
 CONNECT_TOGGLES_URL = "https://connect.dimagi.com/users/toggles/"
+CONNECT_UPDATE_PROFILE_URL = "https://connect.dimagi.com/users/update_profile/"
 
 # List of countries that are blacklisted from using PersonalID
 # Example: ["us", "ca", "gb"] (Alpha-2 country codes)

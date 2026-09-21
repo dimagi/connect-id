@@ -12,13 +12,20 @@ from django.urls import reverse, reverse_lazy
 from django.utils.timezone import now
 from faker import Faker
 from fcm_django.models import FCMDevice
+from phonenumbers.phonenumberutil import NumberParseException
 from waffle.testutils import override_switch
 
 from flags.const import EMAIL_OTP_VERIFICATION
 from payments.models import PaymentProfile
 from services.ai.ocs import OpenChatStudio
 from test_utils.decorators import skip_app_integrity_check
-from users.const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
+from users.const import (
+    MAX_OTP_VERIFY_ATTEMPTS,
+    NO_RECOVERY_PHONE_ERROR,
+    TEST_NUMBER_PREFIX,
+    ErrorCodes,
+    SMSMethods,
+)
 from users.exceptions import RateLimitedError
 from users.factories import (
     ConfigurationSessionFactory,
@@ -771,6 +778,35 @@ class TestConfirmDeactivation(BaseTestDeactivation):
 
 
 @pytest.mark.django_db
+class TestFetchUsers:
+    @property
+    def endpoint(self):
+        return reverse("fetch_users")
+
+    def test_no_authentication(self, client):
+        assert client.get(self.endpoint).status_code == 403
+
+    def test_returns_matching_active_users(self, authed_client):
+        user = UserFactory.create(phone_number="+27821234567")
+        UserFactory.create(phone_number="+27829999999")
+
+        response = authed_client.get(self.endpoint, {"phone_numbers": [str(user.phone_number)]})
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "found_users": [{"username": user.username, "phone_number": str(user.phone_number), "name": user.name}]
+        }
+
+    def test_excludes_inactive_users(self, authed_client):
+        inactive = UserFactory.create(phone_number="+27821112222", is_active=False)
+
+        response = authed_client.get(self.endpoint, {"phone_numbers": [str(inactive.phone_number)]})
+
+        assert response.status_code == 200
+        assert response.json() == {"found_users": []}
+
+
+@pytest.mark.django_db
 class TestGetDemoUsers:
     def setup_method(self):
         self.valid_user = UserFactory.create(
@@ -1119,7 +1155,8 @@ class TestUpdateProfile:
 
     url = reverse("update_profile")
 
-    def test_success(self, auth_device, user):
+    @mock.patch("users.views.push_profile_to_connect.delay")
+    def test_success(self, mock_push, auth_device, user):
         data = {"name": "FooBar", "secondary_phone": "+27731234567"}
         user.phone_number = self.test_number
         user.save()
@@ -1168,6 +1205,44 @@ class TestUpdateProfile:
         assert response.status_code == 400
         assert isinstance(response, JsonResponse)
         assert response.json() == {"recovery_phone": ["The phone number entered is not valid."]}
+
+    @mock.patch("users.views.push_profile_to_connect.delay")
+    def test_name_change_is_pushed_to_connect(self, mock_push, auth_device, user):
+        # UserFactory's Faker phone number does not always survive full_clean().
+        user.phone_number = self.test_number
+        user.save()
+
+        response = auth_device.post(self.url, {"name": "New Name"})
+
+        assert response.status_code == 200
+        mock_push.assert_called_once_with(user.username, "New Name")
+
+    @mock.patch("users.views.push_profile_to_connect.delay")
+    def test_unchanged_name_is_not_pushed(self, mock_push, auth_device, user):
+        response = auth_device.post(self.url, {"name": user.name})
+
+        assert response.status_code == 200
+        mock_push.assert_not_called()
+
+    @mock.patch("users.services.boto3.client")
+    @mock.patch("users.views.push_profile_to_connect.delay")
+    def test_photo_only_update_is_not_pushed(self, mock_push, mock_boto3_client, auth_device):
+        mock_boto3_client.return_value = mock.MagicMock()
+        data = {"photo": "data:image/jpg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEB"}
+
+        auth_device.post(self.url, data)
+
+        mock_push.assert_not_called()
+
+    @mock.patch("users.views.push_profile_to_connect.delay")
+    def test_invalid_update_is_not_pushed(self, mock_push, auth_device, user):
+        user.phone_number = self.test_number
+        user.save()
+
+        response = auth_device.post(self.url, {"name": "New Name", "secondary_phone": "-12415"})
+
+        assert response.status_code == 400
+        mock_push.assert_not_called()
 
 
 class TestValidateFirebaseIDToken:
@@ -1491,7 +1566,7 @@ class TestStartConfigurationView:
 
         sms_method = response.json().get("sms_method")
         assert sms_method == SMSMethods.FIREBASE
-        assert response.json().get("otp_fallback")
+        assert response.json().get("otp_fallback") is True
 
     @skip_app_integrity_check
     @patch("users.models.ConfigurationSession.country_code")
@@ -1528,6 +1603,22 @@ class TestStartConfigurationView:
         )
         assert response.status_code == 503
         assert response.json() == {"error_code": AppIntegrityErrorCodes.CONFIGURATION_TEMPORARILY_UNAVAILABLE}
+
+    @patch("utils.app_integrity.decorators.AppIntegrityService")
+    @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
+    def test_returns_503_when_number_is_unparseable(self, check_number_mock, integrity_service_mock, client, caplog):
+        check_number_mock.side_effect = NumberParseException(
+            NumberParseException.NOT_A_NUMBER, "The string supplied did not seem to be a phone number."
+        )
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": "not-a-phone-number", "gps_location": "1.2 3.4"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.status_code == 503
+        assert response.json() == {"error_code": AppIntegrityErrorCodes.MALFORMED_PHONE_NUMBER}
+        integrity_service_mock.assert_not_called()
 
     @skip_app_integrity_check
     @patch("users.models.ConfigurationSession.country_code")
@@ -1609,6 +1700,58 @@ class TestCheckUserSimilarity:
         assert response.status_code == 200
         assert response.json()["account_exists"] is False
         assert response.json()["photo"] == ""
+
+    @patch.object(ConnectUser, "get_photo")
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_masked_email_returned_for_matched_account(
+        self, check_similarity_mock, get_photo_mock, authed_client_token, user, valid_token
+    ):
+        check_similarity_mock.return_value = True
+        get_photo_mock.return_value = ""
+
+        user.name = "ExistingUser"
+        user.email = "someone@dimagi.com"
+        user.save()
+
+        response = authed_client_token.post(reverse(self.urlname), data={"name": user.name})
+        assert response.status_code == 200
+        assert response.json()["masked_email"] == "s*****e@dimagi.com"
+        # Never the real address.
+        assert "someone@" not in json.dumps(response.json())
+
+    @patch.object(ConnectUser, "get_photo")
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_masked_email_omitted_when_account_has_no_email(
+        self, check_similarity_mock, get_photo_mock, authed_client_token, user, valid_token
+    ):
+        check_similarity_mock.return_value = True
+        get_photo_mock.return_value = ""
+
+        user.name = "ExistingUser"
+        user.save()
+        assert not user.email
+
+        response = authed_client_token.post(reverse(self.urlname), data={"name": user.name})
+        assert response.status_code == 200
+        assert "masked_email" not in response.json()
+
+    @patch.object(ConnectUser, "get_photo")
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_masked_email_omitted_when_account_email_is_unusable(
+        self, check_similarity_mock, get_photo_mock, authed_client_token, user, valid_token
+    ):
+        check_similarity_mock.return_value = True
+        get_photo_mock.return_value = ""
+
+        user.name = "ExistingUser"
+        # Nothing validates on the way in, so an address we could never send to can sit on
+        # an account. Offer no email factor at all rather than a mailbox we cannot reach.
+        user.email = "notanemail"
+        user.save()
+
+        response = authed_client_token.post(reverse(self.urlname), data={"name": user.name})
+        assert response.status_code == 200
+        assert "masked_email" not in response.json()
 
 
 class TestCompleteProfileView:
@@ -2417,3 +2560,153 @@ class TestVerifyEmailOtp:
         assert response.status_code == 200
         user.refresh_from_db()
         assert user.email == "verified@example.com"
+
+
+# A token is always six digits, so this can never accidentally be the right one.
+WRONG_OTP = "not-the-token"
+
+
+@pytest.mark.django_db
+class TestOtpVerifyLimit:
+    """The failed-verify limit as the OTP endpoints surface it."""
+
+    @staticmethod
+    def _exhaust(client, url, data, expected_incorrect_code):
+        """Submit MAX_OTP_VERIFY_ATTEMPTS wrong codes and return the final response."""
+        for attempt in range(MAX_OTP_VERIFY_ATTEMPTS):
+            response = client.post(url, data=data, format="json")
+            assert response.status_code == 401
+            if attempt < MAX_OTP_VERIFY_ATTEMPTS - 1:
+                assert response.json() == expected_incorrect_code
+        return response
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_edit_profile_email_otp_limit(self, user_bearer_client, user):
+        """Edit-profile path: OAuth2 client verifying against a UserEmailOTPDevice."""
+        device = UserEmailOTPDeviceFactory(user=user, email="new@example.com")
+        with mock.patch("users.email_utils.send_email_otp_message"):
+            device.generate_challenge()
+
+        response = self._exhaust(
+            user_bearer_client,
+            reverse("verify_email_otp"),
+            {"email": "new@example.com", "otp": WRONG_OTP},
+            {"error_code": ErrorCodes.INCORRECT_OTP},
+        )
+        assert response.json() == {"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}
+
+        device.refresh_from_db()
+        assert device.token is None
+
+        user.refresh_from_db()
+        assert user.is_active
+        assert not user.is_locked
+        assert not user.email
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_registration_email_otp_limit(self, session_client):
+        """Registration path: configuration session verifying against a SessionEmailOTPDevice."""
+        session = ConfigurationSessionFactory(is_phone_validated=True)
+        device = SessionEmailOTPDeviceFactory(session=session, email="new@example.com")
+        with mock.patch("users.email_utils.send_email_otp_message"):
+            device.generate_challenge()
+
+        response = self._exhaust(
+            session_client(session),
+            reverse("verify_email_otp"),
+            {"email": "new@example.com", "otp": WRONG_OTP},
+            {"error_code": ErrorCodes.INCORRECT_OTP},
+        )
+        assert response.json() == {"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}
+
+        session.refresh_from_db()
+        assert not session.verified_email
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_fresh_otp_verifies_after_a_burn(self, user_bearer_client, user):
+        """Exhausting the limit costs the token, not the ability to try again."""
+        device = UserEmailOTPDeviceFactory(user=user, email="new@example.com")
+        with mock.patch("users.email_utils.send_email_otp_message"):
+            device.generate_challenge()
+            self._exhaust(
+                user_bearer_client,
+                reverse("verify_email_otp"),
+                {"email": "new@example.com", "otp": WRONG_OTP},
+                {"error_code": ErrorCodes.INCORRECT_OTP},
+            )
+            # A burned email code triggers a one hour cooldown, so step past that to get a new one.
+            device.refresh_from_db()
+            device.otp_last_sent = now() - timedelta(hours=1)
+            device.save()
+            device.generate_challenge()
+
+        response = user_bearer_client.post(
+            reverse("verify_email_otp"),
+            data={"email": "new@example.com", "otp": device.token},
+            format="json",
+        )
+        assert response.status_code == 200
+        user.refresh_from_db()
+        assert user.email == "new@example.com"
+
+    def test_invited_user_phone_otp_limit(self, authed_client_token, valid_token, user):
+        """Invited-user phone path: confirm_session_otp against a SessionPhoneDevice."""
+        valid_token.is_phone_validated = False
+        valid_token.save()
+        device = SessionPhoneDeviceFactory(session=valid_token, phone_number=valid_token.phone_number)
+        with mock.patch("users.models.send_sms"):
+            device.generate_challenge()
+
+        response = self._exhaust(
+            authed_client_token,
+            reverse("confirm_session_otp"),
+            {"otp": WRONG_OTP},
+            {"error": ErrorCodes.INCORRECT_OTP},
+        )
+        assert response.json() == {"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}
+
+        valid_token.refresh_from_db()
+        assert not valid_token.is_phone_validated
+
+        user.refresh_from_db()
+        assert user.is_active
+        assert not user.is_locked
+
+    def test_legacy_phone_view_keeps_bare_401_but_burns_token(self, auth_device, user):
+        """confirm_otp's clients do not know OTP_LIMIT_EXCEEDED, so its response is unchanged."""
+        device = PhoneDeviceFactory(user=user, phone_number=user.phone_number)
+        with mock.patch("users.models.send_sms"):
+            device.generate_challenge()
+        correct_token = device.token
+
+        for _ in range(MAX_OTP_VERIFY_ATTEMPTS):
+            response = auth_device.post(reverse("confirm_otp"), data={"token": WRONG_OTP})
+            assert response.status_code == 401
+            assert response.json() == {"error": "OTP token is incorrect"}
+
+        # The token is dead, so even the right code is now refused.
+        response = auth_device.post(reverse("confirm_otp"), data={"token": correct_token})
+        assert response.status_code == 401
+        user.refresh_from_db()
+        assert not user.phone_validated
+
+    def test_payment_profile_otp_keeps_bare_401_but_burns_token(self, auth_device, user):
+        """Same for the live non-Connect payment-profile flow."""
+        profile = PaymentProfile.objects.create(
+            user=user, phone_number=user.phone_number, owner_name="Owner", status=PaymentProfile.PENDING
+        )
+        device = PhoneDeviceFactory(user=user, phone_number=profile.phone_number)
+        with mock.patch("users.models.send_sms"):
+            device.generate_challenge()
+        correct_token = device.token
+
+        url = reverse("confirm_payment_profile_otp")
+        for _ in range(MAX_OTP_VERIFY_ATTEMPTS):
+            response = auth_device.post(url, data={"token": WRONG_OTP})
+            assert response.status_code == 401
+            assert response.json() == {"error": "OTP token is incorrect"}
+
+        response = auth_device.post(url, data={"token": correct_token})
+        assert response.status_code == 401
+        profile.refresh_from_db()
+        assert not profile.is_verified

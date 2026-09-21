@@ -3,11 +3,18 @@ from datetime import datetime
 from unittest import mock
 
 import pytest
+import requests
 from django.utils.timezone import make_aware
 
 from users.factories import UserFactory
 from users.models import ConnectUser
-from users.tasks import CONNECT_USER_DUMP_FIELDS, BigQueryUploader, CSVGenerator, SupersetUploader
+from users.tasks import (
+    CONNECT_USER_DUMP_FIELDS,
+    BigQueryUploader,
+    CSVGenerator,
+    SupersetUploader,
+    push_profile_to_connect,
+)
 
 
 @pytest.fixture
@@ -118,3 +125,42 @@ def test_bigquery_uploader_loads_csv(tmp_path, settings):
     call_kwargs = mock_client.load_table_from_file.call_args
     assert call_kwargs[0][1] == "my_project.my_dataset.configuration_session_dump"
     mock_job.result.assert_called_once()
+
+
+def _http_error(status_code):
+    response = mock.Mock(status_code=status_code)
+    return requests.exceptions.HTTPError(f"HTTP {status_code}", response=response)
+
+
+class TestPushProfileToConnect:
+    @mock.patch("users.tasks.update_connect_user_profile")
+    def test_delegates_to_the_connect_client(self, mock_update):
+        push_profile_to_connect("abc123", "New Name")
+
+        mock_update.assert_called_once_with("abc123", "New Name")
+
+    @pytest.mark.parametrize("status_code", [400, 404])
+    @mock.patch("users.tasks.update_connect_user_profile")
+    def test_permanent_rejections_are_not_retried(self, mock_update, status_code):
+        mock_update.side_effect = _http_error(status_code)
+
+        # Returning rather than raising is what stops Celery from retrying.
+        assert push_profile_to_connect("abc123", "New Name") is None
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            _http_error(429),
+            _http_error(500),
+            _http_error(503),
+            requests.exceptions.HTTPError("no response attached"),
+            requests.exceptions.Timeout("connect slow"),
+        ],
+        ids=["429", "500", "503", "no-response", "timeout"],
+    )
+    @mock.patch("users.tasks.update_connect_user_profile")
+    def test_retryable_errors_propagate_so_celery_retries(self, mock_update, error):
+        mock_update.side_effect = error
+
+        with pytest.raises(requests.exceptions.RequestException):
+            push_profile_to_connect("abc123", "New Name")

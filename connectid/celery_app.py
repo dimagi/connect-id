@@ -36,4 +36,8 @@ app.conf.beat_schedule = {
         "task": "users.tasks.upload_configuration_sessions",
         "schedule": crontab(hour=2, minute=0),
     },
+    "clear_expired_oauth_tokens": {
+        "task": "users.tasks.clear_expired_oauth_tokens",
+        "schedule": crontab(day_of_week="sun", hour=2, minute=0),
+    },
 }

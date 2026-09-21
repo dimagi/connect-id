@@ -30,7 +30,8 @@ from waffle.decorators import waffle_switch
 from flags.const import EMAIL_OTP_VERIFICATION
 from flags.utils import get_user_toggles
 from services.ai.ocs import OpenChatStudio
-from utils import get_ip, get_sms_sender, send_sms
+from sms import send_sms
+from utils import get_ip
 from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
 from utils.app_integrity.decorators import require_app_integrity
 from utils.app_integrity.exceptions import DuplicateSampleRequestError
@@ -40,6 +41,7 @@ from utils.rest_framework import ClientProtectedResourceAuth
 from .auth import DeviceBasicAuthentication, IssuingCredentialsAuth, SessionTokenAuthentication
 from .const import NO_RECOVERY_PHONE_ERROR, TEST_NUMBER_PREFIX, ErrorCodes, SMSMethods
 from .device_utils import DEVICE_RECENT_ACCESS_THRESHOLD
+from .email_utils import mask_email
 from .exceptions import RateLimitedError, RecoveryPinNotSetError
 from .fcm_utils import create_update_device
 from .models import (
@@ -58,6 +60,7 @@ from .models import (
 )
 from .serializers import UserCredentialSerializer
 from .services import upload_photo_to_s3
+from .tasks import push_profile_to_connect
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +134,7 @@ def start_device_configuration(request):
         response_data["sms_method"] = SMSMethods.PERSONAL_ID if request.invited_user else SMSMethods.FIREBASE
     else:
         response_data["sms_method"] = SMSMethods.FIREBASE
-        response_data["otp_fallback"] = token_session.invited_user
+        response_data["otp_fallback"] = True
 
     return JsonResponse(response_data)
 
@@ -470,9 +473,10 @@ def update_profile(request):
     data = request.data
     user = request.user
     changed = False
-    if data.get("name"):
+    name_changed = False
+    if data.get("name") and data["name"] != user.name:
         user.name = data["name"]
-        changed = True
+        changed = name_changed = True
     if data.get("secondary_phone"):
         user.recovery_phone = data["secondary_phone"]
         changed = True
@@ -486,6 +490,8 @@ def update_profile(request):
         except ValidationError as e:
             return JsonResponse(e.message_dict, status=400)
         user.save()
+    if name_changed:
+        push_profile_to_connect.delay(user.username, user.name)
     return HttpResponse()
 
 
@@ -650,11 +656,12 @@ class FetchUsers(ClientProtectedResourceMixin, View):
     def get(self, request, *args, **kwargs):
         numbers = request.GET.getlist("phone_numbers")
         results = {}
-        found_users = list(
-            ConnectUser.objects.filter(phone_number__in=numbers, is_active=True).values(
-                "username", "phone_number", "name"
+        found_users = [
+            {**row, "phone_number": str(row["phone_number"])}
+            for row in ConnectUser.objects.filter(phone_number__in=numbers, is_active=True).values(
+                "username", "name", "phone_number"
             )
-        )
+        ]
         results["found_users"] = found_users
         return JsonResponse(results)
 
@@ -676,7 +683,10 @@ class GetDemoUsers(ClientProtectedResourceMixin, View):
             .values("phone_number", "token")
         )
 
-        demo_users = list(demo_phone_devices) + list(demo_connect_users)
+        demo_users = [
+            {**row, "phone_number": str(row["phone_number"])}
+            for row in list(demo_phone_devices) + list(demo_connect_users)
+        ]
         sorted_demo_users = sorted(
             demo_users,
             key=lambda x: x["phone_number"],
@@ -799,8 +809,7 @@ class ForwardHQInvite(APIView):
         Thanks.
         -The ConnectID Team.
         """
-        sender = get_sms_sender(user.phone_number.country_code)
-        send_sms(user.phone_number.as_e164, message, sender)
+        send_sms(user.phone_number, message)
         return JsonResponse({"success": True})
 
 
@@ -959,12 +968,19 @@ def check_user_similarity(request):
         if not request.auth.invited_user and user_name_is_similar is not None:
             is_same_user = user_name_is_similar
 
-    return JsonResponse(
-        {
-            "account_exists": is_same_user,
-            "photo": existing_user.get_photo() if is_same_user else "",
-        }
-    )
+    response_data = {
+        "account_exists": is_same_user,
+        "photo": existing_user.get_photo() if is_same_user else "",
+    }
+
+    if is_same_user:
+        # Absent when the account has no address, or one we could not send to — mobile
+        # only offers the email recovery factor when this field comes back.
+        masked_email = mask_email(existing_user.email)
+        if masked_email:
+            response_data["masked_email"] = masked_email
+
+    return JsonResponse(response_data)
 
 
 @api_view(["POST"])
@@ -990,6 +1006,8 @@ def confirm_session_otp(request):
     data = request.data
     verified = device.verify_token(data.get("otp"))
     if not verified:
+        if device.is_exhausted:
+            return JsonResponse({"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}, status=401)
         return JsonResponse({"error": ErrorCodes.INCORRECT_OTP}, status=401)
     request.auth.is_phone_validated = True
     request.auth.save()
@@ -1049,6 +1067,8 @@ def verify_email_otp(request):
 
     if not device.verify_token(otp):
         logger.warning("Failed email OTP verification for email %s***", email.split("@")[0][:3])
+        if device.is_exhausted:
+            return JsonResponse({"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED}, status=401)
         return JsonResponse({"error_code": ErrorCodes.INCORRECT_OTP}, status=401)
 
     if isinstance(request.auth, ConfigurationSession):

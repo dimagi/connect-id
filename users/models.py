@@ -19,11 +19,11 @@ from geopy.geocoders import MapBox
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 from phonenumber_field.modelfields import PhoneNumberField
 
+from sms import send_sms
 from users.exceptions import RateLimitedError, RecoveryPinNotSetError
 from users.services import get_user_photo_base64
-from utils import get_sms_sender, send_sms
 
-from .const import MAX_BACKUP_CODE_ATTEMPTS, TEST_NUMBER_PREFIX
+from .const import MAX_BACKUP_CODE_ATTEMPTS, MAX_OTP_BURN_COOLDOWN_HOURS, MAX_OTP_VERIFY_ATTEMPTS
 
 
 class ConnectUser(AbstractUser):
@@ -87,9 +87,7 @@ class ConnectUser(AbstractUser):
             f"Warning: This action is irreversible. If you didn't request deactivation, "
             f"please ignore this message."
         )
-        if not self.phone_number.raw_input.startswith(TEST_NUMBER_PREFIX):
-            sender = get_sms_sender(self.phone_number.country_code)
-            send_sms(self.phone_number.as_e164, message, sender)
+        send_sms(self.phone_number, message)
         return message
 
     def get_photo(self):
@@ -140,10 +138,14 @@ class UserKey(models.Model):
 
 
 class BaseOTPDevice(SideChannelDevice):
-    """Abstract base for OTP devices with exponential backoff."""
+    """Abstract base for OTP devices with exponential backoff and a failed-verify limit."""
 
     otp_last_sent = models.DateTimeField(null=True, blank=True)
     attempts = models.IntegerField(default=1)
+    failed_verifications = models.IntegerField(default=0)
+    burned_tokens = models.IntegerField(default=0)
+
+    burn_cooldown_in_hours = False
 
     class Meta:
         abstract = True
@@ -151,8 +153,44 @@ class BaseOTPDevice(SideChannelDevice):
     @property
     def is_otp_close_to_expiry(self):
         if self.valid_until is None:
-            return True  # no token yet — regenerate immediately
+            return True
         return self.valid_until - now() <= timedelta(minutes=5)
+
+    @property
+    def verify_attempts_left(self):
+        return max(MAX_OTP_VERIFY_ATTEMPTS - self.failed_verifications, 0)
+
+    @property
+    def is_exhausted(self):
+        return self.verify_attempts_left == 0
+
+    def _burn_token(self):
+        self.token = None
+        self.valid_until = now()
+        self.burned_tokens += 1
+
+    def verify_token(self, token):
+        """Verify a token, counting wrong guesses and burning the token once they run out."""
+        with transaction.atomic():
+            # Lock this device's row and re-read the counter and token under the lock, so
+            # concurrent wrong guesses each count rather than collapsing into one.
+            locked = self.__class__.objects.select_for_update().get(pk=self.pk)
+            self.failed_verifications = locked.failed_verifications
+            self.burned_tokens = locked.burned_tokens
+            self.token = locked.token
+            self.valid_until = locked.valid_until
+            if self.is_exhausted:
+                return False
+            verified = super().verify_token(token)
+            if verified:
+                self.failed_verifications = 0
+                self.burned_tokens = 0
+            else:
+                self.failed_verifications += 1
+                if self.is_exhausted:
+                    self._burn_token()
+            self.save()
+            return verified
 
     def _send_otp(self):
         raise NotImplementedError
@@ -167,19 +205,34 @@ class BaseOTPDevice(SideChannelDevice):
             self.attempts = locked.attempts
             self.token = locked.token
             self.valid_until = locked.valid_until
+            self.failed_verifications = locked.failed_verifications
+            self.burned_tokens = locked.burned_tokens
+            was_burned = False
             if self.is_otp_close_to_expiry:
-                self.otp_last_sent = None
+                was_burned = self.is_exhausted  # read before the counter is cleared
+                self.failed_verifications = 0
+                if not was_burned:
+                    self.otp_last_sent = None
+                    self.attempts = 0
                 self.generate_token(valid_secs=valid_secs)
-                self.attempts = 0
-            wait_time = 2**self.attempts
-            if self.otp_last_sent is None or now() - self.otp_last_sent >= timedelta(minutes=wait_time):
+            cooldown = self._resend_cooldown(was_burned)
+            if self.otp_last_sent is None or now() - self.otp_last_sent >= cooldown:
                 self._send_otp()
                 self.otp_last_sent = now()
                 self.attempts += 1
                 self.save()
             else:
-                retry_after = int((timedelta(minutes=wait_time) - (now() - self.otp_last_sent)).total_seconds())
+                retry_after = int((cooldown - (now() - self.otp_last_sent)).total_seconds())
                 raise RateLimitedError(retry_after)
+
+    def _resend_cooldown(self, was_burned):
+        """How long to wait before the next code goes out.
+        Email OTPs require cooldown in hours when burned
+        """
+        if not (was_burned and self.burn_cooldown_in_hours):
+            return timedelta(minutes=2**self.attempts)
+        burns = max(self.burned_tokens, 1)
+        return timedelta(hours=min(2 ** (burns - 1), MAX_OTP_BURN_COOLDOWN_HOURS))
 
 
 class BasePhoneDevice(BaseOTPDevice):
@@ -193,9 +246,7 @@ class BasePhoneDevice(BaseOTPDevice):
         return f"Your verification token from commcare connect is {self.token}"
 
     def _send_otp(self):
-        if not self.phone_number.raw_input.startswith(TEST_NUMBER_PREFIX):
-            sender = get_sms_sender(self.phone_number.country_code)
-            send_sms(self.phone_number.as_e164, self.otp_message, sender)
+        send_sms(self.phone_number, self.otp_message)
 
     def generate_challenge(self):
         try:
@@ -295,8 +346,7 @@ class UserCredential(models.Model):
             message = (
                 f"You have been given credential '{credential.title}'. Please click the following link to accept {url}"
             )
-            sender = get_sms_sender(user.phone_number.country_code)
-            send_sms(user.phone_number.as_e164, message, sender)
+            send_sms(user.phone_number, message)
 
 
 class ConfigurationSession(models.Model):
@@ -373,6 +423,8 @@ class SessionPhoneDevice(BasePhoneDevice):
 
 class BaseEmailOTPDevice(BaseOTPDevice):
     email = models.EmailField()
+
+    burn_cooldown_in_hours = True
 
     class Meta:
         abstract = True

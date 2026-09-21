@@ -57,7 +57,7 @@ deploy/             # Kamal deployment config
 
 ## Tech Stack
 
-- **Python 3.11**, Django 4.1, Django REST Framework
+- **Python 3.11**, Django 5.2 (LTS), Django REST Framework
 - **PostgreSQL** + **Redis** (Celery broker/cache)
 - **Celery** with beat scheduler for async tasks
 - **OAuth2/OIDC** via django-oauth-toolkit
@@ -72,14 +72,14 @@ deploy/             # Kamal deployment config
 
 - Ruff formatter, line-length 119
 - Ruff linter (E/W/F/I rules, line-length 119, excludes migrations) — import sorting replaces isort
-- Pre-commit hooks enforce all of the above plus pyupgrade (3.11+) and django-upgrade (4.1)
+- Pre-commit hooks enforce all of the above plus pyupgrade (3.11+) and django-upgrade (4.2)
 
 ## Gotchas
 
 - **Custom user model**: `ConnectUser` extends AbstractUser. Phone number is the primary identifier, not email/username.
 - **Phone-based auth**: Phone numbers must be unique among active users. Numbers with `TEST_NUMBER_PREFIX` bypass SMS sending.
 - **Recovery pin**: Must use `set_recovery_pin()` method (hashes internally), never assign directly.
-- **Celery runs eagerly**: `CELERY_TASK_ALWAYS_EAGER = True` in settings, so async tasks execute synchronously in dev/test.
+- **Celery is NOT eager by default**: `CELERY_TASK_ALWAYS_EAGER` defaults to `False` (env-overridable) and is not overridden in dev/test/CI, so `.delay()`/`.apply_async()` enqueue to the broker rather than running inline. In tests, call tasks directly or via `.apply()` to run them synchronously; a running worker + Redis broker are required for `.delay()` to actually execute.
 - **API versioning**: Via Accept header, defaults to v2.0. v1.0 is deprecated but still supported.
 - **App integrity**: All app requests validate Google Play Integrity tokens. Use `@skip_app_integrity_check` decorator in tests.
 - **Docker Compose PostgreSQL**: Runs on port **5433** (not 5432).
@@ -92,7 +92,7 @@ deploy/             # Kamal deployment config
 - pytest with pytest-django, `--reuse-db` enabled by default
 - Factory Boy factories in each app (`users/factories.py`, `messaging/factories.py`, etc.)
 - `test_utils/decorators.py` has `@skip_app_integrity_check` for bypassing integrity checks in tests
-- CI runs linting + pytest against PostgreSQL 12
+- CI runs linting + pytest against PostgreSQL 15
 
 ## Environment
 

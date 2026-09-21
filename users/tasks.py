@@ -2,17 +2,20 @@ import csv
 import logging
 import tempfile
 from datetime import date, datetime
+from http import HTTPStatus
 from pathlib import Path
 
 import requests
 from celery import shared_task
 from django.conf import settings
+from django.core.management import call_command
 from google.auth.exceptions import GoogleAuthError
 from google.cloud import bigquery
 from google.oauth2 import service_account
 from phonenumber_field.phonenumber import PhoneNumber
 
 from users.models import ConfigurationSession, ConnectUser
+from utils.connect import update_connect_user_profile
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +196,22 @@ class BigQueryUploader:
         return True
 
 
+@shared_task(
+    name="users.tasks.push_profile_to_connect",
+    autoretry_for=(requests.RequestException,),
+    retry_backoff=True,
+    max_retries=5,
+)
+def push_profile_to_connect(username, name):
+    try:
+        update_connect_user_profile(username, name)
+    except requests.HTTPError as e:
+        status = getattr(e.response, "status_code", None)
+        if status is None or status >= 500 or status == HTTPStatus.TOO_MANY_REQUESTS:
+            raise
+        logger.error("Connect rejected the profile push for %s: %s", username, e)
+
+
 @shared_task(name="users.tasks.upload_configuration_sessions")
 def upload_configuration_sessions():
     table_name = settings.BIGQUERY_CONFIGURATION_SESSION_TABLE
@@ -210,3 +229,9 @@ def upload_connect_users_to_superset():
     with CSVGenerator(ConnectUser.objects.all(), CONNECT_USER_DUMP_FIELDS, max_rows=100000) as csv_path:
         uploaded = SupersetUploader(table_name).upload(csv_path)
     logger.info("ConnectUser upload to Superset finished (uploaded=%s)", uploaded)
+
+
+@shared_task(name="users.tasks.clear_expired_oauth_tokens")
+def clear_expired_oauth_tokens():
+    # https://django-oauth-toolkit.readthedocs.io/en/latest/management_commands.html
+    call_command("cleartokens")
