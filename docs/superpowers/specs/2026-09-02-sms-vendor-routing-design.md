@@ -61,7 +61,7 @@ not already tried recently.**
 - For **every other kind of message**, only a failure counts. Nothing in those flows tells
   us the message did not arrive, so we should not sideline a vendor that reported success.
 
-If a country has no rows configured, we fall back to Twilio exactly as today. An empty
+If a country has no vendor configuration configured, we fall back to Twilio exactly as today. An empty
 table therefore reproduces current behaviour, which makes this safe to deploy before any
 configuration exists.
 
@@ -359,14 +359,6 @@ task deletes rows older than 90 days, using the same pattern as
 after 7 days). Rows whose configuration session has already been cleaned up carry a `NULL`
 device and are trimmed on the same schedule.
 
-#### Who owns what
-
-| Question | Answered by | Read | Written |
-|---|---|---|---|
-| Which vendors serve this country, in what order? | `VendorRoute` rows | Every send | Django admin only |
-| Which vendors has this number already tried? | `SmsLog.vendor` for this number and purpose, inside `SMS_VENDOR_RETRY_WINDOW` — every attempt for `otp`, only latest-attempt failures otherwise | Every send | Once per vendor attempt, written after the transaction |
-| How is a vendor performing, by country? | `SmsLog` aggregates | Reporting | Once per vendor attempt |
-| What if the country has no rows? | `settings.DEFAULT_VENDOR` | When resolution yields nothing | Deploy only |
 
 ### 3.2 Data model changes
 
@@ -454,65 +446,7 @@ reporting can compare a vendor's performance while it was first choice against i
 performance while it was third. Selection always ranks using the `vendor_rank` currently held
 in `VendorRoute`.
 
-### 3.3 Worked example
-
-Malawi is the only configured country; every other country falls through to
-`DEFAULT_VENDOR`. The `VendorRoute` table:
-
-| `country` | `vendor` | `vendor_rank` | `is_active` |
-|---|---|---|---|
-| `MW` | `twilio` | 1 | ✓ |
-| `MW` | `vendorB` | 2 | ✓ |
-
-**Send 1 — a user on `+265991234567` requests their first OTP.**
-
-- No token exists, so `is_otp_close_to_expiry` is true
-- `tried_vendors` returns an empty set — no OTP has gone to this number in the last four hours
-- `resolve_chain` returns `[twilio(rank 1), vendorB(rank 2)]`
-- `candidates` is the whole chain, so `get_vendor` is handed `"twilio"`
-- The Twilio request succeeds
-- One buffered row — `twilio`, rank 1, `otp`, `success`, linked to this `SessionPhoneDevice`
-  — is written after the transaction block commits, alongside the existing `attempts` and
-  `otp_last_sent` update
-
-**Send 2 — no SMS arrives, and the user taps resend.** Twilio accepted the message but never
-delivered it.
-
-- Two minutes have passed, clearing the `2 ** attempts` gate
-- `tried_vendors` returns `{"twilio"}` — the row written two minutes ago for this number and
-  purpose
-- `resolve_chain` returns the same two entries; it reads configuration, not history
-- `candidates` drops twilio, leaving `[vendorB(rank 2)]`
-- vendorB succeeds; a row for `vendorB`, rank 2, `success` is written
-- Net effect: the resend reached a different vendor. Only `SmsLog` records the first attempt —
-  the view, the user and `VendorRoute` are all unchanged
-
-**Send 2b — an administrator re-orders the chain mid-flow.** Suppose between Send 1 and Send 2
-the chain had become `vendorB(rank 1), twilio(rank 2)`. Nothing changes: the tried-set is
-still `{"twilio"}` by name, so `candidates` is `[vendorB(rank 1)]` and vendorB is still
-chosen. The same holds if a vendor is inserted, deleted or deactivated, because ranking always
-re-reads the live table.
-
-**Send 3 — the same user returns a week later.**
-
-- The week-old rows are outside the retry window, so the tried-set is empty. They stay on file
-  for reporting
-- The token expired long ago, so `is_otp_close_to_expiry` is true, a new token is generated
-  and `attempts` resets
-- The send goes to twilio, rank 1 for Malawi
-
-**Other paths.**
-
-- **A vendor errors mid-send** — the next candidate is tried and the user receives one OTP.
-  Both attempts are logged, so the next resend for this number skips both vendors
-- **A four-vendor chain, reshuffled mid-flow** — `v1` and `v2` have been tried, then an
-  administrator swaps `v2` and `v4` so the chain reads `v1(1) v4(2) v3(3) v2(4)`. The untried
-  set is `{v3, v4}`, ranked by current `vendor_rank`, so `v4` is tried next
-- **An unconfigured country** — no rows match, so the chain is `[DEFAULT_VENDOR]` and the row
-  logs `vendor_rank = NULL`
-- **A test number** — returns before any database read or vendor call, and logs nothing
-
-### 3.4 Failure modes
+### 3.3 Failure modes
 
 | Scenario | What the system does | What the user sees |
 |---|---|---|
@@ -535,7 +469,7 @@ re-reads the live table.
 | The `ConfigurationSession` behind a logged device is deleted | `SET_NULL` blanks the foreign key; `phone_number`, `country`, `vendor`, `vendor_rank` and `status` all survive | Nothing; reporting is unaffected |
 | Two resends racing on the same device | `select_for_update` serialises them as it does today, but the lock is now held across the whole chain walk rather than one vendor call | The second request blocks until the first has walked its chain before receiving its `RateLimitedError`, where today it returns almost at once. The `retry_after` value it receives is unaffected |
 
-### 3.5 User interface changes
+### 3.4 User interface changes
 
 **No mobile or API changes.** No endpoint gains a parameter, changes its response shape, or
 changes its authentication. `send_sms` is called entirely from server-side code, and its new
@@ -555,7 +489,7 @@ authenticated by the existing Django admin staff login. It sets:
 list-and-filter only — no add, change or delete — since editing history would corrupt both the
 reliability reporting and vendor selection.
 
-### 3.6 Assumptions and dependencies
+### 3.5 Assumptions and dependencies
 
 **Assumptions about how vendors behave**
 
