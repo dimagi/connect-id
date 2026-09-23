@@ -674,7 +674,8 @@ def confirm_backup_code(request):
         # NOTE: 200 for a wrong code is odd, but it's what the mobile client expects
         return JsonResponse({"attempts_left": e.attempts_left}, status=200)
 
-    return JsonResponse(_complete_recovery_for_user(user, session))
+    response_data = _complete_recovery_for_user(user, session)
+    return JsonResponse(response_data)
 
 
 @api_view(["POST"])
@@ -730,7 +731,8 @@ def complete_recovery(request):
         except IncorrectOTPError as e:
             return JsonResponse({"error_code": ErrorCodes.INCORRECT_OTP, "attempts_left": e.attempts_left}, status=401)
 
-    return JsonResponse(_complete_recovery_for_user(user, session))
+    response_data = _complete_recovery_for_user(user, session)
+    return JsonResponse(response_data)
 
 
 @api_view(["GET"])
