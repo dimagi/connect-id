@@ -2913,13 +2913,11 @@ class TestOtpVerifyLimit:
         assert not profile.is_verified
 
 
-BOTH_METHODS = [RecoveryMethods.BACKUP_CODE, RecoveryMethods.EMAIL_OTP]
-
-
 @pytest.mark.django_db
 class TestCompleteRecoveryApi:
     url = reverse_lazy("complete_recovery")
 
+    BOTH_METHODS = [RecoveryMethods.BACKUP_CODE, RecoveryMethods.EMAIL_OTP]
     BACKUP_CODE = "123456"
     EMAIL = "user@example.com"
 
