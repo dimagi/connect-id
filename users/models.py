@@ -169,8 +169,10 @@ class BaseOTPDevice(SideChannelDevice):
         """Seconds until the next code may be sent, or 0 if one may be sent now."""
         if self.otp_last_sent is None:
             return 0
-        cooldown = self._resend_cooldown(self.is_exhausted)
-        return max(int((cooldown - (now() - self.otp_last_sent)).total_seconds()), 0)
+        return max(self._seconds_left_in_cooldown(self._resend_cooldown(self.is_exhausted)), 0)
+
+    def _seconds_left_in_cooldown(self, cooldown):
+        return int((cooldown - (now() - self.otp_last_sent)).total_seconds())
 
     def _burn_token(self):
         self.token = None
@@ -230,7 +232,7 @@ class BaseOTPDevice(SideChannelDevice):
                 self.attempts += 1
                 self.save()
             else:
-                raise RateLimitedError(int((cooldown - (now() - self.otp_last_sent)).total_seconds()))
+                raise RateLimitedError(self._seconds_left_in_cooldown(cooldown))
 
     def _resend_cooldown(self, was_burned):
         """How long to wait before the next code goes out.
