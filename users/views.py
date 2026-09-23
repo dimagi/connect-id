@@ -717,12 +717,12 @@ def complete_recovery(request):
     user = ConnectUser.objects.get(phone_number=session.phone_number, is_active=True)
 
     if method == RecoveryMethods.BACKUP_CODE:
-        backup_code = (data.get("backup_code") or "").strip()
+        backup_code = data.get("backup_code")
         if not backup_code:
             return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
         error_response = _verify_backup_code(user, backup_code)
     else:
-        error_response = _verify_recovery_email_otp(session, user, (data.get("otp") or "").strip())
+        error_response = _verify_recovery_email_otp(session, user, data.get("otp"))
 
     if error_response:
         return error_response
@@ -1130,7 +1130,7 @@ def send_email_otp(request):
     if is_session and not request.auth.is_phone_validated:
         return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
 
-    email = (request.data.get("email") or "").strip()
+    email = request.data.get("email")
     recovering_account = _recovering_account(request)
 
     if recovering_account:
@@ -1172,8 +1172,8 @@ def verify_email_otp(request):
     if _recovering_account(request):
         return JsonResponse({"error_code": ErrorCodes.NOT_ALLOWED}, status=403)
 
-    email = (request.data.get("email") or "").strip()
-    otp = (request.data.get("otp") or "").strip()
+    email = request.data.get("email")
+    otp = request.data.get("otp")
     if not email or not otp:
         return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 

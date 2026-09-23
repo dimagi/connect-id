@@ -3005,7 +3005,7 @@ class TestCompleteRecoveryApi:
         user.save()
 
         response = authed_client_token.post(
-            self.url, data={"method": RecoveryMethods.BACKUP_CODE, "backup_code": "  "}, format="json"
+            self.url, data={"method": RecoveryMethods.BACKUP_CODE, "backup_code": ""}, format="json"
         )
         assert response.status_code == 400
         assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
@@ -3070,7 +3070,7 @@ class TestCompleteRecoveryApi:
         SessionEmailOTPDeviceFactory(session=valid_token, email=self.EMAIL)
 
         response = authed_client_token.post(
-            self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": "  "}, format="json"
+            self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": ""}, format="json"
         )
         assert response.status_code == 400
         assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
