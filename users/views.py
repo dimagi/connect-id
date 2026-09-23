@@ -50,7 +50,14 @@ from .const import (
 )
 from .device_utils import DEVICE_RECENT_ACCESS_THRESHOLD
 from .email_utils import mask_email
-from .exceptions import RateLimitedError, RecoveryPinNotSetError
+from .exceptions import (
+    AccountLockedError,
+    IncorrectBackupCodeError,
+    IncorrectOTPError,
+    OTPLimitExceededError,
+    RateLimitedError,
+    RecoveryPinNotSetError,
+)
 from .fcm_utils import create_update_device
 from .models import (
     ConfigurationSession,
@@ -572,11 +579,8 @@ def confirm_recovery_pin(request):
 
 
 def _verify_backup_code(user, backup_code):
-    try:
-        if user.check_recovery_pin(backup_code):
-            return None
-    except RecoveryPinNotSetError:
-        return JsonResponse({"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}, status=400)
+    if user.check_recovery_pin(backup_code):
+        return
 
     user.add_failed_backup_code_attempt()
 
@@ -584,10 +588,9 @@ def _verify_backup_code(user, backup_code):
         user.is_active = False
         user.is_locked = True
         user.save()
-        return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=401)
+        raise AccountLockedError()
 
-    # NOTE: 200 for a wrong code is odd, but it's what the mobile client expects
-    return JsonResponse({"attempts_left": user.backup_code_attempts_left}, status=200)
+    raise IncorrectBackupCodeError(user.backup_code_attempts_left)
 
 
 def _apply_device_info(user, session, password, response_data):
@@ -656,29 +659,15 @@ def otp_limit_exceeded_response(device):
 
 
 def _verify_recovery_email_otp(session, user, otp):
-    if not switch_is_active(EMAIL_OTP_VERIFICATION):
-        return JsonResponse({"error_code": ErrorCodes.NOT_ALLOWED}, status=403)
-
-    if not otp:
-        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
-
-    if not user.email:
-        return JsonResponse({"error_code": ErrorCodes.NO_EMAIL_SET}, status=400)
-
-    try:
-        device = SessionEmailOTPDevice.objects.get(session=session, email=user.email)
-    except SessionEmailOTPDevice.DoesNotExist:
-        return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
+    device = SessionEmailOTPDevice.objects.get(session=session, email=user.email)
 
     if device.verify_token(otp):
-        return None
+        return
 
     logger.warning("Failed recovery email OTP verification for email %s***", user.email.split("@")[0][:3])
     if device.is_exhausted:
-        return otp_limit_exceeded_response(device)
-    return JsonResponse(
-        {"error_code": ErrorCodes.INCORRECT_OTP, "attempts_left": device.verify_attempts_left}, status=401
-    )
+        raise OTPLimitExceededError(device.resend_retry_after_seconds)
+    raise IncorrectOTPError(device.verify_attempts_left)
 
 
 @api_view(["POST"])
@@ -692,9 +681,15 @@ def confirm_backup_code(request):
     data = request.data
     user = ConnectUser.objects.get(phone_number=session.phone_number, is_active=True)
 
-    error_response = _verify_backup_code(user, data.get("recovery_pin"))
-    if error_response:
-        return error_response
+    try:
+        _verify_backup_code(user, data.get("recovery_pin"))
+    except RecoveryPinNotSetError:
+        return JsonResponse({"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}, status=400)
+    except AccountLockedError:
+        return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=401)
+    except IncorrectBackupCodeError as e:
+        # NOTE: 200 for a wrong code is odd, but it's what the mobile client expects
+        return JsonResponse({"attempts_left": e.attempts_left}, status=200)
 
     return JsonResponse(_complete_recovery_for_user(user, session))
 
@@ -720,12 +715,37 @@ def complete_recovery(request):
         backup_code = data.get("backup_code")
         if not backup_code:
             return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
-        error_response = _verify_backup_code(user, backup_code)
-    else:
-        error_response = _verify_recovery_email_otp(session, user, data.get("otp"))
 
-    if error_response:
-        return error_response
+        try:
+            _verify_backup_code(user, backup_code)
+        except RecoveryPinNotSetError:
+            return JsonResponse({"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}, status=400)
+        except AccountLockedError:
+            return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=401)
+        except IncorrectBackupCodeError as e:
+            # NOTE: 200 for a wrong code is odd, but it's what the mobile client expects
+            return JsonResponse({"attempts_left": e.attempts_left}, status=200)
+    else:
+        if not switch_is_active(EMAIL_OTP_VERIFICATION):
+            return JsonResponse({"error_code": ErrorCodes.NOT_ALLOWED}, status=403)
+
+        otp = data.get("otp")
+        if not otp:
+            return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+        if not user.email:
+            return JsonResponse({"error_code": ErrorCodes.NO_EMAIL_SET}, status=400)
+
+        try:
+            _verify_recovery_email_otp(session, user, otp)
+        except SessionEmailOTPDevice.DoesNotExist:
+            return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
+        except OTPLimitExceededError as e:
+            return JsonResponse(
+                {"error_code": ErrorCodes.OTP_LIMIT_EXCEEDED, "retry_after_seconds": e.retry_after_seconds},
+                status=401,
+            )
+        except IncorrectOTPError as e:
+            return JsonResponse({"error_code": ErrorCodes.INCORRECT_OTP, "attempts_left": e.attempts_left}, status=401)
 
     return JsonResponse(_complete_recovery_for_user(user, session))
 
