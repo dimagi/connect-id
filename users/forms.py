@@ -27,7 +27,8 @@ class UnlockUserSearchForm(forms.Form):
 
 
 class UnlockUserConfirmForm(forms.Form):
-    unlock_user_id = forms.ChoiceField(
+    unlock_user_id = forms.TypedChoiceField(
+        coerce=int,
         widget=forms.RadioSelect,
         label="Account to unlock",
     )
@@ -43,7 +44,7 @@ class UnlockUserConfirmForm(forms.Form):
         # The form owns this rather than the view: it is what the checkbox is about, what
         # clean() validates against, and what the template warns on, so one lookup serves all
         # three. Candidates always share a phone number — the id path yields exactly one.
-        self.active_user = get_active_user(candidates[0].phone_number) if candidates else None
+        self.active_user = get_active_user(candidates[0].phone_number)
         self.fields["unlock_user_id"].choices = [(user.pk, _candidate_label(user)) for user in candidates]
         if len(candidates) == 1:
             self.fields["unlock_user_id"].initial = candidates[0].pk
@@ -52,10 +53,6 @@ class UnlockUserConfirmForm(forms.Form):
     def selected_user(self):
         """The chosen candidate, or None until unlock_user_id has validated."""
         return self.candidates.get(self.cleaned_data.get("unlock_user_id"))
-
-    def clean_unlock_user_id(self):
-        # ChoiceField has already checked membership of self.candidates.
-        return int(self.cleaned_data["unlock_user_id"])
 
     def clean(self):
         cleaned_data = super().clean()
@@ -72,10 +69,11 @@ class UnlockUserConfirmForm(forms.Form):
             )
 
         if selected_user.email:
-            # Accounts that will not be active once this unlock commits, so they cannot conflict
-            # over the email even if they hold it right now.
+            # Mirrors the email_active_user constraint on ConnectUser, minus the accounts that will
+            # not be active once this unlock commits. Past the check above, an active user here
+            # is always being deactivated.
             leaving_active = {selected_user.pk}
-            if disable_current_active_user and self.active_user is not None:
+            if self.active_user is not None:
                 leaving_active.add(self.active_user.pk)
             conflicting_username = (
                 ConnectUser.objects.filter(email=selected_user.email, is_active=True)
@@ -95,8 +93,8 @@ class UnlockUserConfirmForm(forms.Form):
 
 def _candidate_label(user):
     # Candidates are always inactive, but the user-ID path also admits accounts that are
-    # not locked, so both flags are worth stating rather than assuming.
-    status = f"{'active' if user.is_active else 'inactive'}, {'locked' if user.is_locked else 'not locked'}"
+    # not locked, so the lock state is worth stating rather than assuming.
+    status = f"inactive, {'locked' if user.is_locked else 'not locked'}"
     return format_html(
         '<strong>{}</strong> &mdash; {} &mdash; joined {} <span class="unlock-status">({})</span>',
         user.username,

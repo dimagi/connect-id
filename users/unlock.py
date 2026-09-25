@@ -53,13 +53,15 @@ def unlock_and_issue_backup_code(inactive_user, disable_current_active_user=True
     Both entry points go through here, so the unlock and the code that makes the account
     reachable again can never be committed apart, and the row is written once.
     """
-    if disable_current_active_user:
-        ConnectUser.objects.filter(phone_number=inactive_user.phone_number, is_active=True).update(is_active=False)
-
+    # Hash before the UPDATE below takes a row lock, so the lock is not held for the hash.
     backup_code = str(secrets.randbelow(900000) + 100000)
+    inactive_user.set_recovery_pin(backup_code)
     inactive_user.is_locked = False
     inactive_user.is_active = True
     inactive_user.reset_failed_backup_code_attempts()
-    inactive_user.set_recovery_pin(backup_code)
+
+    if disable_current_active_user:
+        ConnectUser.objects.filter(phone_number=inactive_user.phone_number, is_active=True).update(is_active=False)
+
     inactive_user.save(update_fields=["is_active", "is_locked", "failed_backup_code_attempts", "recovery_pin"])
     return backup_code

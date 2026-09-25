@@ -6,6 +6,13 @@ from users.forms import UnlockUserConfirmForm, UnlockUserSearchForm
 PHONE = "+27821234567"
 
 
+def _confirm_form(locked, disable_active=True):
+    data = {"unlock_user_id": str(locked.pk)}
+    if disable_active:
+        data["disable_current_active_user"] = "on"
+    return UnlockUserConfirmForm(data, candidates=[locked])
+
+
 class TestUnlockUserSearchForm:
     def test_phone_number_only_is_valid(self):
         form = UnlockUserSearchForm({"phone_number": PHONE})
@@ -46,10 +53,7 @@ class TestUnlockUserSearchForm:
 class TestUnlockUserConfirmForm:
     def test_valid_selection_exposes_the_user(self):
         locked = UserFactory.create(phone_number=PHONE, is_active=False, is_locked=True)
-        form = UnlockUserConfirmForm(
-            {"unlock_user_id": str(locked.pk), "disable_current_active_user": "on"},
-            candidates=[locked],
-        )
+        form = _confirm_form(locked)
 
         assert form.is_valid(), form.errors
         assert form.selected_user.pk == locked.pk
@@ -65,14 +69,14 @@ class TestUnlockUserConfirmForm:
     def test_unchecked_box_with_an_active_account_is_rejected(self):
         UserFactory.create(phone_number=PHONE)
         locked = UserFactory.create(phone_number=PHONE, is_active=False, is_locked=True)
-        form = UnlockUserConfirmForm({"unlock_user_id": str(locked.pk)}, candidates=[locked])
+        form = _confirm_form(locked, disable_active=False)
 
         assert not form.is_valid()
         assert "must be deactivated" in str(form.non_field_errors())
 
     def test_unchecked_box_with_no_active_account_is_fine(self):
         locked = UserFactory.create(phone_number=PHONE, is_active=False, is_locked=True)
-        form = UnlockUserConfirmForm({"unlock_user_id": str(locked.pk)}, candidates=[locked])
+        form = _confirm_form(locked, disable_active=False)
 
         assert form.is_valid(), form.errors
         assert form.cleaned_data["disable_current_active_user"] is False
@@ -86,32 +90,22 @@ class TestUnlockUserConfirmForm:
     def test_rejects_email_collision_with_a_different_active_user(self):
         UserFactory.create(phone_number="+27829998888", email="dup@example.com")
         locked = UserFactory.create(phone_number=PHONE, is_active=False, is_locked=True, email="dup@example.com")
-        form = UnlockUserConfirmForm(
-            {"unlock_user_id": str(locked.pk), "disable_current_active_user": "on"},
-            candidates=[locked],
-        )
+        form = _confirm_form(locked)
 
         assert not form.is_valid()
         assert "dup@example.com" in str(form.non_field_errors())
 
     def test_does_not_reject_email_collision_with_the_account_being_deactivated(self):
-        active = UserFactory.create(phone_number=PHONE, email="dup@example.com")
+        UserFactory.create(phone_number=PHONE, email="dup@example.com")
         locked = UserFactory.create(phone_number=PHONE, is_active=False, is_locked=True, email="dup@example.com")
-        form = UnlockUserConfirmForm(
-            {"unlock_user_id": str(locked.pk), "disable_current_active_user": "on"},
-            candidates=[locked],
-        )
+        form = _confirm_form(locked)
 
         assert form.is_valid(), form.errors
-        assert active.pk != locked.pk
 
     def test_does_not_reject_blank_email(self):
         UserFactory.create(phone_number="+27829998888", email="")
         locked = UserFactory.create(phone_number=PHONE, is_active=False, is_locked=True, email="")
-        form = UnlockUserConfirmForm(
-            {"unlock_user_id": str(locked.pk), "disable_current_active_user": "on"},
-            candidates=[locked],
-        )
+        form = _confirm_form(locked)
 
         assert form.is_valid(), form.errors
 

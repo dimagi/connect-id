@@ -93,7 +93,7 @@ class ConnectUserAdmin(UserAdmin):
         disable_active = confirm_form.cleaned_data["disable_current_active_user"]
         with transaction.atomic():
             backup_code = unlock_and_issue_backup_code(user, disable_current_active_user=disable_active)
-            if disable_active and active_user is not None:
+            if active_user is not None:
                 self.log_change(request, active_user, f"Deactivated in favour of unlocked user {user.pk}")
             self.log_change(request, user, "Unlocked user and generated a new backup code")
 
