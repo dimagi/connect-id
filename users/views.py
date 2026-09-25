@@ -1161,7 +1161,7 @@ def send_email_otp(request):
 
     if _email_locked_to_record(request, recovering_account):
         if email and email != recovering_account.email:
-            logger.warning("Ignoring caller-supplied email on a recovery OTP request; using the address on record")
+            logger.error("Ignoring caller-supplied email on a recovery OTP request; using the address on record")
         email = recovering_account.email
         if not email:
             return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
