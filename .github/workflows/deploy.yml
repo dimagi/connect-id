@@ -3,10 +3,12 @@ run-name: Deploy to ${{ inputs.environment }} (${{ inputs.deploy_type }})
 
 env:
   AWS_REGION: 'us-east-1'
+  SENTRY_ORG: 'dimagi'
+  SENTRY_PROJECT: 'connect-id'
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 on:
   #  workflow_run:
@@ -36,6 +38,12 @@ jobs:
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
+
+      - name: Set release identifier
+        run: |
+          # Sentry release versions cannot contain slashes, so sanitize the ref name
+          SAFE_REF_NAME="${GITHUB_REF_NAME//\//-}"
+          echo "APP_RELEASE=${SAFE_REF_NAME}.${GITHUB_SHA}" >> "$GITHUB_ENV"
 
       - name: Set up Ruby
         uses: actions/setup-ruby@v1
@@ -102,6 +110,32 @@ jobs:
       - id: deploy
         working-directory: ./deploy
         run: 'kamal deploy'
+
+      - name: Create Sentry release
+        if: ${{ success() }}
+        uses: getsentry/action-release@v3
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        with:
+          environment: ${{ inputs.environment }}
+          release: ${{ env.APP_RELEASE }}
+          projects: ${{ env.SENTRY_PROJECT }}
+          set_commits: manual
+          repo: dimagi/connect-id
+          commit: ${{ github.sha }}
+
+      - name: Set release tag
+        if: ${{ success() && inputs.environment == 'production' }}
+        run: echo "RELEASE_TAG=$(date -u +'%Y-%m-%d_%H-%M-%S')" >> "$GITHUB_ENV"
+
+      - name: Create GitHub release
+        if: ${{ success() && inputs.environment == 'production' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
 
       - name: Notify Deploy End
         uses: slackapi/slack-github-action@v1.24.0
