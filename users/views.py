@@ -593,6 +593,11 @@ def _verify_backup_code(user, backup_code):
     raise IncorrectBackupCodeError(user.backup_code_attempts_left)
 
 
+def _mark_backup_code_verified(session):
+    session.backup_code_verified = True
+    session.save(update_fields=["backup_code_verified"])
+
+
 def _apply_device_info(user, session, password, response_data):
     if not session.device:
         return
@@ -674,6 +679,7 @@ def confirm_backup_code(request):
         # NOTE: 200 for a wrong code is odd, but it's what the mobile client expects
         return JsonResponse({"attempts_left": e.attempts_left}, status=200)
 
+    _mark_backup_code_verified(session)
     response_data = _complete_recovery_for_user(user, session)
     return JsonResponse(response_data)
 
@@ -709,6 +715,8 @@ def complete_recovery(request):
         except IncorrectBackupCodeError as e:
             # NOTE: 200 for a wrong code is odd, but it's what the mobile client expects
             return JsonResponse({"attempts_left": e.attempts_left}, status=200)
+
+        _mark_backup_code_verified(session)
     else:
         if not switch_is_active(EMAIL_OTP_VERIFICATION):
             return JsonResponse({"error_code": ErrorCodes.NOT_ALLOWED}, status=403)
@@ -1135,6 +1143,11 @@ def _recovering_account(request):
     return ConnectUser.objects.filter(phone_number=request.auth.phone_number, is_active=True).first()
 
 
+def _email_locked_to_record(request, recovering_account):
+    """True while a recovering caller has not yet proven the account with its backup code."""
+    return recovering_account is not None and not request.auth.backup_code_verified
+
+
 @api_view(["POST"])
 @authentication_classes([DeviceBasicAuthentication, OAuth2Authentication, SessionTokenAuthentication])
 @waffle_switch(EMAIL_OTP_VERIFICATION)
@@ -1146,9 +1159,9 @@ def send_email_otp(request):
     email = request.data.get("email")
     recovering_account = _recovering_account(request)
 
-    if recovering_account:
+    if _email_locked_to_record(request, recovering_account):
         if email and email != recovering_account.email:
-            logger.warning("Ignoring caller-supplied email on a recovery OTP request; using the address on record")
+            logger.error("Ignoring caller-supplied email on a recovery OTP request; using the address on record")
         email = recovering_account.email
         if not email:
             return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
@@ -1184,7 +1197,8 @@ def verify_email_otp(request):
     if is_session and not request.auth.is_phone_validated:
         return JsonResponse({"error_code": ErrorCodes.PHONE_NOT_VALIDATED}, status=403)
 
-    if _recovering_account(request):
+    recovering_account = _recovering_account(request)
+    if _email_locked_to_record(request, recovering_account):
         return JsonResponse({"error_code": ErrorCodes.NOT_ALLOWED}, status=403)
 
     email = request.data.get("email")
@@ -1212,12 +1226,12 @@ def verify_email_otp(request):
             )
         return JsonResponse({"error_code": ErrorCodes.INCORRECT_OTP}, status=401)
 
-    if is_session:
+    if is_session and not recovering_account:
         request.auth.verified_email = email
         request.auth.save()
         return HttpResponse()
 
-    user = request.user
+    user = recovering_account or request.user
     user.email = email
     try:
         user.save()

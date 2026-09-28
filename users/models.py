@@ -373,6 +373,7 @@ class ConfigurationSession(models.Model):
     device_id = models.CharField(max_length=255, blank=True, null=True)
     device = models.CharField(max_length=255, blank=True, null=True)
     verified_email = models.EmailField(blank=True, null=True)
+    backup_code_verified = models.BooleanField(default=False)
 
     def __str__(self):
         return self.key

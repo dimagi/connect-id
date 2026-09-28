@@ -966,6 +966,23 @@ class TestConfirmBackupCodeApi:
         # No email is set on the user, so the key should be omitted entirely
         assert "email" not in response_data
 
+    def test_success_marks_session_backup_code_verified(self, authed_client_token, valid_token, user):
+        user.set_recovery_pin("1234")
+        user.save()
+
+        response = authed_client_token.post(self.url, data={"recovery_pin": "1234"})
+        assert response.status_code == 200
+        valid_token.refresh_from_db()
+        assert valid_token.backup_code_verified
+
+    def test_wrong_code_leaves_session_unverified(self, authed_client_token, valid_token, user):
+        user.set_recovery_pin("1234")
+        user.save()
+
+        authed_client_token.post(self.url, data={"recovery_pin": "4321"})
+        valid_token.refresh_from_db()
+        assert not valid_token.backup_code_verified
+
     def test_includes_email_when_set(self, authed_client_token, valid_token, user):
         user.set_recovery_pin("1234")
         user.email = "user@example.com"
@@ -2564,6 +2581,35 @@ class TestSendEmailOtp:
 
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
     @patch("users.models.SessionEmailOTPDevice.generate_challenge")
+    def test_backup_code_verified_recovery_uses_the_supplied_email(
+        self, mock_challenge, authed_client_token, user, valid_token
+    ):
+        """Once the backup code is proven, the caller may name a new address to add to the account."""
+        valid_token.backup_code_verified = True
+        valid_token.save()
+
+        response = authed_client_token.post(self.url, data={"email": "new@example.com"}, format="json")
+
+        assert response.status_code == 200
+        assert SessionEmailOTPDevice.objects.filter(session=valid_token, email="new@example.com").exists()
+        mock_challenge.assert_called_once()
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.generate_challenge")
+    def test_backup_code_verified_recovery_validates_the_supplied_email(
+        self, mock_challenge, authed_client_token, user, valid_token
+    ):
+        valid_token.backup_code_verified = True
+        valid_token.save()
+
+        response = authed_client_token.post(self.url, data={"email": "not-an-email"}, format="json")
+
+        assert response.status_code == 400
+        assert response.json()["error_code"] == ErrorCodes.INVALID_DATA
+        mock_challenge.assert_not_called()
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.generate_challenge")
     def test_registration_uses_the_supplied_email(self, mock_challenge, session_client):
         """With no account behind the number there is nothing to recover, so the caller sets it."""
         session = ConfigurationSessionFactory(is_phone_validated=True)
@@ -2731,6 +2777,43 @@ class TestVerifyEmailOtp:
         assert session.verified_email == "verified@example.com"
         inactive_user.refresh_from_db()
         assert not inactive_user.email
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.verify_token")
+    def test_backup_code_verified_session_sets_user_email(self, mock_verify, session_client, user):
+        mock_verify.return_value = True
+        session = ConfigurationSessionFactory(
+            phone_number=user.phone_number, is_phone_validated=True, backup_code_verified=True
+        )
+        SessionEmailOTPDeviceFactory(session=session, email="new@example.com")
+
+        response = session_client(session).post(
+            self.url, data={"email": "new@example.com", "otp": "123456"}, format="json"
+        )
+
+        assert response.status_code == 200
+        user.refresh_from_db()
+        assert user.email == "new@example.com"
+
+    @pytest.mark.django_db(transaction=True)
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.verify_token")
+    def test_backup_code_verified_session_duplicate_email_returns_400(self, mock_verify, session_client, user):
+        mock_verify.return_value = True
+        UserFactory(email="taken@example.com")
+        session = ConfigurationSessionFactory(
+            phone_number=user.phone_number, is_phone_validated=True, backup_code_verified=True
+        )
+        SessionEmailOTPDeviceFactory(session=session, email="taken@example.com")
+
+        response = session_client(session).post(
+            self.url, data={"email": "taken@example.com", "otp": "123456"}, format="json"
+        )
+
+        assert response.status_code == 400
+        assert response.json()["error_code"] == ErrorCodes.EMAIL_ALREADY_IN_USE
+        user.refresh_from_db()
+        assert not user.email
 
     @pytest.mark.django_db(transaction=True)
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
@@ -3393,6 +3476,57 @@ class TestCompleteRecoveryApi:
         response = authed_client_token.post(self.url, data=payload, format="json")
         assert response.status_code == 200
         assert "email" not in response.json()
+
+    def test_backup_code_marks_session_verified(self, authed_client_token, user, valid_token):
+        payload = self._prepare(RecoveryMethods.BACKUP_CODE, user, valid_token)
+
+        response = authed_client_token.post(self.url, data=payload, format="json")
+
+        assert response.status_code == 200
+        valid_token.refresh_from_db()
+        assert valid_token.backup_code_verified
+
+    def test_wrong_backup_code_leaves_session_unverified(self, authed_client_token, user, valid_token):
+        self._prepare(RecoveryMethods.BACKUP_CODE, user, valid_token)
+
+        response = authed_client_token.post(
+            self.url, data={"method": RecoveryMethods.BACKUP_CODE, "backup_code": "000000"}, format="json"
+        )
+
+        assert response.json() == {"attempts_left": 2}
+        valid_token.refresh_from_db()
+        assert not valid_token.backup_code_verified
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_email_otp_leaves_session_unverified(self, authed_client_token, user, valid_token):
+        """Email OTP recovery must not unlock replacing the very address it was proven with."""
+        payload = self._prepare(RecoveryMethods.EMAIL_OTP, user, valid_token)
+
+        response = authed_client_token.post(self.url, data=payload, format="json")
+
+        assert response.status_code == 200
+        valid_token.refresh_from_db()
+        assert not valid_token.backup_code_verified
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_email_can_be_added_after_backup_code_recovery(self, authed_client_token, user, valid_token):
+        payload = self._prepare(RecoveryMethods.BACKUP_CODE, user, valid_token)
+        assert not user.email
+        response = authed_client_token.post(self.url, data=payload, format="json")
+        assert response.status_code == 200
+
+        with mock.patch("users.email_utils.send_email_otp_message") as mock_send:
+            response = authed_client_token.post(reverse("send_email_otp"), data={"email": self.EMAIL}, format="json")
+        assert response.status_code == 200
+        sent_to, token = mock_send.call_args.args[0], mock_send.call_args.args[1]
+        assert sent_to == self.EMAIL
+
+        response = authed_client_token.post(
+            reverse("verify_email_otp"), data={"email": self.EMAIL, "otp": token}, format="json"
+        )
+        assert response.status_code == 200
+        user.refresh_from_db()
+        assert user.email == self.EMAIL
 
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
     @pytest.mark.parametrize("method", BOTH_METHODS)
