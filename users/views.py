@@ -166,12 +166,17 @@ def test(request):
 def validate_phone(request):
     user = request.user
     otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.phone_number, user=user)
-    otp_device.generate_challenge()
+    try:
+        otp_device.generate_challenge(suppress_rate_limit=False)
+    except RateLimitedError as e:
+        return JsonResponse(
+            {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": e.retry_after_seconds}, status=429
+        )
     return HttpResponse()
 
 
 @api_view(["POST"])
-@authentication_classes([SessionTokenAuthentication])
+@authentication_classes([SessionTokenAuthentication, DeviceBasicAuthentication])
 def validate_firebase_id_token(request):
     id_token = request.data.get("token")
     if not id_token:
@@ -183,10 +188,13 @@ def validate_firebase_id_token(request):
 
     if not decoded_token.get("uid"):
         return JsonResponse({"error": ErrorCodes.INVALID_TOKEN}, status=400)
-    if decoded_token.get("phone_number") != request.auth.phone_number.as_e164:
+    is_session = isinstance(request.auth, ConfigurationSession)
+    expected_phone = request.auth.phone_number if is_session else request.user.phone_number
+    if decoded_token.get("phone_number") != expected_phone.as_e164:
         return JsonResponse({"error": ErrorCodes.PHONE_MISMATCH}, status=400)
-    request.auth.is_phone_validated = True
-    request.auth.save()
+    if is_session:
+        request.auth.is_phone_validated = True
+        request.auth.save()
     return HttpResponse()
 
 
@@ -195,11 +203,22 @@ def confirm_otp(request):
     # check otp code for user
     # mark phone as confirmed on user model
     user = request.user
-    device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
+    try:
+        device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
+    except PhoneDevice.DoesNotExist:
+        return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
     data = request.data
     verified = device.verify_token(data.get("token"))
     if not verified:
-        return JsonResponse({"error": "OTP token is incorrect"}, status=401)
+        if device.is_exhausted:
+            return JsonResponse(
+                {
+                    "error_code": ErrorCodes.OTP_LIMIT_EXCEEDED,
+                    "retry_after_seconds": device.resend_retry_after_seconds,
+                },
+                status=401,
+            )
+        return JsonResponse({"error_code": ErrorCodes.INCORRECT_OTP}, status=401)
     user.phone_validated = True
     user.save()
     return HttpResponse()
