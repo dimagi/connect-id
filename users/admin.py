@@ -95,7 +95,7 @@ class ConnectUserAdmin(UserAdmin):
             backup_code = unlock_and_issue_backup_code(user, disable_current_active_user=disable_active)
             if active_user is not None:
                 self.log_change(request, active_user, f"Deactivated in favour of unlocked user {user.pk}")
-            self.log_change(request, user, "Unlocked user and generated a new backup code")
+            self.log_change(request, user, f"Unlocked user (ID: {user.pk}) and generated a new backup code")
 
         # The backup code is only ever shown here, once, in the rendered response. It must
         # never enter the messages framework (signed but not encrypted cookie storage) or

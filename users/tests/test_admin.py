@@ -235,7 +235,7 @@ class TestUnlockPageAuditLog:
         entry = self._entries_for(locked).get()
         assert entry.user_id == superuser.pk
         assert entry.action_flag == CHANGE
-        assert entry.change_message == "Unlocked user and generated a new backup code"
+        assert entry.change_message == f"Unlocked user (ID: {locked.pk}) and generated a new backup code"
 
     def test_logs_the_deactivation(self, su_client, superuser, unlock_url):
         active = UserFactory(phone_number=PHONE)
