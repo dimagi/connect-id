@@ -8,6 +8,10 @@ class RateLimitedError(Exception):
         super().__init__(f"Rate limited. Retry after {retry_after_seconds} seconds.")
 
 
+class UnlockUserError(Exception):
+    pass
+
+
 class AccountLockedError(Exception):
     pass
 
