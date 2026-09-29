@@ -210,16 +210,32 @@ class TestValidatePhone:
         generate_challenge_mock.assert_called_once()
 
     @pytest.mark.django_db
-    def test_resend_inside_cooldown_still_succeeds(self, auth_device, user):
-        """The legacy clients cannot read a 429, so PhoneDevice keeps swallowing the rate limit."""
+    def test_resend_inside_cooldown_reports_the_wait(self, auth_device, user):
         device = PhoneDeviceFactory(user=user, phone_number=user.phone_number)
         with mock.patch("users.models.send_sms") as mock_send_sms:
             device.generate_challenge()
             assert mock_send_sms.call_count == 1
 
             response = auth_device.post(reverse("validate_phone"))
-            assert response.status_code == 200
             assert mock_send_sms.call_count == 1
+
+        assert response.status_code == 429
+        assert response.json()["error_code"] == ErrorCodes.RATE_LIMITED
+        assert response.json()["retry_after_seconds"] == pytest.approx(2 * 60, abs=5)
+
+    @pytest.mark.django_db
+    def test_resend_after_cooldown_sends_a_new_code(self, auth_device, user):
+        device = PhoneDeviceFactory(user=user, phone_number=user.phone_number)
+        with mock.patch("users.models.send_sms") as mock_send_sms:
+            device.generate_challenge()
+            device.refresh_from_db()
+            device.otp_last_sent = now() - timedelta(minutes=2)
+            device.save()
+
+            response = auth_device.post(reverse("validate_phone"))
+
+        assert response.status_code == 200
+        assert mock_send_sms.call_count == 2
 
 
 class TestValidateSecondaryPhone:
@@ -245,9 +261,15 @@ class TestConfirmOTP:
         response = auth_device.post(reverse("confirm_otp"), data={})
 
         assert response.status_code == 401
-        assert response.json()["error"] == "OTP token is incorrect"
+        assert response.json() == {"error_code": ErrorCodes.INCORRECT_OTP}
         user.refresh_from_db()
         assert not user.phone_validated
+
+    def test_no_code_sent(self, auth_device, user):
+        response = auth_device.post(reverse("confirm_otp"), data={"token": "112233"})
+
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.INVALID_DATA}
 
     @patch.object(PhoneDevice, "verify_token")
     def test_success(self, verify_token_mock, auth_device, user):
@@ -1321,6 +1343,20 @@ class TestValidateFirebaseIDToken:
         response = authed_client_token.post(self.url, data=self.post_data)
         assert response.status_code == 400
         assert isinstance(response, JsonResponse)
+        assert response.json() == {"error": ErrorCodes.PHONE_MISMATCH}
+
+    @mock.patch("users.views.auth.verify_id_token")
+    def test_basic_auth_success(self, mock_verify_token, auth_device, user):
+        mock_verify_token.return_value = {"uid": "test-uid", "phone_number": user.phone_number.as_e164}
+        response = auth_device.post(self.url, data=self.post_data)
+        assert response.status_code == 200
+        mock_verify_token.assert_called_once_with(self.post_data["token"])
+
+    @mock.patch("users.views.auth.verify_id_token")
+    def test_basic_auth_phone_mismatch(self, mock_verify_token, auth_device):
+        mock_verify_token.return_value = {"uid": "test-uid", "phone_number": "+1234567890"}
+        response = auth_device.post(self.url, data=self.post_data)
+        assert response.status_code == 400
         assert response.json() == {"error": ErrorCodes.PHONE_MISMATCH}
 
 
@@ -2956,21 +2992,31 @@ class TestOtpVerifyLimit:
         assert user.is_active
         assert not user.is_locked
 
-    def test_legacy_phone_view_keeps_bare_401_but_burns_token(self, auth_device, user):
-        """confirm_otp's clients do not know OTP_LIMIT_EXCEEDED, so its response is unchanged."""
+    def test_user_phone_otp_limit(self, auth_device, user):
+        """Signed-in user phone path: confirm_otp against a PhoneDevice."""
         device = PhoneDeviceFactory(user=user, phone_number=user.phone_number)
         with mock.patch("users.models.send_sms"):
             device.generate_challenge()
         correct_token = device.token
 
-        for _ in range(MAX_OTP_VERIFY_ATTEMPTS):
-            response = auth_device.post(reverse("confirm_otp"), data={"token": WRONG_OTP})
-            assert response.status_code == 401
-            assert response.json() == {"error": "OTP token is incorrect"}
+        response = self._exhaust(
+            auth_device,
+            reverse("confirm_otp"),
+            {"token": WRONG_OTP},
+            {"error_code": ErrorCodes.INCORRECT_OTP},
+        )
+        assert response.json()["error_code"] == ErrorCodes.OTP_LIMIT_EXCEEDED
+        assert response.json()["retry_after_seconds"] == pytest.approx(2 * 60, abs=5)
 
         # The token is dead, so even the right code is now refused.
-        response = auth_device.post(reverse("confirm_otp"), data={"token": correct_token})
+        response = auth_device.post(reverse("confirm_otp"), data={"token": correct_token}, format="json")
         assert response.status_code == 401
+        assert response.json()["error_code"] == ErrorCodes.OTP_LIMIT_EXCEEDED
+
+        response = auth_device.post(reverse("validate_phone"))
+        assert response.status_code == 429
+        assert response.json()["error_code"] == ErrorCodes.RATE_LIMITED
+
         user.refresh_from_db()
         assert not user.phone_validated
 

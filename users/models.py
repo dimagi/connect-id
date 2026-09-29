@@ -268,11 +268,13 @@ class PhoneDevice(BasePhoneDevice):
     class Meta:
         constraints = [models.UniqueConstraint(fields=["phone_number", "user"], name="phone_number_user")]
 
-    def generate_challenge(self):
-        """The legacy phone endpoints have no way to report a wait, so a rate limit is a no-op."""
+    def generate_challenge(self, suppress_rate_limit=True):
+        """Callers that cannot report a wait leave suppress_rate_limit on, making a rate limit a no-op."""
         try:
             return super().generate_challenge()
         except RateLimitedError:
+            if not suppress_rate_limit:
+                raise
             return self.otp_message
 
 
