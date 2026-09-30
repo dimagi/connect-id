@@ -95,6 +95,7 @@ deploy/             # Kamal deployment config
 - Factory Boy factories in each app (`users/factories.py`, `messaging/factories.py`, etc.)
 - `test_utils/decorators.py` has `@skip_app_integrity_check` for bypassing integrity checks in tests
 - CI runs linting + pytest against PostgreSQL 15
+- `scripts` directory contain scripts for testing two-way behavior locally
 
 ## Environment
 
