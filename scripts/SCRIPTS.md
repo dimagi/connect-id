@@ -26,7 +26,7 @@ ip/port settings below. Otherwise, use the flags for settings the ip and sender 
    prints replies.
 
    ```bash
-   uv run ./manage.py runserver http://<subnet_ip>:8000
+   uv run ./manage.py runserver <subnet_ip>:8000
    uv run python scripts/local_sender.py --personalid http://<subnet_ip>:8000 --client-id ... --secret ... serve
    ```
 
