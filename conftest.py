@@ -17,6 +17,15 @@ from users.factories import (
 )
 
 
+@pytest.fixture(autouse=True)
+def production_behaviour(settings):
+    """Tests exercise the production code paths whatever the developer's .env says.
+
+    Tests of local mode turn it on themselves.
+    """
+    settings.LOCAL_MODE = False
+
+
 @pytest.fixture
 def user(db):
     return UserFactory()

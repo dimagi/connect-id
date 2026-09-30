@@ -28,12 +28,13 @@ def upload_photo_to_s3(image_base64, username):
         return ErrorCodes.FILE_TOO_LARGE
     file_type, image_base64_data = split_base64_string(image_base64)
     filename = f"{username}.{file_type}"
+    if not settings.LOCAL_MODE:
+        s3_client = boto3.client("s3")
     try:
         image_data = base64.b64decode(image_base64_data)
         if settings.LOCAL_MODE:
             (_local_bucket_dir(settings.AWS_S3_PHOTO_BUCKET_NAME) / filename).write_bytes(image_data)
             return None
-        s3_client = boto3.client("s3")
         s3_client.put_object(
             Bucket=settings.AWS_S3_PHOTO_BUCKET_NAME,
             Key=filename,
