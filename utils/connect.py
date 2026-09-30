@@ -10,10 +10,13 @@ CONNECT_REQUEST_TIMEOUT = 15
 
 
 def check_number_for_existing_invites(phone_number):
-    url = settings.CONNECT_INVITED_USER_URL
-    auth = (settings.COMMCARE_CONNECT_CLIENT_ID, settings.COMMCARE_CONNECT_CLIENT_SECRET)
     phone = PhoneNumber.from_string(phone_number)
 
+    if settings.LOCAL_MODE:
+        return False
+
+    url = settings.CONNECT_INVITED_USER_URL
+    auth = (settings.COMMCARE_CONNECT_CLIENT_ID, settings.COMMCARE_CONNECT_CLIENT_SECRET)
     response = requests.get(url, auth=auth, params={"phone_number": phone.as_e164}, timeout=CONNECT_REQUEST_TIMEOUT)
     response.raise_for_status()
     data = response.json()
@@ -21,6 +24,10 @@ def check_number_for_existing_invites(phone_number):
 
 
 def resend_connect_invite(user):
+    if settings.LOCAL_MODE:
+        logger.info("LOCAL_MODE: not asking Connect to resend invites for %s", user.username)
+        return
+
     url = settings.CONNECT_RESEND_INVITES_URL
     auth = (settings.COMMCARE_CONNECT_CLIENT_ID, settings.COMMCARE_CONNECT_CLIENT_SECRET)
     data = {
@@ -33,6 +40,10 @@ def resend_connect_invite(user):
 
 def update_connect_user_profile(username, name):
     """Push a profile change to Connect, which caches the name for its own reporting."""
+    if settings.LOCAL_MODE:
+        logger.info("LOCAL_MODE: not pushing profile change for %s to Connect", username)
+        return
+
     url = settings.CONNECT_UPDATE_PROFILE_URL
     auth = (settings.COMMCARE_CONNECT_CLIENT_ID, settings.COMMCARE_CONNECT_CLIENT_SECRET)
     response = requests.post(
@@ -42,6 +53,9 @@ def update_connect_user_profile(username, name):
 
 
 def get_connect_toggles(username=None, phone_number=None):
+    if settings.LOCAL_MODE:
+        return {}
+
     url = settings.CONNECT_TOGGLES_URL
     auth = (settings.COMMCARE_CONNECT_CLIENT_ID, settings.COMMCARE_CONNECT_CLIENT_SECRET)
     params = {}
