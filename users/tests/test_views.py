@@ -261,7 +261,7 @@ class TestConfirmOTP:
         response = auth_device.post(reverse("confirm_otp"), data={})
 
         assert response.status_code == 401
-        assert response.json() == {"error_code": ErrorCodes.INCORRECT_OTP}
+        assert response.json() == {"error_code": ErrorCodes.INCORRECT_OTP, "attempts_left": MAX_OTP_VERIFY_ATTEMPTS}
         user.refresh_from_db()
         assert not user.phone_validated
 
@@ -2892,7 +2892,8 @@ class TestOtpVerifyLimit:
             response = client.post(url, data=data, format="json")
             assert response.status_code == 401
             if attempt < MAX_OTP_VERIFY_ATTEMPTS - 1:
-                assert response.json() == expected_incorrect_code
+                attempts_left = MAX_OTP_VERIFY_ATTEMPTS - attempt - 1
+                assert response.json() == {**expected_incorrect_code, "attempts_left": attempts_left}
         return response
 
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
