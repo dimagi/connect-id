@@ -24,6 +24,9 @@ then, at the prompt::
 ``channel`` and ``send`` also work as one-shot subcommands. Channel keys are kept in
 ``scripts/.local_temp_state/`` so ``serve`` can hand them to the phone later. Delete that directory to start over.
 
+NOTE: This is a local testing utility only, and shouldn't be run against production environments
+or secrets. Keys will be available to any caller over the wire.
+
 The phone must be able to reach both servers. With a USB-connected device::
 
     adb reverse tcp:8000 tcp:8000
