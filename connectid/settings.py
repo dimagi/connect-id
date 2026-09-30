@@ -16,6 +16,7 @@ from pathlib import Path
 
 import environ
 import sentry_sdk
+from django.core.exceptions import ImproperlyConfigured
 from sentry_sdk.integrations.celery import CeleryIntegration
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration, ignore_logger
@@ -259,6 +260,13 @@ SECRET_KEY = env(
 # SECURITY WARNING: don't run with debug turned on in production!!
 DEBUG = env("DEBUG", default=False)
 
+# See "Local mode" in the README.
+LOCAL_MODE = env.bool("LOCAL_MODE", default=False)
+if LOCAL_MODE and not DEBUG:
+    raise ImproperlyConfigured("LOCAL_MODE requires DEBUG=True; it is for local development only.")
+# Stands in for S3 in local mode: one directory per bucket, one file per object key.
+LOCAL_BLOB_ROOT = BASE_DIR / "local_blobs"
+
 DATABASES = {
     "default": env.db(
         "DATABASE_URL",
@@ -286,6 +294,8 @@ SMS_VENDORS = {
         "auth_token": TWILIO_AUTH_TOKEN,
         "messaging_service": TWILIO_MESSAGING_SERVICE,
     },
+    # Logs the message instead of sending it. Used by LOCAL_MODE.
+    "console": {},
 }
 
 EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")

@@ -81,7 +81,8 @@ deploy/             # Kamal deployment config
 - **Recovery pin**: Must use `set_recovery_pin()` method (hashes internally), never assign directly.
 - **Celery is NOT eager by default**: `CELERY_TASK_ALWAYS_EAGER` defaults to `False` (env-overridable) and is not overridden in dev/test/CI, so `.delay()`/`.apply_async()` enqueue to the broker rather than running inline. In tests, call tasks directly or via `.apply()` to run them synchronously; a running worker + Redis broker are required for `.delay()` to actually execute.
 - **API versioning**: Via Accept header, defaults to v2.0. v1.0 is deprecated but still supported.
-- **App integrity**: All app requests validate Google Play Integrity tokens. Use `@skip_app_integrity_check` decorator in tests.
+- **App integrity**: Registration validates Google Play Integrity tokens (`@require_app_integrity` on `start_device_configuration`). Use `@skip_app_integrity_check` decorator in tests.
+- **Local mode**: `LOCAL_MODE=True` (requires `DEBUG=True`) runs registration and messaging with no external services. See "Local mode" in the README.
 - **Docker Compose PostgreSQL**: Runs on port **5433** (not 5432).
 - **User lock vs deactivation**: `is_locked` (security lock from failed attempts) is separate from `is_active` (account deactivation).
 - **Message status flow**: PENDING -> SENT_TO_SERVICE -> DELIVERED -> CONFIRMED_RECEIVED

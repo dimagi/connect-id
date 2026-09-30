@@ -37,3 +37,14 @@ def test_unparseable_number_is_not_treated_as_a_test_number(get_vendor):
     send_sms(to_python("garbage"), "hi")
 
     get_vendor.assert_called_once_with(DEFAULT_VENDOR)
+
+
+def test_local_mode_logs_instead_of_sending(settings, caplog):
+    settings.LOCAL_MODE = True
+    to = to_python("+265991234567")
+
+    with caplog.at_level("INFO", logger="sms.vendors.console"):
+        result = send_sms(to, "Your code is 123456")
+
+    assert result == SendResult(vendor="console", vendor_message_id=None)
+    assert "Your code is 123456" in caplog.text

@@ -2,10 +2,12 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
 from sms.base import BaseSmsVendor
+from sms.vendors.console import ConsoleVendor
 from sms.vendors.twilio import TwilioVendor
 
 VENDORS: dict[str, type[BaseSmsVendor]] = {
     TwilioVendor.name: TwilioVendor,
+    ConsoleVendor.name: ConsoleVendor,
 }
 
 DEFAULT_VENDOR = TwilioVendor.name
