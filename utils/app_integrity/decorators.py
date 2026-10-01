@@ -80,7 +80,7 @@ def require_app_integrity(view):
             )
         request.invited_user = invited
 
-        if settings.LOCAL_MODE:
+        if settings.PLAYSTORE_INTEGRITY_DISABLED:
             # No Google round trip locally. The invite check above still ran, so a malformed
             # phone number is reported the same way it is in production.
             return view(request, *args, **kwargs)

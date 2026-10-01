@@ -10,8 +10,6 @@ VENDORS: dict[str, type[BaseSmsVendor]] = {
     ConsoleVendor.name: ConsoleVendor,
 }
 
-DEFAULT_VENDOR = TwilioVendor.name
-
 
 def get_vendor(name: str) -> BaseSmsVendor:
     if name not in VENDORS:

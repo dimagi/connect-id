@@ -3,7 +3,7 @@ from unittest import mock
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
-from sms.registry import DEFAULT_VENDOR, get_vendor
+from sms.registry import get_vendor
 from sms.vendors.twilio import TwilioVendor
 
 
@@ -19,7 +19,7 @@ def test_builds_vendor_from_settings(settings):
 
 def test_default_vendor_is_registered(settings):
     with mock.patch("sms.vendors.twilio.Client"):
-        assert get_vendor(DEFAULT_VENDOR).name == DEFAULT_VENDOR
+        assert get_vendor(settings.SMS_DEFAULT_VENDOR).name == settings.SMS_DEFAULT_VENDOR
 
 
 def test_unknown_vendor(settings):

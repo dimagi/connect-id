@@ -5,7 +5,6 @@ from phonenumber_field.phonenumber import to_python
 
 from sms import send_sms
 from sms.base import SendResult, SmsMessage
-from sms.registry import DEFAULT_VENDOR
 from users.const import TEST_NUMBER_PREFIX
 
 
@@ -15,13 +14,14 @@ def get_vendor():
         yield get_vendor
 
 
-def test_sends_via_the_default_vendor(get_vendor):
+def test_sends_via_the_configured_vendor(get_vendor, settings):
+    settings.SMS_DEFAULT_VENDOR = "twilio"
     get_vendor.return_value.send.return_value = SendResult(vendor="twilio", vendor_message_id="SM123")
     to = to_python("+265991234567")
 
     result = send_sms(to, "hi")
 
-    get_vendor.assert_called_once_with(DEFAULT_VENDOR)
+    get_vendor.assert_called_once_with("twilio")
     get_vendor.return_value.send.assert_called_once_with(SmsMessage(to=to, body="hi"))
     assert result == SendResult(vendor="twilio", vendor_message_id="SM123")
 
@@ -33,14 +33,15 @@ def test_test_numbers_are_skipped_without_building_a_vendor(get_vendor):
     get_vendor.assert_not_called()
 
 
-def test_unparseable_number_is_not_treated_as_a_test_number(get_vendor):
+def test_unparseable_number_is_not_treated_as_a_test_number(get_vendor, settings):
+    settings.SMS_DEFAULT_VENDOR = "twilio"
     send_sms(to_python("garbage"), "hi")
 
-    get_vendor.assert_called_once_with(DEFAULT_VENDOR)
+    get_vendor.assert_called_once_with("twilio")
 
 
-def test_local_mode_logs_instead_of_sending(settings, caplog):
-    settings.LOCAL_MODE = True
+def test_console_vendor_logs_instead_of_sending(settings, caplog):
+    settings.SMS_DEFAULT_VENDOR = "console"
     to = to_python("+265991234567")
 
     with caplog.at_level("INFO", logger="sms.vendors.console"):

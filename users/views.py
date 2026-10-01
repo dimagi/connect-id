@@ -1282,7 +1282,7 @@ def report_integrity(request):
     if not integrity_token or not request_hash:
         return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
-    if settings.LOCAL_MODE:
+    if settings.PLAYSTORE_INTEGRITY_DISABLED:
         # No Google round trip locally. None is what the app already gets for a repeated sample.
         return JsonResponse({"result_code": None})
 

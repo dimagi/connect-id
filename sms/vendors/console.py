@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class ConsoleVendor(BaseSmsVendor):
     """Logs the message instead of sending it, so OTP codes can be read from the server log.
 
-    Selected by ``send_sms`` when ``LOCAL_MODE`` is on.
+    Select it with ``SMS_DEFAULT_VENDOR=console``.
     """
 
     name = "console"

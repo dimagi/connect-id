@@ -12,7 +12,7 @@ CONNECT_REQUEST_TIMEOUT = 15
 def check_number_for_existing_invites(phone_number):
     phone = PhoneNumber.from_string(phone_number)
 
-    if settings.LOCAL_MODE:
+    if settings.CONNECT_DISABLED:
         return False
 
     url = settings.CONNECT_INVITED_USER_URL
@@ -24,8 +24,8 @@ def check_number_for_existing_invites(phone_number):
 
 
 def resend_connect_invite(user):
-    if settings.LOCAL_MODE:
-        logger.info("LOCAL_MODE: not asking Connect to resend invites for %s", user.username)
+    if settings.CONNECT_DISABLED:
+        logger.info("CONNECT_DISABLED: not asking Connect to resend invites for %s", user.username)
         return
 
     url = settings.CONNECT_RESEND_INVITES_URL
@@ -40,8 +40,8 @@ def resend_connect_invite(user):
 
 def update_connect_user_profile(username, name):
     """Push a profile change to Connect, which caches the name for its own reporting."""
-    if settings.LOCAL_MODE:
-        logger.info("LOCAL_MODE: not pushing profile change for %s to Connect", username)
+    if settings.CONNECT_DISABLED:
+        logger.info("CONNECT_DISABLED: not pushing profile change for %s to Connect", username)
         return
 
     url = settings.CONNECT_UPDATE_PROFILE_URL
@@ -53,7 +53,7 @@ def update_connect_user_profile(username, name):
 
 
 def get_connect_toggles(username=None, phone_number=None):
-    if settings.LOCAL_MODE:
+    if settings.CONNECT_DISABLED:
         return {}
 
     url = settings.CONNECT_TOGGLES_URL

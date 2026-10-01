@@ -18,12 +18,20 @@ from users.factories import (
 
 
 @pytest.fixture(autouse=True)
-def production_behaviour(settings):
+def production_behaviour(settings, tmp_path):
     """Tests exercise the production code paths whatever the developer's .env says.
 
-    Tests of local mode turn it on themselves.
+    File storage is the one exception: it is pointed at a temp directory so no test touches S3.
+    Tests of the opt-outs turn them on themselves.
     """
-    settings.LOCAL_MODE = False
+    settings.PLAYSTORE_INTEGRITY_DISABLED = False
+    settings.CONNECT_DISABLED = False
+    settings.SMS_DEFAULT_VENDOR = "twilio"
+    settings.MEDIA_ROOT = tmp_path
+    settings.STORAGES = {
+        **settings.STORAGES,
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    }
 
 
 @pytest.fixture

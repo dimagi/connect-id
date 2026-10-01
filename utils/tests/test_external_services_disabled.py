@@ -1,7 +1,6 @@
-"""LOCAL_MODE: the registration flow runs with no external service configured.
+"""Registration runs with Connect and Google Play Integrity switched off.
 
-Nothing here mocks Connect, Google or Twilio. If a test below ever needs a mock, LOCAL_MODE has
-regressed.
+Nothing here mocks Connect or Google. If a test below ever needs a mock, an opt-out has regressed.
 """
 
 import os
@@ -24,22 +23,27 @@ from utils.connect import (
 
 
 @pytest.fixture
-def local_mode(settings):
-    settings.LOCAL_MODE = True
+def connect_disabled(settings):
+    settings.CONNECT_DISABLED = True
+
+
+@pytest.fixture
+def integrity_disabled(settings):
+    settings.PLAYSTORE_INTEGRITY_DISABLED = True
 
 
 @pytest.fixture
 def no_outbound_http():
     """Fail the test if anything tries to leave the process over HTTP."""
     with (
-        mock.patch("utils.connect.requests.get", side_effect=AssertionError("outbound HTTP in LOCAL_MODE")),
-        mock.patch("utils.connect.requests.post", side_effect=AssertionError("outbound HTTP in LOCAL_MODE")),
+        mock.patch("utils.connect.requests.get", side_effect=AssertionError("outbound HTTP to Connect")),
+        mock.patch("utils.connect.requests.post", side_effect=AssertionError("outbound HTTP to Connect")),
     ):
         yield
 
 
-def test_local_mode_refuses_to_start_without_debug():
-    env = {**os.environ, "LOCAL_MODE": "True", "DEBUG": "False"}
+def test_integrity_cannot_be_disabled_without_debug():
+    env = {**os.environ, "PLAYSTORE_INTEGRITY_DISABLED": "True", "DEBUG": "False"}
     result = subprocess.run(
         [sys.executable, "-c", "import connectid.settings"],
         cwd=django_settings.BASE_DIR,
@@ -48,11 +52,11 @@ def test_local_mode_refuses_to_start_without_debug():
         text=True,
     )
     assert result.returncode != 0
-    assert "LOCAL_MODE requires DEBUG=True" in result.stderr
+    assert "PLAYSTORE_INTEGRITY_DISABLED requires DEBUG=True" in result.stderr
 
 
-@pytest.mark.usefixtures("local_mode", "no_outbound_http")
-class TestConnectCallsAreSkipped:
+@pytest.mark.usefixtures("connect_disabled", "no_outbound_http")
+class TestConnectDisabled:
     def test_no_number_is_invited(self):
         assert check_number_for_existing_invites("+12025550100") is False
 
@@ -69,7 +73,7 @@ class TestConnectCallsAreSkipped:
 
 
 @pytest.mark.django_db
-@pytest.mark.usefixtures("local_mode", "no_outbound_http")
+@pytest.mark.usefixtures("connect_disabled", "integrity_disabled", "no_outbound_http")
 class TestRegistrationWithoutExternalServices:
     def test_start_configuration_needs_no_integrity_headers(self, client):
         response = client.post(reverse("start_device_configuration"), data={"phone_number": "+74261234567"})
