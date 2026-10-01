@@ -36,14 +36,19 @@ def upload_photo_to_s3(image_base64, username):
     if len(image_base64) > MAX_PHOTO_SIZE:
         return ErrorCodes.FILE_TOO_LARGE
     file_type, image_base64_data = split_base64_string(image_base64)
+    if file_type not in PHOTO_FILE_TYPES:
+        return ErrorCodes.FILE_TYPE_UNSUPPORTED
+    name = _photo_name(username, file_type)
     try:
         image_data = base64.b64decode(image_base64_data)
-        # One photo per user. Deleting first also keeps backends that rename on collision, like
-        # FileSystemStorage, from leaving the old file behind.
         previous = _find_photo_name(username)
-        if previous:
+        # Write first, so a failed save leaves the previous photo in place. Storage is configured
+        # to overwrite on a name collision (see STORAGES), so a same-type replacement is one write.
+        saved_name = default_storage.save(name, ContentFile(image_data))
+        if saved_name != name:
+            raise RuntimeError(f"storage saved {saved_name!r} instead of overwriting {name!r}")
+        if previous and previous != name:
             default_storage.delete(previous)
-        default_storage.save(_photo_name(username, file_type), ContentFile(image_data))
     except Exception as e:
         sentry_sdk.capture_exception(e)
         return ErrorCodes.FAILED_TO_UPLOAD

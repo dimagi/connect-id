@@ -30,7 +30,7 @@ def production_behaviour(settings, tmp_path):
     settings.MEDIA_ROOT = tmp_path
     settings.STORAGES = {
         **settings.STORAGES,
-        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage", "OPTIONS": {"allow_overwrite": True}},
     }
 
 
