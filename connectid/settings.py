@@ -362,9 +362,10 @@ GOOGLE_APPLICATION_CREDENTIALS = {
 }
 
 # Blob and file storage configuration
+PRODUCTION_FILE_STORAGE_BACKEND = "storages.backends.s3.S3Storage"
 STORAGES = {
     "default": {
-        "BACKEND": env("DEFAULT_FILE_STORAGE_BACKEND", default="storages.backends.s3.S3Boto3Storage"),
+        "BACKEND": env("DEFAULT_FILE_STORAGE_BACKEND", default=PRODUCTION_FILE_STORAGE_BACKEND),
     },
     "staticfiles": {
         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
