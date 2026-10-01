@@ -309,12 +309,16 @@ HELP = (
 
 
 def print_users(write):
+    """List users so a recipient can be picked. Prints personal data, so it is a DEBUG-only tool."""
+    if not settings.DEBUG:
+        raise RuntimeError("print_users lists personal data and only runs with DEBUG=True")
     rows = list_users()
     if not rows:
         write(f"No users yet. Register one from the app; demo numbers start with {TEST_NUMBER_PREFIX}.")
         return
     write("Users (demo users first):")
     for username, phone, name, is_demo in rows:
+        # codeql[py/clear-text-logging]
         write(f"  {username}  {phone}  {name}{'  (demo)' if is_demo else ''}")
 
 
