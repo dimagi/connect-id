@@ -363,9 +363,14 @@ GOOGLE_APPLICATION_CREDENTIALS = {
 
 # Blob and file storage configuration
 PRODUCTION_FILE_STORAGE_BACKEND = "storages.backends.s3.S3Storage"
+DEFAULT_FILE_STORAGE_BACKEND = env("DEFAULT_FILE_STORAGE_BACKEND", default=PRODUCTION_FILE_STORAGE_BACKEND)
+# Set file system to ovewrite, matching the same semantics for file updates as s3 storage for consistency.
+# Note that FileSystemStorage still renames,however, unless told otherwise.
+_FILE_STORAGE_OPTIONS = {"django.core.files.storage.FileSystemStorage": {"allow_overwrite": True}}
 STORAGES = {
     "default": {
-        "BACKEND": env("DEFAULT_FILE_STORAGE_BACKEND", default=PRODUCTION_FILE_STORAGE_BACKEND),
+        "BACKEND": DEFAULT_FILE_STORAGE_BACKEND,
+        "OPTIONS": _FILE_STORAGE_OPTIONS.get(DEFAULT_FILE_STORAGE_BACKEND, {}),
     },
     "staticfiles": {
         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",

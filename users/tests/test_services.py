@@ -57,3 +57,26 @@ def test_production_storage_backend_exists():
     """Tests run on FileSystemStorage, so make sure the production backend path at least imports."""
     backend = import_string(settings.PRODUCTION_FILE_STORAGE_BACKEND)
     assert backend.__name__ == "S3Storage"
+
+
+def test_unsupported_type_is_refused_before_anything_is_written():
+    upload_photo_to_s3(PHOTO_DATA_URI, "someuser")
+    bad = "data:image/tiff;base64," + base64.b64encode(b"tiff bytes").decode()
+
+    assert upload_photo_to_s3(bad, "someuser") == ErrorCodes.FILE_TYPE_UNSUPPORTED
+
+    assert default_storage.listdir("")[1] == ["someuser.jpeg"]
+    assert get_user_photo_base64("someuser") == PHOTO_DATA_URI
+
+
+def test_failed_write_keeps_the_previous_photo(monkeypatch):
+    upload_photo_to_s3(PHOTO_DATA_URI, "someuser")
+
+    def failing_save(name, content):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(default_storage, "save", failing_save)
+    webp = "data:image/webp;base64," + base64.b64encode(b"webp bytes").decode()
+
+    assert upload_photo_to_s3(webp, "someuser") == ErrorCodes.FAILED_TO_UPLOAD
+    assert get_user_photo_base64("someuser") == PHOTO_DATA_URI
