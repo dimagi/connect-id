@@ -2,7 +2,9 @@
 
 import base64
 
+from django.conf import settings
 from django.core.files.storage import default_storage
+from django.utils.module_loading import import_string
 
 from users.const import ErrorCodes
 from users.services import get_user_photo_base64, upload_photo_to_s3
@@ -49,3 +51,9 @@ def test_size_limit_still_applies():
 
 def test_bad_base64_is_reported_not_raised():
     assert upload_photo_to_s3("data:image/png;base64,invalid-base64", "someuser") == ErrorCodes.FAILED_TO_UPLOAD
+
+
+def test_production_storage_backend_exists():
+    """Tests run on FileSystemStorage, so make sure the production backend path at least imports."""
+    backend = import_string(settings.PRODUCTION_FILE_STORAGE_BACKEND)
+    assert backend.__name__ == "S3Storage"
