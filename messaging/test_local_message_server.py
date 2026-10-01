@@ -93,3 +93,10 @@ def test_key_is_served_only_to_the_channel_owner(tmp_path):
         assert sender.serve_key({"channel_id": ["c1"]}, "Bearer t")[0] == 401
     assert sender.serve_key({"channel_id": ["nope"]}, "Bearer t")[0] == 404
     assert sender.serve_key({}, None)[0] == 400
+
+
+@pytest.mark.django_db
+def test_user_listing_refuses_without_debug(settings):
+    settings.DEBUG = False
+    with pytest.raises(RuntimeError):
+        lms.print_users(lambda line: None)
