@@ -95,6 +95,14 @@ def ensure_message_server(public_url):
     )
 
 
+def mask(value, keep=4):
+    """Hide all but the last `keep` characters: "+74261234567" -> "********4567". Short values are hidden entirely."""
+    value = str(value or "")
+    if len(value) <= keep:
+        return "*" * len(value)
+    return "*" * (len(value) - keep) + value[-keep:]
+
+
 def list_users():
     """Active users, demo users first, as (username, phone, name, is_demo) tuples."""
     users = ConnectUser.objects.filter(is_active=True).order_by("date_joined")
@@ -309,17 +317,17 @@ HELP = (
 
 
 def print_users(write):
-    """List users so a recipient can be picked. Prints personal data, so it is a DEBUG-only tool."""
+    """List users so a recipient can be picked. Phone and name are masked to their last four characters."""
     if not settings.DEBUG:
-        raise RuntimeError("print_users lists personal data and only runs with DEBUG=True")
+        raise RuntimeError("print_users is a local development tool and only runs with DEBUG=True")
     rows = list_users()
     if not rows:
         write(f"No users yet. Register one from the app; demo numbers start with {TEST_NUMBER_PREFIX}.")
         return
     write("Users (demo users first):")
     for username, phone, name, is_demo in rows:
-        # codeql[py/clear-text-logging]
-        write(f"  {username}  {phone}  {name}{'  (demo)' if is_demo else ''}")
+        # codeql[py/clear-text-logging-sensitive-data] sensitive fields masked
+        write(f"  {username}  {mask(name)}{'  (demo)' if is_demo else ''}")
 
 
 def prompt_loop(sender, write=print):

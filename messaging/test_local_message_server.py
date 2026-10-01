@@ -49,13 +49,30 @@ def test_setup_creates_the_app_and_a_server_and_is_idempotent(settings):
 def test_lists_users_with_demo_users_first(settings):
     settings.DEBUG = True
     regular = UserFactory(phone_number="+12025550100")
-    demo = UserFactory(phone_number="+74261234567")
+    demo = UserFactory(phone_number="+74261234567", name="Demo Person")
 
     output = run()
 
     assert output.index(demo.username) < output.index(regular.username)
-    assert f"{demo.username}  +74261234567" in output
+    assert f"{demo.username}  *******rson" in output
+    assert "4567" not in output
+    assert "Demo Person" not in output
     assert output.count("(demo)") == 1
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("+99991234567", "********4567"),
+        ("John Smith", "******mith"),
+        ("1234", "****"),
+        ("ab", "**"),
+        ("", ""),
+        (None, ""),
+    ],
+)
+def test_mask_keeps_only_the_last_four_characters(value, expected):
+    assert lms.mask(value) == expected
 
 
 def test_encrypt_round_trips_through_the_relayed_triple():
