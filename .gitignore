@@ -15,4 +15,4 @@
 .coverage
 .vscode/
 /local_blobs/
-/scripts/.local_temp_state/
+/.local_temp_state/
