@@ -59,21 +59,11 @@
    uv run ./manage.py runserver
    ```
 
-## Local mode
+## Running locally without external services
 
-Local mode (`LOCAL_MODE=True`) runs the full registration and messaging flows against this server with no external
-service configured: no Connect, no Google Play Integrity, no Twilio, no S3. It is for local
-development only and every process refuses to start with it on unless `DEBUG` is on too.
-
-| What                                     | Normally                | In local mode                                |
-| ---------------------------------------- | ----------------------- | -------------------------------------------- |
-| Invite check and toggles on registration | Asks Connect            | Not invited; only this server's own switches |
-| Play Integrity                           | Token decoded by Google | Skipped                                      |
-| Blobs (profile photos today)             | S3 bucket               | `local_blobs/<bucket name>/`                 |
-| SMS                                      | Twilio                  | Written to the server log                    |
-| Profile changes and invite resends       | Pushed to Connect       | Dropped                                      |
-
-Everything else, including messaging, is the production code path.
+Individual external services (Connect, SMS, service integrity) can be disabled in the `.env`
+to support local development. Some service toggles can only be disabled if `DEBUG=True`, and
+some services may require `CELERY_TASK_ALWAYS_EAGER=True` if there is no local celery config.
 
 ## Production Deploy
 

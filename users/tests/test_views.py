@@ -7,6 +7,7 @@ from unittest.mock import patch
 import factory
 import pytest
 import requests
+from django.core.files.storage import default_storage
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse, reverse_lazy
 from django.utils.timezone import now
@@ -1220,15 +1221,10 @@ class TestUpdateProfile:
         assert updated_user.name == data["name"]
         assert updated_user.recovery_phone == data["secondary_phone"]
 
-    @mock.patch("users.services.boto3.client")
-    def test_update_photo(self, mock_boto3_client, auth_device, user):
-        mock_s3 = mock.MagicMock()
-        mock_boto3_client.return_value = mock_s3
+    def test_update_photo(self, auth_device, user):
         data = {"photo": "data:image/jpg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEB"}
         auth_device.post(self.url, data)
-        mock_s3.put_object.assert_called_once()
-        _, kwargs = mock_s3.put_object.call_args
-        assert kwargs["Key"] == f"{user.username}.jpg"
+        assert default_storage.exists(f"{user.username}.jpg")
 
     def test_update_photo_invalid(self, auth_device):
         data = {"photo": "data:image/png;base64,invalid-base64"}
@@ -1276,10 +1272,8 @@ class TestUpdateProfile:
         assert response.status_code == 200
         mock_push.assert_not_called()
 
-    @mock.patch("users.services.boto3.client")
     @mock.patch("users.views.push_profile_to_connect.delay")
-    def test_photo_only_update_is_not_pushed(self, mock_push, mock_boto3_client, auth_device):
-        mock_boto3_client.return_value = mock.MagicMock()
+    def test_photo_only_update_is_not_pushed(self, mock_push, auth_device):
         data = {"photo": "data:image/jpg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEB"}
 
         auth_device.post(self.url, data)

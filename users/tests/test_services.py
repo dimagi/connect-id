@@ -1,7 +1,8 @@
-import base64
-from unittest import mock
+"""Photo storage through Django's storage API. conftest points default storage at a temp directory."""
 
-import pytest
+import base64
+
+from django.core.files.storage import default_storage
 
 from users.const import ErrorCodes
 from users.services import get_user_photo_base64, upload_photo_to_s3
@@ -10,25 +11,41 @@ PHOTO_BYTES = b"not really a jpeg"
 PHOTO_DATA_URI = "data:image/jpeg;base64," + base64.b64encode(PHOTO_BYTES).decode()
 
 
-@pytest.fixture
-def local_mode(settings, tmp_path):
-    settings.LOCAL_MODE = True
-    settings.LOCAL_BLOB_ROOT = tmp_path
-    settings.AWS_S3_PHOTO_BUCKET_NAME = "photo-bucket"
+def test_photo_is_saved_and_read_back():
+    assert upload_photo_to_s3(PHOTO_DATA_URI, "someuser") is None
+
+    assert default_storage.open("someuser.jpeg").read() == PHOTO_BYTES
+    assert get_user_photo_base64("someuser") == PHOTO_DATA_URI
 
 
-@pytest.mark.usefixtures("local_mode")
-class TestPhotosInLocalMode:
-    @mock.patch("users.services.boto3.client", side_effect=AssertionError("S3 in LOCAL_MODE"))
-    def test_photo_is_written_under_the_bucket_name_and_read_back(self, _boto3, tmp_path):
-        assert upload_photo_to_s3(PHOTO_DATA_URI, "someuser") is None
+def test_a_new_photo_replaces_the_old_one_whatever_its_type():
+    upload_photo_to_s3(PHOTO_DATA_URI, "someuser")
+    webp = "data:image/webp;base64," + base64.b64encode(b"webp bytes").decode()
 
-        assert (tmp_path / "photo-bucket" / "someuser.jpeg").read_bytes() == PHOTO_BYTES
-        assert get_user_photo_base64("someuser") == PHOTO_DATA_URI
+    upload_photo_to_s3(webp, "someuser")
 
-    def test_missing_photo_reads_as_empty(self):
-        assert get_user_photo_base64("nobody") == ""
+    assert not default_storage.exists("someuser.jpeg")
+    assert get_user_photo_base64("someuser") == webp
 
-    def test_size_limit_still_applies(self):
-        oversized = "data:image/jpeg;base64," + "A" * 2_000_000
-        assert upload_photo_to_s3(oversized, "someuser") == ErrorCodes.FILE_TOO_LARGE
+
+def test_saving_twice_overwrites_rather_than_renaming():
+    upload_photo_to_s3(PHOTO_DATA_URI, "someuser")
+    second = "data:image/jpeg;base64," + base64.b64encode(b"second").decode()
+
+    upload_photo_to_s3(second, "someuser")
+
+    assert default_storage.open("someuser.jpeg").read() == b"second"
+    assert default_storage.listdir("")[1] == ["someuser.jpeg"]
+
+
+def test_missing_photo_reads_as_empty():
+    assert get_user_photo_base64("nobody") == ""
+
+
+def test_size_limit_still_applies():
+    oversized = "data:image/jpeg;base64," + "A" * 2_000_000
+    assert upload_photo_to_s3(oversized, "someuser") == ErrorCodes.FILE_TOO_LARGE
+
+
+def test_bad_base64_is_reported_not_raised():
+    assert upload_photo_to_s3("data:image/png;base64,invalid-base64", "someuser") == ErrorCodes.FAILED_TO_UPLOAD
