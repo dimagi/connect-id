@@ -258,12 +258,35 @@ class TestConfirmOTP:
         user.save()
         PhoneDeviceFactory(user=user, phone_number=user.phone_number)
 
-        response = auth_device.post(reverse("confirm_otp"), data={})
+        response = auth_device.post(reverse("confirm_otp"), data={"token": "999999"})
 
         assert response.status_code == 401
         assert response.json() == {"error_code": ErrorCodes.INCORRECT_OTP, "attempts_left": MAX_OTP_VERIFY_ATTEMPTS}
         user.refresh_from_db()
         assert not user.phone_validated
+
+    def test_missing_token(self, auth_device, user):
+        device = PhoneDeviceFactory(user=user, phone_number=user.phone_number)
+
+        response = auth_device.post(reverse("confirm_otp"), data={})
+
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
+        device.refresh_from_db()
+        assert device.failed_verifications == 0
+        user.refresh_from_db()
+        assert not user.phone_validated
+
+    def test_correct_code_validates_phone(self, auth_device, user):
+        device = PhoneDeviceFactory(user=user, phone_number=user.phone_number)
+        with mock.patch("users.models.send_sms"):
+            device.generate_challenge()
+
+        response = auth_device.post(reverse("confirm_otp"), data={"token": device.token})
+
+        assert response.status_code == 200
+        user.refresh_from_db()
+        assert user.phone_validated
 
     def test_no_code_sent(self, auth_device, user):
         response = auth_device.post(reverse("confirm_otp"), data={"token": "112233"})
@@ -2034,13 +2057,11 @@ class TestConfirmSessionOtp:
             phone_number=valid_token.phone_number,
         )
 
-        mock_verify_token.return_value = False
-
         response = authed_client_token.post(self.url, data={})
 
-        assert response.status_code == 401
-        assert response.json()["error"] == ErrorCodes.INCORRECT_OTP
-        mock_verify_token.assert_called_once_with(None)
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
+        mock_verify_token.assert_not_called()
 
         valid_token.refresh_from_db()
         assert not valid_token.is_phone_validated
