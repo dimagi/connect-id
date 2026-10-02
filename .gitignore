@@ -14,3 +14,4 @@
 /.envrc
 .coverage
 .vscode/
+/local_blobs/

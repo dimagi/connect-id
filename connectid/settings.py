@@ -16,6 +16,7 @@ from pathlib import Path
 
 import environ
 import sentry_sdk
+from django.core.exceptions import ImproperlyConfigured
 from sentry_sdk.integrations.celery import CeleryIntegration
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration, ignore_logger
@@ -56,6 +57,7 @@ INSTALLED_APPS = [
     "django.contrib.sites",
     "waffle",
     "anymail",
+    "storages",
 ] + LOCAL_APPS
 
 MIDDLEWARE = [
@@ -259,6 +261,13 @@ SECRET_KEY = env(
 # SECURITY WARNING: don't run with debug turned on in production!!
 DEBUG = env("DEBUG", default=False)
 
+# External service toggles
+PLAYSTORE_INTEGRITY_DISABLED = env.bool("PLAYSTORE_INTEGRITY_DISABLED", default=False)
+if PLAYSTORE_INTEGRITY_DISABLED and not DEBUG:
+    raise ImproperlyConfigured("PLAYSTORE_INTEGRITY_DISABLED requires DEBUG=True.")
+
+CONNECT_DISABLED = env.bool("CONNECT_DISABLED", default=False)
+
 DATABASES = {
     "default": env.db(
         "DATABASE_URL",
@@ -286,7 +295,11 @@ SMS_VENDORS = {
         "auth_token": TWILIO_AUTH_TOKEN,
         "messaging_service": TWILIO_MESSAGING_SERVICE,
     },
+    # Writes the message to the log instead of sending it.
+    "console": {},
 }
+# The vendor send_sms uses. Set to "console" to run without Twilio.
+SMS_DEFAULT_VENDOR = env("SMS_DEFAULT_VENDOR", default="twilio")
 
 EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Connect <noreply@commcare-connect.org>")
@@ -348,8 +361,26 @@ GOOGLE_APPLICATION_CREDENTIALS = {
     "universe_domain": "googleapis.com",
 }
 
-# Bucket where user photos are stored on S3
+# Blob and file storage configuration
+PRODUCTION_FILE_STORAGE_BACKEND = "storages.backends.s3.S3Storage"
+DEFAULT_FILE_STORAGE_BACKEND = env("DEFAULT_FILE_STORAGE_BACKEND", default=PRODUCTION_FILE_STORAGE_BACKEND)
+# Set file system to ovewrite, matching the same semantics for file updates as s3 storage for consistency.
+# Note that FileSystemStorage still renames,however, unless told otherwise.
+_FILE_STORAGE_OPTIONS = {"django.core.files.storage.FileSystemStorage": {"allow_overwrite": True}}
+STORAGES = {
+    "default": {
+        "BACKEND": DEFAULT_FILE_STORAGE_BACKEND,
+        "OPTIONS": _FILE_STORAGE_OPTIONS.get(DEFAULT_FILE_STORAGE_BACKEND, {}),
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
 AWS_S3_PHOTO_BUCKET_NAME = env("AWS_S3_PHOTO_BUCKET_NAME", default="personalid-user-photos")
+AWS_STORAGE_BUCKET_NAME = AWS_S3_PHOTO_BUCKET_NAME
+AWS_S3_FILE_OVERWRITE = True
+AWS_DEFAULT_ACL = None
+MEDIA_ROOT = BASE_DIR / "local_blobs" / AWS_S3_PHOTO_BUCKET_NAME
 
 # Open Chat Studio (OCS) configuration
 OCS_CONFIG = {

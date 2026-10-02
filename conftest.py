@@ -17,6 +17,23 @@ from users.factories import (
 )
 
 
+@pytest.fixture(autouse=True)
+def production_behaviour(settings, tmp_path):
+    """Tests exercise the production code paths whatever the developer's .env says.
+
+    File storage is the one exception: it is pointed at a temp directory so no test touches S3.
+    Tests of the opt-outs turn them on themselves.
+    """
+    settings.PLAYSTORE_INTEGRITY_DISABLED = False
+    settings.CONNECT_DISABLED = False
+    settings.SMS_DEFAULT_VENDOR = "twilio"
+    settings.MEDIA_ROOT = tmp_path
+    settings.STORAGES = {
+        **settings.STORAGES,
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage", "OPTIONS": {"allow_overwrite": True}},
+    }
+
+
 @pytest.fixture
 def user(db):
     return UserFactory()
