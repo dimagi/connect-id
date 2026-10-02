@@ -203,12 +203,14 @@ def confirm_otp(request):
     # check otp code for user
     # mark phone as confirmed on user model
     user = request.user
+    token = request.data.get("token") or request.data.get("otp")
+    if not token:
+        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
     try:
         device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
     except PhoneDevice.DoesNotExist:
         return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
-    data = request.data
-    verified = device.verify_token(data.get("token"))
+    verified = device.verify_token(token)
     if not verified:
         if device.is_exhausted:
             return JsonResponse(
@@ -1139,10 +1141,12 @@ def send_session_otp(request):
 def confirm_session_otp(request):
     if not request.auth.invited_user:
         return JsonResponse({"error_code": ErrorCodes.NOT_ALLOWED}, status=403)
+    otp = request.data.get("otp")
+    if not otp:
+        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
 
     device = SessionPhoneDevice.objects.get(phone_number=request.auth.phone_number, session=request.auth)
-    data = request.data
-    verified = device.verify_token(data.get("otp"))
+    verified = device.verify_token(otp)
     if not verified:
         if device.is_exhausted:
             return JsonResponse(
