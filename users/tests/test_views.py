@@ -1994,7 +1994,7 @@ class TestConfirmSessionOtp:
         response = authed_client_token.post(self.url, data={"otp": "wrong"})
 
         assert response.status_code == 401
-        assert response.json()["error"] == ErrorCodes.INCORRECT_OTP
+        assert response.json()["error_code"] == ErrorCodes.INCORRECT_OTP
         mock_verify_token.assert_called_once_with("wrong")
 
         valid_token.refresh_from_db()
@@ -2039,7 +2039,7 @@ class TestConfirmSessionOtp:
         response = authed_client_token.post(self.url, data={})
 
         assert response.status_code == 401
-        assert response.json()["error"] == ErrorCodes.INCORRECT_OTP
+        assert response.json()["error_code"] == ErrorCodes.INCORRECT_OTP
         mock_verify_token.assert_called_once_with(None)
 
         valid_token.refresh_from_db()
@@ -2980,7 +2980,7 @@ class TestOtpVerifyLimit:
             authed_client_token,
             reverse("confirm_session_otp"),
             {"otp": WRONG_OTP},
-            {"error": ErrorCodes.INCORRECT_OTP},
+            {"error_code": ErrorCodes.INCORRECT_OTP},
         )
         assert response.json()["error_code"] == ErrorCodes.OTP_LIMIT_EXCEEDED
         # Phone codes keep the ordinary resend backoff after a burn, not the email hours.
