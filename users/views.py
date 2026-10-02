@@ -1153,7 +1153,7 @@ def confirm_session_otp(request):
                 status=401,
             )
         return JsonResponse(
-            {"error": ErrorCodes.INCORRECT_OTP, "attempts_left": device.verify_attempts_left}, status=401
+            {"error_code": ErrorCodes.INCORRECT_OTP, "attempts_left": device.verify_attempts_left}, status=401
         )
     request.auth.is_phone_validated = True
     request.auth.save()
