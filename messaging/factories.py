@@ -79,6 +79,7 @@ class MessageAttachmentFactory(DjangoModelFactory):
     message = factory.SubFactory(RichMessageFactory)
     name = factory.Sequence(lambda n: f"attachment-{n}.jpg")
     content_type = "image/jpeg"
+    position = factory.Sequence(lambda n: n)
     file = factory.django.FileField(data=b"\x00" * 64)
     size = factory.LazyAttribute(lambda o: o.file.size)
 

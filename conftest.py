@@ -27,6 +27,7 @@ def production_behaviour(settings, tmp_path):
     settings.PLAYSTORE_INTEGRITY_DISABLED = False
     settings.CONNECT_DISABLED = False
     settings.SMS_DEFAULT_VENDOR = "twilio"
+    settings.RICH_MESSAGING_ENABLED = False
     settings.STORAGES = {
         **settings.STORAGES,
         **{

@@ -3,14 +3,28 @@ from io import StringIO
 from unittest import mock
 
 import pytest
+import requests
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.urls import reverse
+from django.utils import timezone
+from firebase_admin import messaging
 from oauth2_provider.models import Application
 
+from messaging.const import RICH_MESSAGE_VERSION
+from messaging.factories import (
+    ChannelFactory,
+    MessageAttachmentFactory,
+    MessageFactory,
+    RichMessageFactory,
+    ServerFactory,
+)
 from messaging.management.commands._local_message_server import server as lms
-from messaging.models import MessageServer
+from messaging.models import Message, MessageDirection, MessageServer, Notification
+from messaging.serializers import MessageSerializer
 from messaging.tasks import mac_digest
-from users.factories import UserFactory
+from users.factories import ServerKeysFactory, UserFactory
+from utils.storage import message_attachment_storage
 
 
 def run(**options):
@@ -117,3 +131,150 @@ def test_user_listing_refuses_without_debug(settings):
     settings.DEBUG = False
     with pytest.raises(RuntimeError):
         lms.print_users(lambda line: None)
+
+
+def test_file_encryption_uses_the_attachment_layout():
+    key = lms.new_channel_key()
+    blob = lms.encrypt_file(key, b"\x00image bytes")
+
+    assert len(blob) == len(b"\x00image bytes") + 28
+    assert lms.decrypt_file(key, blob) == b"\x00image bytes"
+
+
+def write_fixture(folder, **files):
+    folder.mkdir()
+    for name, content in files.items():
+        path = folder / name.replace("__", ".")
+        path.write_bytes(content) if isinstance(content, bytes) else path.write_text(content)
+    return folder
+
+
+def test_fixture_reads_texts_fields_and_attachments_in_name_order(tmp_path):
+    folder = write_fixture(
+        tmp_path / "m",
+        content__txt="plain\n",
+        rich_text__md="**rich**\n",
+        message__json='{"format": "gallery"}',
+        b__png=b"png",
+        a__mp3=b"mp3",
+        notes__unknownext=b"?",
+        **{".DS_Store": b"skip"},
+    )
+
+    content, rich_text, fields, attachments = lms.load_rich_fixture(folder)
+
+    assert (content, rich_text, fields) == ("plain", "**rich**", {"format": "gallery"})
+    assert attachments == [
+        ("a.mp3", "audio/mpeg", b"mp3"),
+        ("b.png", "image/png", b"png"),
+        ("notes.unknownext", "application/octet-stream", b"?"),
+    ]
+
+
+def test_fixture_needs_content(tmp_path):
+    with pytest.raises(lms.FixtureError):
+        lms.load_rich_fixture(write_fixture(tmp_path / "m", a__png=b"png"))
+
+
+@pytest.mark.django_db
+def test_send_rich_is_accepted_by_personalid(tmp_path, settings, client):
+    """The sender's request, replayed through the real endpoint, stores a message the device can decrypt."""
+    settings.RICH_MESSAGING_ENABLED = True
+    server = ServerFactory(server_credentials=ServerKeysFactory())
+    channel = ChannelFactory(server=server)
+    state = lms.State(tmp_path / "state.json")
+    key = lms.new_channel_key()
+    state.channels[str(channel.channel_id)] = {"connectid": channel.connect_user.username, "key": key}
+    sender = lms.Sender("http://personalid.test", server.server_credentials, state)
+    folder = write_fixture(
+        tmp_path / "m",
+        content__txt="plain",
+        rich_text__md="rich",
+        message__json='{"format": "gallery"}',
+        a__png=b"png",
+    )
+
+    def through_django(url, files, auth, timeout):
+        """Hand the multipart request requests would send to Django's test client instead."""
+        prepared = requests.Request("POST", url, files=files, auth=auth).prepare()
+        response = client.generic(
+            "POST",
+            "/messaging/send_rich/",
+            prepared.body,
+            content_type=prepared.headers["Content-Type"],
+            HTTP_AUTHORIZATION=prepared.headers["Authorization"],
+        )
+        return mock.Mock(status_code=response.status_code, text=response.content.decode())
+
+    with (
+        mock.patch.object(lms.requests, "post", side_effect=through_django),
+        mock.patch("messaging.views.send_bulk_notification_task"),
+    ):
+        message_id = sender.send_rich(str(channel.channel_id), folder)
+
+    assert message_id
+    message = Message.objects.get(message_id=message_id)
+    assert lms.decrypt(key, message.content) == "plain"
+    assert lms.decrypt(key, message.rich_text) == "rich"
+    assert message.format == "gallery"
+    attachment = message.attachments.get()
+    assert (attachment.name, attachment.content_type) == ("a.png", "image/png")
+    with message_attachment_storage.open(attachment.file.name) as stored:
+        assert lms.decrypt_file(key, stored.read()) == b"png"
+
+
+@pytest.mark.django_db
+def test_future_version_message_reaches_the_sync(tmp_path, user, auth_device):
+    channel = ChannelFactory(connect_user=user)
+    key = lms.new_channel_key()
+    state = lms.State(tmp_path / "state.json")
+    state.channels[str(channel.channel_id)] = {"connectid": user.username, "key": key}
+    state.last = str(channel.channel_id)
+    sender = lms.Sender("http://personalid.test", mock.Mock(client_id="id", secret_key="s"), state)
+
+    with mock.patch(
+        "firebase_admin.messaging.send_each",
+        return_value=messaging.BatchResponse([messaging.SendResponse({"name": "sent"}, None)]),
+    ):
+        message_id = sender.send_future_version("last")
+
+    [entry] = auth_device.get(reverse("messaging:retrieve_notifications")).json()["notifications"]
+    assert entry["message_id"] == message_id
+    assert entry["version"] == RICH_MESSAGE_VERSION + 1
+    assert "update notice" in lms.decrypt(key, entry)
+    assert "never show" in lms.decrypt(key, entry["rich_text"])
+    assert entry["attachments"] == []
+
+
+@pytest.mark.django_db
+def test_clear_pending_deletes_only_unacked_messages_to_the_phone(tmp_path, django_capture_on_commit_callbacks):
+    channel = ChannelFactory()
+    state = lms.State(tmp_path / "state.json")
+    key = lms.new_channel_key()
+    state.channels[str(channel.channel_id)] = {"connectid": channel.connect_user.username, "key": key}
+    sender = lms.Sender("http://personalid.test", mock.Mock(client_id="id", secret_key="s"), state)
+
+    def to_phone(received):
+        message = RichMessageFactory(channel=channel, direction=MessageDirection.MOBILE)
+        # Created the way the push path creates it (utils.notification._get_or_create_notification)
+        notification = Notification(user=channel.connect_user, json={"data": MessageSerializer(message).data})
+        notification.save()
+        Notification.objects.filter(pk=notification.pk).update(received=received)
+        return message
+
+    pending = to_phone(received=None)
+    attachment = MessageAttachmentFactory(message=pending)
+    delivered = to_phone(received=timezone.now())
+    reply = MessageFactory(channel=channel, direction=MessageDirection.SERVER)
+    other_channel = MessageFactory(direction=MessageDirection.MOBILE)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        assert sender.clear_pending(str(channel.channel_id)) == 1
+
+    assert set(Message.objects.values_list("message_id", flat=True)) == {
+        delivered.message_id,
+        reply.message_id,
+        other_channel.message_id,
+    }
+    assert not Notification.objects.filter(message_id=pending.message_id).exists()
+    assert not message_attachment_storage.exists(attachment.file.name)

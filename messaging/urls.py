@@ -10,6 +10,12 @@ urlpatterns = [
     path("create_channel/", views.CreateChannelView.as_view(), name="create_channel"),
     path("send_message/", views.SendMobileConnectMessage.as_view(), name="post_message"),
     path("send_fcm/", views.SendServerConnectMessage.as_view(), name="send_fcm"),
+    path("send_rich/", views.SendRichMessageView.as_view(), name="send_rich"),
+    path(
+        "messages/<uuid:message_id>/attachments/<uuid:attachment_id>/",
+        views.MessageAttachmentView.as_view(),
+        name="message_attachment",
+    ),
     path("update_consent/", views.UpdateConsentView.as_view(), name="update_consent"),
     path(
         "retrieve_messages/",

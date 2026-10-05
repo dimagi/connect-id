@@ -90,11 +90,15 @@ class MessageAttachment(models.Model):
     content_type = models.CharField(max_length=255)
     # Size of the encrypted file in bytes
     size = models.PositiveIntegerField()
+    # Index in the sender's attachment list, so the device gets them in the order they were sent
+    position = models.PositiveSmallIntegerField()
     file = models.FileField(upload_to=attachment_storage_key, storage=get_message_attachment_storage, max_length=255)
 
     class Meta:
+        ordering = ["position"]
         constraints = [
             models.UniqueConstraint(fields=["message", "name"], name="unique_attachment_name_per_message"),
+            models.UniqueConstraint(fields=["message", "position"], name="unique_attachment_position_per_message"),
         ]
 
 
