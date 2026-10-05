@@ -11,7 +11,7 @@ from django.utils import timezone
 from firebase_admin import messaging
 from oauth2_provider.models import Application
 
-from messaging.const import RICH_MESSAGE_VERSION
+from messaging.const import MESSAGING_VERSION, MESSAGING_VERSION_HEADER
 from messaging.factories import (
     ChannelFactory,
     MessageAttachmentFactory,
@@ -152,8 +152,8 @@ def write_fixture(folder, **files):
 def test_fixture_reads_texts_fields_and_attachments_in_name_order(tmp_path):
     folder = write_fixture(
         tmp_path / "m",
-        content__txt="plain\n",
-        rich_text__md="**rich**\n",
+        content__txt="**text**\n",
+        legacy__txt="please update\n",
         message__json='{"format": "gallery"}',
         b__png=b"png",
         a__mp3=b"mp3",
@@ -161,9 +161,9 @@ def test_fixture_reads_texts_fields_and_attachments_in_name_order(tmp_path):
         **{".DS_Store": b"skip"},
     )
 
-    content, rich_text, fields, attachments = lms.load_rich_fixture(folder)
+    content, legacy, fields, attachments = lms.load_rich_fixture(folder)
 
-    assert (content, rich_text, fields) == ("plain", "**rich**", {"format": "gallery"})
+    assert (content, legacy, fields) == ("**text**", "please update", {"format": "gallery"})
     assert attachments == [
         ("a.mp3", "audio/mpeg", b"mp3"),
         ("b.png", "image/png", b"png"),
@@ -171,9 +171,16 @@ def test_fixture_reads_texts_fields_and_attachments_in_name_order(tmp_path):
     ]
 
 
-def test_fixture_needs_content(tmp_path):
-    with pytest.raises(lms.FixtureError):
-        lms.load_rich_fixture(write_fixture(tmp_path / "m", a__png=b"png"))
+def test_fixture_texts_are_optional(tmp_path):
+    content, legacy, _, attachments = lms.load_rich_fixture(write_fixture(tmp_path / "m", a__png=b"png"))
+
+    assert (content, legacy) == (None, None)
+    assert [name for name, _, _ in attachments] == ["a.png"]
+
+
+def test_fixture_refuses_the_retired_rich_text_file(tmp_path):
+    with pytest.raises(lms.FixtureError, match="rich_text.md"):
+        lms.load_rich_fixture(write_fixture(tmp_path / "m", content__txt="x", rich_text__md="y"))
 
 
 @pytest.mark.django_db
@@ -188,21 +195,23 @@ def test_send_rich_is_accepted_by_personalid(tmp_path, settings, client):
     sender = lms.Sender("http://personalid.test", server.server_credentials, state)
     folder = write_fixture(
         tmp_path / "m",
-        content__txt="plain",
-        rich_text__md="rich",
+        content__txt="the text",
+        legacy__txt="please update",
         message__json='{"format": "gallery"}',
         a__png=b"png",
     )
 
-    def through_django(url, files, auth, timeout):
+    def through_django(url, files, auth, headers, timeout):
         """Hand the multipart request requests would send to Django's test client instead."""
-        prepared = requests.Request("POST", url, files=files, auth=auth).prepare()
+        assert headers == {MESSAGING_VERSION_HEADER: str(MESSAGING_VERSION)}
+        prepared = requests.Request("POST", url, files=files, auth=auth, headers=headers).prepare()
         response = client.generic(
             "POST",
-            "/messaging/send_rich/",
+            "/messaging/create_message/",
             prepared.body,
             content_type=prepared.headers["Content-Type"],
             HTTP_AUTHORIZATION=prepared.headers["Authorization"],
+            headers={MESSAGING_VERSION_HEADER: prepared.headers[MESSAGING_VERSION_HEADER]},
         )
         return mock.Mock(status_code=response.status_code, text=response.content.decode())
 
@@ -214,8 +223,8 @@ def test_send_rich_is_accepted_by_personalid(tmp_path, settings, client):
 
     assert message_id
     message = Message.objects.get(message_id=message_id)
-    assert lms.decrypt(key, message.content) == "plain"
-    assert lms.decrypt(key, message.rich_text) == "rich"
+    assert lms.decrypt(key, message.content) == "please update"
+    assert lms.decrypt(key, message.rich_text) == "the text"
     assert message.format == "gallery"
     attachment = message.attachments.get()
     assert (attachment.name, attachment.content_type) == ("a.png", "image/png")
@@ -240,7 +249,7 @@ def test_future_version_message_reaches_the_sync(tmp_path, user, auth_device):
 
     [entry] = auth_device.get(reverse("messaging:retrieve_notifications")).json()["notifications"]
     assert entry["message_id"] == message_id
-    assert entry["version"] == RICH_MESSAGE_VERSION + 1
+    assert entry["version"] == MESSAGING_VERSION + 1
     assert "update notice" in lms.decrypt(key, entry)
     assert "never show" in lms.decrypt(key, entry["rich_text"])
     assert entry["attachments"] == []

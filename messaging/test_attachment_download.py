@@ -108,7 +108,6 @@ def test_end_to_end_send_sync_download_decrypt(settings, client, user, auth_devi
     files = {"site-map.jpg": b"\xff\xd8 a jpeg", "instructions.mp3": b"ID3 an mp3"}
     blobs = [lms.encrypt_file(key, data) for data in files.values()]
     message = {
-        "version": 2,
         "channel": str(channel.channel_id),
         "message_id": str(uuid.uuid4()),
         "content": lms.encrypt(key, "See the attachments"),
@@ -127,7 +126,7 @@ def test_end_to_end_send_sync_download_decrypt(settings, client, user, auth_devi
         ),
     ):
         sent = client.post(
-            reverse("messaging:send_rich"),
+            reverse("messaging:create_message"),
             data={
                 "message": json.dumps(message),
                 **{f"attachment_{i}": SimpleUploadedFile("x", blob) for i, blob in enumerate(blobs)},

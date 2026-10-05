@@ -7,11 +7,12 @@ class ErrorCodes:
     NO_USER_CONSENT = "NO_USER_CONSENT"
     MESSAGE_ID_ALREADY_EXISTS = "MESSAGE_ID_ALREADY_EXISTS"
 
-    # Rich messages
+    # create_message
     RICH_MESSAGING_DISABLED = "RICH_MESSAGING_DISABLED"
     REQUEST_TOO_LARGE = "REQUEST_TOO_LARGE"
-    INVALID_RICH_MESSAGE = "INVALID_RICH_MESSAGE"
+    INVALID_MESSAGE = "INVALID_MESSAGE"
     UNSUPPORTED_VERSION = "UNSUPPORTED_VERSION"
+    CONTENT_LEGACY_MSG_REQUIRED = "CONTENT_LEGACY_MSG_REQUIRED"
     TOO_MANY_ATTACHMENTS = "TOO_MANY_ATTACHMENTS"
     DUPLICATE_ATTACHMENT_NAME = "DUPLICATE_ATTACHMENT_NAME"
     ATTACHMENT_PARTS_MISMATCH = "ATTACHMENT_PARTS_MISMATCH"
@@ -22,8 +23,15 @@ class ErrorCodes:
     MESSAGE_EXPIRED = "MESSAGE_EXPIRED"
 
 
-# Rich messages. Sizes count encrypted bytes, which are 28 bytes more than the file they hold.
-RICH_MESSAGE_VERSION = 2
+# The newest message format version this server supports. Each message synced to the device
+# carries the lowest version that can represent it; today that is this version for every message.
+MESSAGING_VERSION = 2
+# Callers may declare the version they were written for; one newer than MESSAGING_VERSION is refused
+MESSAGING_VERSION_HEADER = "X-Messaging-Version"
+# The format a message with attachments gets when the caller names none
+DEFAULT_ATTACHMENT_FORMAT = "attachment"
+
+# Attachments. Sizes count encrypted bytes, which are 28 bytes more than the file they hold.
 MAX_ATTACHMENTS_PER_MESSAGE = 10
 MAX_ATTACHMENT_BYTES = 2_621_440  # 2.5 MiB
 MAX_MESSAGE_ATTACHMENT_BYTES = 15 * 1024 * 1024

@@ -17,7 +17,13 @@ from rest_framework.views import APIView
 
 from messaging.const import ErrorCodes
 from messaging.models import Channel, Message, MessageDirection, MessageServer, MessageStatus, Notification
-from messaging.rich_messages import RichMessageRejected, check_request_size, parse_rich_message, store_rich_message
+from messaging.rich_messages import (
+    RichMessageRejected,
+    check_caller_version,
+    check_request_size,
+    parse_message_request,
+    store_message,
+)
 from messaging.serializers import (
     CCC_MESSAGE_ACTION,
     BulkMessageSerializer,
@@ -200,10 +206,10 @@ class SendServerConnectMessage(APIView):
         )
 
 
-class SendRichMessageView(APIView):
-    """Receive a message with attachments from a messaging server. See messaging.rich_messages.
+class CreateMessageView(APIView):
+    """Receive a message, with or without attachments, from a messaging server. See messaging.rich_messages.
 
-    Off unless settings.RICH_MESSAGING_ENABLED. Plain messages keep using send_fcm.
+    Off unless settings.RICH_MESSAGING_ENABLED. send_fcm stays as it was for callers that have not moved.
     """
 
     authentication_classes = [MessagingServerAuth]
@@ -213,8 +219,9 @@ class SendRichMessageView(APIView):
         if not settings.RICH_MESSAGING_ENABLED:
             return JsonResponse({"errors": ErrorCodes.RICH_MESSAGING_DISABLED}, status=status.HTTP_403_FORBIDDEN)
         try:
+            check_caller_version(request.headers)
             check_request_size(request.META)
-            message_data = parse_rich_message(request.data, request.FILES)
+            message_data = parse_message_request(request.data, request.FILES)
         except RichMessageRejected as e:
             return JsonResponse(e.body, status=e.status_code)
 
@@ -233,7 +240,7 @@ class SendRichMessageView(APIView):
             return JsonResponse({"errors": ErrorCodes.MESSAGE_ID_ALREADY_EXISTS}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            message = store_rich_message(channel, message_data, request.FILES)
+            message = store_message(channel, message_data, request.FILES)
         except IntegrityError:
             return JsonResponse({"errors": ErrorCodes.MESSAGE_ID_ALREADY_EXISTS}, status=status.HTTP_400_BAD_REQUEST)
 

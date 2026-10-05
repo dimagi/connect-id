@@ -1,7 +1,9 @@
 """Pins what each consumer of a message receives, as literal values.
 
-Apps in the field parse these, and some read messages straight from the push, so a plain
-message's output must not change. Rich fields may appear only in the retrieve_notifications sync.
+Apps in the field parse these, and some read messages straight from the push, so the push,
+retrieve_messages and reply forwarding must not change. The retrieve_notifications sync adds
+"version" to every message (apps in the field ignore keys they do not know) and the rich fields to
+messages sent through create_message.
 """
 
 import json
@@ -105,8 +107,9 @@ def test_retrieve_notifications(user, auth_device, plain_message):
 
     response = auth_device.get(reverse("messaging:retrieve_notifications"))
 
+    # A message sent through send_fcm: today's fields plus the lowest version that represents it
     assert response.json()["notifications"] == [
-        {**LEGACY_FIELDS, "notification_id": notification_id_for(plain_message)}
+        {**LEGACY_FIELDS, "notification_id": notification_id_for(plain_message), "version": 2}
     ]
 
 
@@ -147,6 +150,19 @@ def test_retrieve_notifications_leaves_out_rich_fields_the_sender_did_not_set(us
         "attachments": [],
         "expires_at": "2026-02-01T00:00:00Z",
     }
+
+
+def test_retrieve_notifications_keeps_an_empty_rich_text(user, auth_device, rich_message):
+    """An attachments-only message: "" tells new apps there is no text, so they skip the legacy message."""
+    rich_message.rich_text = ""
+    rich_message.save()
+    pushed_data(user, rich_message)
+
+    response = auth_device.get(reverse("messaging:retrieve_notifications"))
+
+    [entry] = response.json()["notifications"]
+    assert entry["rich_text"] == ""
+    assert (entry["ciphertext"], entry["tag"], entry["nonce"]) == ("Y2lwaGVy", "dGFn", "bm9uY2U=")
 
 
 def test_retrieve_messages(auth_device, plain_message):

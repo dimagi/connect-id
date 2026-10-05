@@ -267,7 +267,8 @@ if PLAYSTORE_INTEGRITY_DISABLED and not DEBUG:
     raise ImproperlyConfigured("PLAYSTORE_INTEGRITY_DISABLED requires DEBUG=True.")
 
 CONNECT_DISABLED = env.bool("CONNECT_DISABLED", default=False)
-# Accept messages with attachments on messaging/send_rich/. Off until storage and expiry are live.
+# Accept messages, with or without attachments, on messaging/create_message/. Off until storage and
+# expiry are live.
 RICH_MESSAGING_ENABLED = env.bool("RICH_MESSAGING_ENABLED", default=False)
 
 DATABASES = {

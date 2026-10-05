@@ -12,14 +12,14 @@ from django.utils.timezone import now
 from rest_framework import status
 
 from messaging import rich_messages
-from messaging.const import DEFAULT_RICH_MESSAGE_EXPIRY, ErrorCodes
+from messaging.const import DEFAULT_RICH_MESSAGE_EXPIRY, MESSAGING_VERSION_HEADER, ErrorCodes
 from messaging.factories import ChannelFactory, MessageFactory, ServerFactory
 from messaging.models import Message, MessageAttachment
 from messaging.serializers import MessageSerializer
 from users.factories import ServerKeysFactory
 from utils.storage import message_attachment_storage
 
-URL = reverse("messaging:send_rich")
+URL = reverse("messaging:create_message")
 SITE_MAP = b"\x01" * 100
 INSTRUCTIONS = b"\x02" * 200
 
@@ -50,11 +50,9 @@ def auth(server):
 
 def payload(channel, **overrides):
     message = {
-        "version": 2,
         "channel": str(channel.channel_id),
         "message_id": str(uuid.uuid4()),
-        "content": encrypted("Here is the site map"),
-        "rich_text": encrypted("Here is the **site map**"),
+        "content": encrypted("Here is the **site map**"),
         "format": "gallery",
         "attachments": [
             {"name": "site-map.jpg", "type": "image/jpeg", "size": len(SITE_MAP)},
@@ -85,7 +83,7 @@ def assert_rejected(response, code, status_code=status.HTTP_400_BAD_REQUEST):
 
 
 @pytest.mark.usefixtures("enabled")
-class TestSendRichMessage:
+class TestCreateMessage:
     def test_stores_message_and_attachments_and_pushes(self, client, server, channel):
         message = payload(channel)
 
@@ -95,8 +93,9 @@ class TestSendRichMessage:
         assert response.json() == {"message_id": message["message_id"]}
         stored = Message.objects.get(message_id=message["message_id"])
         assert stored.channel == channel
+        # Without a legacy message, the caller's text is what every app shows
         assert stored.content == message["content"]
-        assert stored.rich_text == message["rich_text"]
+        assert stored.rich_text is None
         assert (stored.version, stored.format) == (2, "gallery")
         assert stored.expires_at.isoformat() == message["expires_at"]
 
@@ -120,16 +119,65 @@ class TestSendRichMessage:
 
     def test_message_without_attachments_or_optional_fields(self, client, server, channel):
         message = payload(channel, attachments=[])
-        for field in ("rich_text", "format", "expires_at"):
+        for field in ("format", "expires_at"):
             del message[field]
 
         response, _ = post(client, server, message, files={})
 
         assert response.status_code == status.HTTP_200_OK, response.content
         stored = Message.objects.get(message_id=message["message_id"])
-        assert (stored.rich_text, stored.format) == (None, None)
+        assert (stored.content, stored.rich_text, stored.format) == (message["content"], None, None)
         assert not stored.attachments.exists()
         assert abs(stored.expires_at - (now() + DEFAULT_RICH_MESSAGE_EXPIRY)) < timedelta(minutes=1)
+
+    def test_legacy_message_goes_to_content_and_the_text_to_rich_text(self, client, server, channel):
+        message = payload(channel, content_legacy_msg=encrypted("Please update the app"))
+
+        response, _ = post(client, server, message)
+
+        assert response.status_code == status.HTTP_200_OK, response.content
+        stored = Message.objects.get(message_id=message["message_id"])
+        assert stored.content == message["content_legacy_msg"]
+        assert stored.rich_text == message["content"]
+
+    @pytest.mark.parametrize("empty", ["", None, "absent"])
+    def test_attachments_only_message(self, client, server, channel, empty):
+        message = payload(channel, content=empty, content_legacy_msg=encrypted("Please update the app"))
+        if empty == "absent":
+            del message["content"]
+
+        response, _ = post(client, server, message)
+
+        assert response.status_code == status.HTTP_200_OK, response.content
+        stored = Message.objects.get(message_id=message["message_id"])
+        assert stored.content == message["content_legacy_msg"]
+        # Present but empty, so new apps show no text rather than falling back to the legacy message
+        assert stored.rich_text == ""
+
+    def test_attachments_default_the_format(self, client, server, channel):
+        message = payload(channel)
+        del message["format"]
+
+        response, _ = post(client, server, message)
+
+        assert response.status_code == status.HTTP_200_OK, response.content
+        assert Message.objects.get(message_id=message["message_id"]).format == "attachment"
+
+    @pytest.mark.parametrize("header", [None, "1", "2"])
+    def test_callers_at_or_below_our_version_are_accepted(self, client, server, channel, header):
+        extra = {} if header is None else {"headers": {MESSAGING_VERSION_HEADER: header}}
+
+        response, _ = post(client, server, payload(channel), **extra)
+
+        assert response.status_code == status.HTTP_200_OK, response.content
+
+    def test_a_version_in_the_body_does_not_choose_the_format(self, client, server, channel):
+        message = payload(channel, version=3)
+
+        response, _ = post(client, server, message)
+
+        assert response.status_code == status.HTTP_200_OK, response.content
+        assert Message.objects.get(message_id=message["message_id"]).version == 2
 
     def test_part_filenames_are_ignored(self, client, server, channel):
         files = {
@@ -167,26 +215,32 @@ class TestRejections:
     def test_missing_json_part(self, client, server):
         with mock.patch("messaging.views.send_bulk_notification_task"):
             response = client.post(URL, data=parts(SITE_MAP), **auth(server))
-        assert_rejected(response, ErrorCodes.INVALID_RICH_MESSAGE)
+        assert_rejected(response, ErrorCodes.INVALID_MESSAGE)
 
     def test_json_part_is_not_json(self, client, server):
         response = client.post(URL, data={"message": "{not json"}, **auth(server))
-        assert_rejected(response, ErrorCodes.INVALID_RICH_MESSAGE)
+        assert_rejected(response, ErrorCodes.INVALID_MESSAGE)
 
-    @pytest.mark.parametrize("version", [None, 1, 3, "2"])
-    def test_unsupported_version(self, client, server, channel, version):
-        message = payload(channel, version=version)
-        if version is None:
-            del message["version"]
-        response, _ = post(client, server, message)
+    @pytest.mark.parametrize("header", ["3", "0", "two"])
+    def test_caller_version_we_do_not_support(self, client, server, channel, header):
+        response, _ = post(client, server, payload(channel), headers={MESSAGING_VERSION_HEADER: header})
         assert_rejected(response, ErrorCodes.UNSUPPORTED_VERSION)
+
+    def test_empty_content_without_attachments(self, client, server, channel):
+        message = payload(channel, content="", attachments=[], content_legacy_msg=encrypted("Update"))
+        response, _ = post(client, server, message, files={})
+        assert_rejected(response, ErrorCodes.INVALID_MESSAGE_CONTENT)
+
+    def test_empty_content_needs_a_legacy_message(self, client, server, channel):
+        response, _ = post(client, server, payload(channel, content=""))
+        assert_rejected(response, ErrorCodes.CONTENT_LEGACY_MSG_REQUIRED)
 
     @pytest.mark.parametrize(
         "overrides",
         [
-            {"content": None},
             {"content": {"ciphertext": "", "tag": "dGFn", "nonce": "bm9uY2U="}},
-            {"rich_text": {"ciphertext": "abc"}},
+            {"content_legacy_msg": {"ciphertext": "abc"}},
+            {"content_legacy_msg": ""},
             {"message_id": "not-a-uuid"},
             {"attachments": [{"name": "a.jpg", "type": "image/jpeg"}]},
             {"attachments": [{"name": "a.jpg", "type": "image/jpeg", "size": 0}]},
@@ -194,7 +248,7 @@ class TestRejections:
     )
     def test_malformed_message(self, client, server, channel, overrides):
         response, _ = post(client, server, payload(channel, **overrides))
-        assert_rejected(response, ErrorCodes.INVALID_RICH_MESSAGE)
+        assert_rejected(response, ErrorCodes.INVALID_MESSAGE)
         assert "detail" in response.json()
 
     def test_too_many_attachments(self, client, server, channel):

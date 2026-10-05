@@ -2,6 +2,7 @@ import dataclasses
 
 from rest_framework import serializers
 
+from messaging.const import MESSAGING_VERSION
 from messaging.models import Message, Notification, NotificationTypes
 
 CCC_MESSAGE_ACTION = "ccc_message"
@@ -129,16 +130,19 @@ class MessageSerializer(serializers.ModelSerializer):
 class SyncedMessageSerializer(MessageSerializer):
     """A message as the device syncs it from retrieve_notifications.
 
-    Plain messages are exactly MessageSerializer's output. Rich messages add their cleartext
-    fields and attachment list; fields the sender did not set are left out.
+    Every message carries "version", the lowest format version that can represent it. Messages sent
+    through send_fcm are otherwise exactly MessageSerializer's output. Messages sent through
+    create_message add their cleartext fields and attachment list; fields that were not set are left
+    out. "rich_text" is either an encrypted triple or "", meaning the message has no text to show
+    beyond its attachments.
     """
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
+        representation["version"] = instance.version or MESSAGING_VERSION
         if instance.version is None:
             return representation
         rich_fields = {
-            "version": instance.version,
             "rich_text": instance.rich_text,
             "format": instance.format,
             "attachments": [
@@ -170,14 +174,15 @@ class RichAttachmentSerializer(serializers.Serializer):
     size = serializers.IntegerField(min_value=1)
 
 
-class SendRichMessageSerializer(serializers.Serializer):
-    """Shape of the JSON part of a rich send. The rules between fields are in messaging.rich_messages."""
+class CreateMessageSerializer(serializers.Serializer):
+    """Shape of the JSON part of create_message. The rules between fields are in messaging.rich_messages."""
 
-    version = serializers.IntegerField()
     channel = serializers.UUIDField()
     message_id = serializers.UUIDField()
-    content = EncryptedTextSerializer()
-    rich_text = EncryptedTextSerializer(required=False)
+    # The message text. May be left out (or sent as "") only when there are attachments
+    content = EncryptedTextSerializer(required=False)
+    # What apps that cannot show rich messages display instead of content, e.g. a request to update
+    content_legacy_msg = EncryptedTextSerializer(required=False)
     format = serializers.CharField(max_length=50, required=False)
     attachments = serializers.ListField(child=RichAttachmentSerializer(), required=False, default=list)
     expires_at = serializers.DateTimeField(required=False)
