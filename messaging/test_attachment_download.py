@@ -11,9 +11,9 @@ from django.utils.timezone import now
 from firebase_admin import messaging
 from rest_framework import status
 
-from messaging import local_message_server as lms
 from messaging.const import ErrorCodes
 from messaging.factories import ChannelFactory, MessageAttachmentFactory, RichMessageFactory, ServerFactory
+from messaging.management.commands._local_message_server import server as lms
 from messaging.tasks import send_bulk_notification_task
 from users.factories import FCMDeviceFactory, ServerKeysFactory
 

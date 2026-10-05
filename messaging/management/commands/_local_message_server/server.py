@@ -461,7 +461,7 @@ HELP = (
     "          clear_pending <channel id|last> | list | quit\n"
     "  <username> is the PersonalID username, e.g. 2c69ea9b8272348677d6\n"
     "  <folder> holds content.txt and/or legacy.txt, optionally message.json, and the attachments\n"
-    "  (every other file); see load_rich_fixture in messaging/local_message_server.py"
+    "  (every other file); see load_rich_fixture in messaging/management/commands/_local_message_server/server.py"
 )
 
 
