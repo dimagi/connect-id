@@ -362,25 +362,38 @@ GOOGLE_APPLICATION_CREDENTIALS = {
 }
 
 # Blob and file storage configuration
+# Each kind of file has its own bucket and its own STORAGES alias: an S3 bucket in production, a
+# directory under local_blobs/ named after the bucket when running on the file system. There is
+# deliberately no "default" storage, so code that stores files must name its bucket
+# (storages["<alias>"]; FileFields see utils.storage), and Django's default_storage fails loudly.
 PRODUCTION_FILE_STORAGE_BACKEND = "storages.backends.s3.S3Storage"
+LOCAL_FILE_STORAGE_BACKEND = "django.core.files.storage.FileSystemStorage"
 DEFAULT_FILE_STORAGE_BACKEND = env("DEFAULT_FILE_STORAGE_BACKEND", default=PRODUCTION_FILE_STORAGE_BACKEND)
-# Set file system to ovewrite, matching the same semantics for file updates as s3 storage for consistency.
-# Note that FileSystemStorage still renames,however, unless told otherwise.
-_FILE_STORAGE_OPTIONS = {"django.core.files.storage.FileSystemStorage": {"allow_overwrite": True}}
+FILE_STORAGE_BUCKETS = {
+    "user_photos": env("AWS_S3_PHOTO_BUCKET_NAME", default="personalid-user-photos"),
+    "message_attachments": env("AWS_S3_MESSAGE_ATTACHMENTS_BUCKET_NAME", default="personalid-message-attachments"),
+}
+AWS_S3_FILE_OVERWRITE = True
+AWS_DEFAULT_ACL = None
+
+
+def bucket_storage(bucket_name, backend=DEFAULT_FILE_STORAGE_BACKEND, local_root=BASE_DIR / "local_blobs"):
+    """The STORAGES entry for one bucket."""
+    if backend == LOCAL_FILE_STORAGE_BACKEND:
+        # Set file system to overwrite, matching the same semantics for file updates as s3 storage for
+        # consistency. Note that FileSystemStorage still renames, however, unless told otherwise.
+        options = {"location": local_root / bucket_name, "allow_overwrite": True}
+    else:
+        options = {"bucket_name": bucket_name}
+    return {"BACKEND": backend, "OPTIONS": options}
+
+
 STORAGES = {
-    "default": {
-        "BACKEND": DEFAULT_FILE_STORAGE_BACKEND,
-        "OPTIONS": _FILE_STORAGE_OPTIONS.get(DEFAULT_FILE_STORAGE_BACKEND, {}),
-    },
+    **{alias: bucket_storage(bucket_name) for alias, bucket_name in FILE_STORAGE_BUCKETS.items()},
     "staticfiles": {
         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
     },
 }
-AWS_S3_PHOTO_BUCKET_NAME = env("AWS_S3_PHOTO_BUCKET_NAME", default="personalid-user-photos")
-AWS_STORAGE_BUCKET_NAME = AWS_S3_PHOTO_BUCKET_NAME
-AWS_S3_FILE_OVERWRITE = True
-AWS_DEFAULT_ACL = None
-MEDIA_ROOT = BASE_DIR / "local_blobs" / AWS_S3_PHOTO_BUCKET_NAME
 
 # Open Chat Studio (OCS) configuration
 OCS_CONFIG = {

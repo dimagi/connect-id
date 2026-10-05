@@ -7,7 +7,7 @@ from unittest.mock import patch
 import factory
 import pytest
 import requests
-from django.core.files.storage import default_storage
+from django.core.files.storage import storages
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse, reverse_lazy
 from django.utils.timezone import now
@@ -1224,7 +1224,7 @@ class TestUpdateProfile:
     def test_update_photo(self, auth_device, user):
         data = {"photo": "data:image/jpg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEB"}
         auth_device.post(self.url, data)
-        assert default_storage.exists(f"{user.username}.jpg")
+        assert storages["user_photos"].exists(f"{user.username}.jpg")
 
     def test_update_photo_invalid(self, auth_device):
         data = {"photo": "data:image/png;base64,invalid-base64"}

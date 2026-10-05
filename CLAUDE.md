@@ -107,6 +107,7 @@ All config via env vars (see `.env_template`). Key ones:
 - `FCM_*` - Firebase Cloud Messaging credentials
 - `GOOGLE_*` - Google Play Integrity / Analytics
 - `OIDC_RSA_PRIVATE_KEY` - OAuth2/OIDC signing key
-- `AWS_S3_PHOTO_BUCKET_NAME` - Photo storage bucket
+- `AWS_S3_PHOTO_BUCKET_NAME` - Profile photos bucket (`user_photos` storage)
+- `AWS_S3_MESSAGE_ATTACHMENTS_BUCKET_NAME` - Encrypted message attachments bucket (`message_attachments` storage). Each bucket is a named storage in `settings.FILE_STORAGE_BUCKETS`, used as `storages["<alias>"]`; a model `FileField` uses a lazy `utils.storage.BucketStorage` instead (see that module). There is no `default` storage. Locally each bucket is a directory under `local_blobs/`
 - `SENTRY_DSN` - Error tracking
 - `MAPBOX_ACCESS_TOKEN` - Geolocation/country code detection

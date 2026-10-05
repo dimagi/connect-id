@@ -1,9 +1,9 @@
-"""Photo storage through Django's storage API. conftest points default storage at a temp directory."""
+"""Photo storage through the user_photos bucket. conftest points every bucket at a temp directory."""
 
 import base64
 
 from django.conf import settings
-from django.core.files.storage import default_storage
+from django.core.files.storage import storages
 from django.utils.module_loading import import_string
 
 from users.const import ErrorCodes
@@ -16,7 +16,7 @@ PHOTO_DATA_URI = "data:image/jpeg;base64," + base64.b64encode(PHOTO_BYTES).decod
 def test_photo_is_saved_and_read_back():
     assert upload_photo_to_s3(PHOTO_DATA_URI, "someuser") is None
 
-    assert default_storage.open("someuser.jpeg").read() == PHOTO_BYTES
+    assert storages["user_photos"].open("someuser.jpeg").read() == PHOTO_BYTES
     assert get_user_photo_base64("someuser") == PHOTO_DATA_URI
 
 
@@ -26,7 +26,7 @@ def test_a_new_photo_replaces_the_old_one_whatever_its_type():
 
     upload_photo_to_s3(webp, "someuser")
 
-    assert not default_storage.exists("someuser.jpeg")
+    assert not storages["user_photos"].exists("someuser.jpeg")
     assert get_user_photo_base64("someuser") == webp
 
 
@@ -36,8 +36,8 @@ def test_saving_twice_overwrites_rather_than_renaming():
 
     upload_photo_to_s3(second, "someuser")
 
-    assert default_storage.open("someuser.jpeg").read() == b"second"
-    assert default_storage.listdir("")[1] == ["someuser.jpeg"]
+    assert storages["user_photos"].open("someuser.jpeg").read() == b"second"
+    assert storages["user_photos"].listdir("")[1] == ["someuser.jpeg"]
 
 
 def test_missing_photo_reads_as_empty():
@@ -65,7 +65,7 @@ def test_unsupported_type_is_refused_before_anything_is_written():
 
     assert upload_photo_to_s3(bad, "someuser") == ErrorCodes.FILE_TYPE_UNSUPPORTED
 
-    assert default_storage.listdir("")[1] == ["someuser.jpeg"]
+    assert storages["user_photos"].listdir("")[1] == ["someuser.jpeg"]
     assert get_user_photo_base64("someuser") == PHOTO_DATA_URI
 
 
@@ -75,7 +75,7 @@ def test_failed_write_keeps_the_previous_photo(monkeypatch):
     def failing_save(name, content):
         raise OSError("disk full")
 
-    monkeypatch.setattr(default_storage, "save", failing_save)
+    monkeypatch.setattr(storages["user_photos"], "save", failing_save)
     webp = "data:image/webp;base64," + base64.b64encode(b"webp bytes").decode()
 
     assert upload_photo_to_s3(webp, "someuser") == ErrorCodes.FAILED_TO_UPLOAD

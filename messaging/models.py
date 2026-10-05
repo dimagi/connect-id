@@ -6,6 +6,7 @@ from firebase_admin import messaging
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 
 from users.models import ConnectUser, ServerKeys
+from utils.storage import get_message_attachment_storage
 
 
 class MessageServer(models.Model):
@@ -56,6 +57,45 @@ class Message(models.Model):
     status = models.CharField(max_length=50, choices=MessageStatus.choices, default=MessageStatus.PENDING)
     # represents the direction the message is sent toward
     direction = models.CharField(max_length=4, choices=MessageDirection.choices)
+
+    # Rich message fields, all empty on plain messages. An empty version means version 1.
+    version = models.PositiveSmallIntegerField(null=True, blank=True)
+    # Encrypted like content: ciphertext, tag and nonce
+    rich_text = models.JSONField(null=True, blank=True)
+    format = models.CharField(max_length=50, null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            # Only rich messages expire, so the index stays small however many plain messages exist
+            models.Index(
+                fields=["expires_at"], name="message_expires_at", condition=models.Q(expires_at__isnull=False)
+            ),
+        ]
+
+
+def attachment_storage_key(instance, filename):
+    """Storage key built only from ids PersonalID minted; the uploaded filename is ignored."""
+    return f"message-attachments/{instance.message.channel_id}/{instance.message_id}/{instance.id}"
+
+
+class MessageAttachment(models.Model):
+    """An encrypted file sent with a rich message. Its stored file is deleted with the row (see signals)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name="attachments")
+    # The sender's file name, which message text uses to refer to the attachment
+    name = models.CharField(max_length=255)
+    # MIME type, sent on the wire as "type"
+    content_type = models.CharField(max_length=255)
+    # Size of the encrypted file in bytes
+    size = models.PositiveIntegerField()
+    file = models.FileField(upload_to=attachment_storage_key, storage=get_message_attachment_storage, max_length=255)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["message", "name"], name="unique_attachment_name_per_message"),
+        ]
 
 
 class NotificationTypes(models.TextChoices):

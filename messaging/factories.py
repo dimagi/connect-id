@@ -1,5 +1,6 @@
 import base64
 import os
+from datetime import timedelta
 from uuid import uuid4
 
 import factory
@@ -8,7 +9,7 @@ from factory import DictFactory, Faker, LazyFunction
 from factory.django import DjangoModelFactory
 from oauth2_provider.models import Application
 
-from messaging.models import Channel, Message, MessageServer, Notification
+from messaging.models import Channel, Message, MessageAttachment, MessageServer, Notification
 from users.factories import UserFactory
 
 
@@ -62,6 +63,24 @@ class MessageFactory(DjangoModelFactory):
     content = LazyFunction(generate_random_content)
     timestamp = factory.LazyFunction(timezone.now)
     received = None
+
+
+class RichMessageFactory(MessageFactory):
+    version = 2
+    rich_text = LazyFunction(generate_random_content)
+    format = "gallery"
+    expires_at = factory.LazyFunction(lambda: timezone.now() + timedelta(days=30))
+
+
+class MessageAttachmentFactory(DjangoModelFactory):
+    class Meta:
+        model = MessageAttachment
+
+    message = factory.SubFactory(RichMessageFactory)
+    name = factory.Sequence(lambda n: f"attachment-{n}.jpg")
+    content_type = "image/jpeg"
+    file = factory.django.FileField(data=b"\x00" * 64)
+    size = factory.LazyAttribute(lambda o: o.file.size)
 
 
 class MessageDataFactory(DictFactory):
