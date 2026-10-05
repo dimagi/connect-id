@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
-from messaging import local_message_server as lms
+from messaging.management.commands._local_message_server import server as lms
 
 
 class Command(BaseCommand):

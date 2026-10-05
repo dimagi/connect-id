@@ -95,7 +95,7 @@ deploy/             # Kamal deployment config
 - Factory Boy factories in each app (`users/factories.py`, `messaging/factories.py`, etc.)
 - `test_utils/decorators.py` has `@skip_app_integrity_check` for bypassing integrity checks in tests
 - CI runs linting + pytest against PostgreSQL 15
-- `manage.py local_message_server` (DEBUG only) stands in for an external message server to test two-way messaging with a phone; implementation in `messaging/local_message_server.py`
+- `manage.py local_message_server` (DEBUG only) stands in for an external message server to test two-way messaging with a phone; implementation, usage README and tests in `messaging/management/commands/_local_message_server/`
 
 ## Environment
 

@@ -10,8 +10,9 @@ everything on localhost, `adb reverse tcp:8000 tcp:8000` and `adb reverse tcp:80
 do that and the defaults below work. Otherwise bind both to the dev machine's LAN address
 and pass it with the flags.
 
-1. In `.env`, disable the external services as above and set `CELERY_TASK_ALWAYS_EAGER=True`,
-   which messaging needs because the sync endpoint reads rows a Celery task creates.
+1. In `.env`, disable the external services (see "Running locally without external services"
+   in the top-level README) and set `CELERY_TASK_ALWAYS_EAGER=True`, which messaging needs
+   because the sync endpoint reads rows a Celery task creates.
 
 2. Start PersonalID, and in a second terminal the message server:
 
