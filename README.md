@@ -59,6 +59,12 @@
    uv run ./manage.py runserver
    ```
 
+## Running locally without external services
+
+Individual external services (Connect, SMS, service integrity) can be disabled in the `.env`
+to support local development. Some service toggles can only be disabled if `DEBUG=True`, and
+some services may require `CELERY_TASK_ALWAYS_EAGER=True` if there is no local celery config.
+
 ## Production Deploy
 
 ### Setup
