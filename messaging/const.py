@@ -1,6 +1,3 @@
-from datetime import timedelta
-
-
 class ErrorCodes:
     INVALID_MESSAGE_CONTENT = "INVALID_MESSAGE_CONTENT"
     CHANNEL_DOES_NOT_EXIST = "CHANNEL_DOES_NOT_EXIST"
@@ -37,6 +34,3 @@ MAX_ATTACHMENT_BYTES = 2_621_440  # 2.5 MiB
 MAX_MESSAGE_ATTACHMENT_BYTES = 15 * 1024 * 1024
 # Room for the JSON part and multipart framing on top of the attachment bytes
 MAX_RICH_REQUEST_OVERHEAD_BYTES = 1024 * 1024
-# Placeholders until the default and cap are decided
-DEFAULT_RICH_MESSAGE_EXPIRY = timedelta(days=30)
-MAX_RICH_MESSAGE_EXPIRY = timedelta(days=90)

@@ -25,11 +25,9 @@ from rest_framework import status
 
 from messaging.const import (
     DEFAULT_ATTACHMENT_FORMAT,
-    DEFAULT_RICH_MESSAGE_EXPIRY,
     MAX_ATTACHMENT_BYTES,
     MAX_ATTACHMENTS_PER_MESSAGE,
     MAX_MESSAGE_ATTACHMENT_BYTES,
-    MAX_RICH_MESSAGE_EXPIRY,
     MAX_RICH_REQUEST_OVERHEAD_BYTES,
     MESSAGING_VERSION,
     MESSAGING_VERSION_HEADER,
@@ -91,7 +89,7 @@ def check_caller_version(headers):
 
 
 def parse_message_request(data, files):
-    """Validate the JSON part against the uploaded parts. Returns the message with expires_at set."""
+    """Validate the JSON part against the uploaded parts. Returns the validated message."""
     raw = data.get("message")
     if not isinstance(raw, str):
         raise RichMessageRejected(ErrorCodes.INVALID_MESSAGE, detail={"message": "Missing JSON part."})
@@ -134,11 +132,10 @@ def parse_message_request(data, files):
         if files[attachment_part_name(index)].size != attachment["size"]:
             raise RichMessageRejected(ErrorCodes.ATTACHMENT_SIZE_MISMATCH)
 
-    current_time = now()
-    expires_at = message.get("expires_at") or current_time + DEFAULT_RICH_MESSAGE_EXPIRY
-    if not current_time < expires_at <= current_time + MAX_RICH_MESSAGE_EXPIRY:
+    # Optional for every message, with no default and no upper limit for now
+    expires_at = message.get("expires_at")
+    if expires_at is not None and expires_at <= now():
         raise RichMessageRejected(ErrorCodes.INVALID_EXPIRY)
-    message["expires_at"] = expires_at
     return message
 
 
@@ -165,7 +162,7 @@ def store_message(channel, message_data, files):
         version=MESSAGING_VERSION,
         rich_text=rich_text,
         format=message_format,
-        expires_at=message_data["expires_at"],
+        expires_at=message_data.get("expires_at"),
     )
     attachments = [
         MessageAttachment(

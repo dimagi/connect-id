@@ -12,7 +12,7 @@ from django.utils.timezone import now
 from rest_framework import status
 
 from messaging import rich_messages
-from messaging.const import DEFAULT_RICH_MESSAGE_EXPIRY, MESSAGING_VERSION_HEADER, ErrorCodes
+from messaging.const import MESSAGING_VERSION_HEADER, ErrorCodes
 from messaging.factories import ChannelFactory, MessageFactory, ServerFactory
 from messaging.models import Message, MessageAttachment
 from messaging.serializers import MessageSerializer
@@ -128,7 +128,23 @@ class TestCreateMessage:
         stored = Message.objects.get(message_id=message["message_id"])
         assert (stored.content, stored.rich_text, stored.format) == (message["content"], None, None)
         assert not stored.attachments.exists()
-        assert abs(stored.expires_at - (now() + DEFAULT_RICH_MESSAGE_EXPIRY)) < timedelta(minutes=1)
+        assert stored.expires_at is None
+
+    def test_attachments_do_not_need_an_expiry(self, client, server, channel):
+        message = payload(channel)
+        del message["expires_at"]
+
+        response, _ = post(client, server, message)
+
+        assert response.status_code == status.HTTP_200_OK, response.content
+        assert Message.objects.get(message_id=message["message_id"]).expires_at is None
+
+    def test_expiry_has_no_upper_limit(self, client, server, channel):
+        message = payload(channel, expires_at=(now() + timedelta(days=3650)).isoformat())
+
+        response, _ = post(client, server, message)
+
+        assert response.status_code == status.HTTP_200_OK, response.content
 
     def test_legacy_message_goes_to_content_and_the_text_to_rich_text(self, client, server, channel):
         message = payload(channel, content_legacy_msg=encrypted("Please update the app"))
@@ -289,9 +305,8 @@ class TestRejections:
         response, _ = post(client, server, payload(channel), files=parts(SITE_MAP, INSTRUCTIONS + b"!"))
         assert_rejected(response, ErrorCodes.ATTACHMENT_SIZE_MISMATCH)
 
-    @pytest.mark.parametrize("expires_in", [timedelta(seconds=-1), timedelta(days=91)])
-    def test_expiry_out_of_range(self, client, server, channel, expires_in):
-        message = payload(channel, expires_at=(now() + expires_in).isoformat())
+    def test_expiry_in_the_past(self, client, server, channel):
+        message = payload(channel, expires_at=(now() - timedelta(seconds=1)).isoformat())
         response, _ = post(client, server, message)
         assert_rejected(response, ErrorCodes.INVALID_EXPIRY)
 

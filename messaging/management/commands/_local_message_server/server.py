@@ -39,10 +39,9 @@ from urllib.parse import parse_qs
 import requests
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from django.conf import settings
-from django.utils import timezone
 from oauth2_provider.models import Application
 
-from messaging.const import DEFAULT_RICH_MESSAGE_EXPIRY, MESSAGING_VERSION, MESSAGING_VERSION_HEADER
+from messaging.const import MESSAGING_VERSION, MESSAGING_VERSION_HEADER
 from messaging.models import Message, MessageDirection, MessageServer
 from messaging.serializers import MessageSerializer
 from messaging.tasks import MAC_DIGEST_HEADER, mac_digest, send_bulk_notification_task
@@ -341,7 +340,6 @@ class Sender:
             content=encrypt(key, f"Plain text of a version {version} message. Expect an update notice with it."),
             rich_text=encrypt(key, f"**Version {version} rich text.** The app should never show this."),
             version=version,
-            expires_at=timezone.now() + DEFAULT_RICH_MESSAGE_EXPIRY,
         )
         send_bulk_notification_task(
             usernames=[message.channel.connect_user.username],
