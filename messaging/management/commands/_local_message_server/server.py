@@ -7,12 +7,18 @@ PersonalID over HTTP, as a real sender would:
 - serves the channel key to the phone from ``key_url``, after checking the phone's bearer token
   with PersonalID's userinfo endpoint, exactly as OCS does
 - sends encrypted messages with ``POST /messaging/send_fcm/`` (today's plain-text format)
+- sends messages with attachments with ``POST /messaging/create_message/``, from a folder (see
+  ``load_rich_fixture``); PersonalID needs ``RICH_MESSAGING_ENABLED=True``
 - receives the phone's replies, consent changes and delivery receipts on ``delivery_url``,
   ``consent_url`` and ``callback_url``, verifying PersonalID's HMAC header with the same code
   PersonalID uses to produce it
 
 The only things it does through Django are the one-time setup rows (the Android app's OAuth
-application and its own message server record) and listing users to pick a recipient.
+application and its own message server record), listing users to pick a recipient, and
+``send_future_version``: a message one format version newer than this PersonalID accepts, which
+no sender can deliver over HTTP, written directly and pushed the way ``send_rich`` messages are,
+to check how the phone handles a format it does not know, and ``clear_pending``, which deletes
+messages the phone has not acked so one it cannot handle stops being served on every sync.
 
 Channel keys are kept in a JSON file so the server can hand them to the phone across restarts.
 """
@@ -21,6 +27,7 @@ import base64
 import hmac
 import json
 import logging
+import mimetypes
 import os
 import threading
 import uuid
@@ -34,8 +41,10 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from django.conf import settings
 from oauth2_provider.models import Application
 
-from messaging.models import MessageServer
-from messaging.tasks import MAC_DIGEST_HEADER, mac_digest
+from messaging.const import MESSAGING_VERSION, MESSAGING_VERSION_HEADER
+from messaging.models import Message, MessageDirection, MessageServer
+from messaging.serializers import MessageSerializer
+from messaging.tasks import MAC_DIGEST_HEADER, mac_digest, send_bulk_notification_task
 from users.const import TEST_NUMBER_PREFIX
 from users.models import ConnectUser, ServerKeys
 
@@ -135,8 +144,69 @@ def decrypt(key_b64, message):
     return AESGCM(key).decrypt(base64.b64decode(message["nonce"]), sealed, None).decode("utf-8")
 
 
+def encrypt_file(key_b64, data):
+    """An attachment as the device expects it: 12-byte nonce, ciphertext, 16-byte tag."""
+    nonce = os.urandom(GCM_NONCE_BYTES)
+    return nonce + AESGCM(base64.b64decode(key_b64)).encrypt(nonce, data, None)
+
+
+def decrypt_file(key_b64, blob):
+    nonce, sealed = blob[:GCM_NONCE_BYTES], blob[GCM_NONCE_BYTES:]
+    return AESGCM(base64.b64decode(key_b64)).decrypt(nonce, sealed, None)
+
+
 def new_channel_key():
     return base64.b64encode(os.urandom(32)).decode()
+
+
+# --- rich message fixtures ---------------------------------------------------------------------
+
+CONTENT_FILE = "content.txt"
+LEGACY_FILE = "legacy.txt"
+FIELDS_FILE = "message.json"
+# The previous layout's rich text file; refused so it is not sent as an attachment by mistake
+RETIRED_RICH_TEXT_FILE = "rich_text.md"
+
+
+class FixtureError(ValueError):
+    pass
+
+
+def load_rich_fixture(folder):
+    """Read a message from a folder. Returns (content, legacy, fields, attachments).
+
+    - content.txt: the message text (markdown allowed). Optional; leave it out for a message that is
+      only attachments, which then needs legacy.txt.
+    - legacy.txt: sent as content_legacy_msg, what apps unable to show rich messages display instead,
+      e.g. a request to update the app. Optional.
+    - message.json: cleartext fields merged over the defaults, e.g. {"format": "gallery"} or
+      {"expires_at": "..."}; anything can be overridden, so it can also produce invalid messages.
+    - Every other file, in name order, is an attachment named after the file, with its type
+      guessed from the extension. Hidden files are skipped.
+    """
+    folder = Path(folder).expanduser()
+    if not folder.is_dir():
+        raise FixtureError(f"{folder} is not a folder")
+    if (folder / RETIRED_RICH_TEXT_FILE).exists():
+        raise FixtureError(
+            f"{folder} has {RETIRED_RICH_TEXT_FILE}, which is no longer used: put the message text in "
+            f"{CONTENT_FILE} and any text for older apps in {LEGACY_FILE}"
+        )
+
+    def read_text(name):
+        path = folder / name
+        return path.read_text().rstrip("\n") if path.is_file() else None
+
+    fields_path = folder / FIELDS_FILE
+    fields = json.loads(fields_path.read_text()) if fields_path.is_file() else {}
+    attachments = [
+        (path.name, mimetypes.guess_type(path.name)[0] or "application/octet-stream", path.read_bytes())
+        for path in sorted(folder.iterdir())
+        if path.is_file()
+        and path.name not in (CONTENT_FILE, LEGACY_FILE, FIELDS_FILE)
+        and not path.name.startswith(".")
+    ]
+    return read_text(CONTENT_FILE), read_text(LEGACY_FILE), fields, attachments
 
 
 # --- state -------------------------------------------------------------------------------------
@@ -218,6 +288,81 @@ class Sender:
             return None
         log(f"sent {message_id} to channel {channel_id}")
         return message_id
+
+    def send_rich(self, channel_ref, folder):
+        """Send the message in `folder` (see load_rich_fixture) to create_message as one multipart request."""
+        channel_id = self.state.resolve(channel_ref)
+        key = self.state.channels[channel_id]["key"]
+        content, legacy, fields, attachments = load_rich_fixture(folder)
+        message_id = str(uuid.uuid4())
+        blobs = [encrypt_file(key, data) for _, _, data in attachments]
+        payload = {
+            "channel": channel_id,
+            "message_id": message_id,
+            "attachments": [
+                {"name": name, "type": content_type, "size": len(blob)}
+                for (name, content_type, _), blob in zip(attachments, blobs)
+            ],
+        }
+        if content:
+            payload["content"] = encrypt(key, content)
+        if legacy is not None:
+            payload["content_legacy_msg"] = encrypt(key, legacy)
+        payload.update(fields)
+        files = {"message": (None, json.dumps(payload), "application/json")}
+        for index, ((name, _, _), blob) in enumerate(zip(attachments, blobs)):
+            files[f"attachment_{index}"] = (name, blob, "application/octet-stream")
+        response = requests.post(
+            f"{self.personalid_url}/messaging/create_message/",
+            files=files,
+            auth=self.auth,
+            headers={MESSAGING_VERSION_HEADER: str(MESSAGING_VERSION)},
+            timeout=REQUEST_TIMEOUT,
+        )
+        if response.status_code != 200:
+            log(f"send_rich failed: {response.status_code} {response.text}")
+            return None
+        names = ", ".join(name for name, _, _ in attachments) or "no attachments"
+        log(f"sent {message_id} to channel {channel_id} ({names})")
+        return message_id
+
+    def send_future_version(self, channel_ref):
+        """Deliver a message in the next format version, which no caller can create through create_message.
+
+        The phone should show its content with a notice to update the app, and never the rich text.
+        """
+        channel_id = self.state.resolve(channel_ref)
+        key = self.state.channels[channel_id]["key"]
+        version = MESSAGING_VERSION + 1
+        message = Message.objects.create(
+            channel_id=channel_id,
+            direction=MessageDirection.MOBILE,
+            content=encrypt(key, f"Plain text of a version {version} message. Expect an update notice with it."),
+            rich_text=encrypt(key, f"**Version {version} rich text.** The app should never show this."),
+            version=version,
+        )
+        send_bulk_notification_task(
+            usernames=[message.channel.connect_user.username],
+            data=MessageSerializer(message).data,
+            fcm_options={},
+        )
+        log(f"sent version {version} message {message.message_id} to channel {channel_id}")
+        return str(message.message_id)
+
+    def clear_pending(self, channel_ref):
+        """Delete the channel's messages to the phone that it has not acked. Returns how many.
+
+        Their notifications, attachment rows and stored files go with them. Replies from the phone
+        and messages it already received are left alone.
+        """
+        channel_id = self.state.resolve(channel_ref)
+        pending = Message.objects.filter(
+            channel_id=channel_id, direction=MessageDirection.MOBILE, notification__received__isnull=True
+        )
+        message_ids = list(pending.values_list("message_id", flat=True))
+        Message.objects.filter(message_id__in=message_ids).delete()
+        log(f"cleared {len(message_ids)} pending message(s) on channel {channel_id}")
+        return len(message_ids)
 
     def verify_mac(self, body, digest_header):
         """PersonalID signs what it posts to us with our secret; check it with the same code it uses."""
@@ -311,8 +456,12 @@ def start_http_server(sender, host, port):
 # --- the prompt ----------------------------------------------------------------------------------
 
 HELP = (
-    "commands: users | channel <username> [display name] | send <channel id|last> <text> | list | quit\n"
-    "  <username> is the PersonalID username, e.g. 2c69ea9b8272348677d6"
+    "commands: users | channel <username> [display name] | send <channel id|last> <text>\n"
+    "          send_rich <channel id|last> <folder> | send_future_version <channel id|last>\n"
+    "          clear_pending <channel id|last> | list | quit\n"
+    "  <username> is the PersonalID username, e.g. 2c69ea9b8272348677d6\n"
+    "  <folder> holds content.txt and/or legacy.txt, optionally message.json, and the attachments\n"
+    "  (every other file); see load_rich_fixture in messaging/management/commands/_local_message_server/server.py"
 )
 
 
@@ -346,6 +495,13 @@ def prompt_loop(sender, write=print):
             elif command == "channel":
                 connectid, _, name = rest.partition(" ")
                 sender.create_channel(connectid, name or None)
+            elif command == "clear_pending":
+                sender.clear_pending(rest or "last")
+            elif command == "send_future_version":
+                sender.send_future_version(rest or "last")
+            elif command == "send_rich":
+                channel_ref, _, folder = rest.partition(" ")
+                sender.send_rich(channel_ref, folder)
             elif command == "send":
                 channel_ref, _, text = rest.partition(" ")
                 sender.send_text(channel_ref, text)
@@ -357,5 +513,5 @@ def prompt_loop(sender, write=print):
                 return
             else:
                 write(HELP)
-        except (requests.RequestException, KeyError) as e:
+        except (requests.RequestException, KeyError, OSError, ValueError) as e:
             log(f"{command} failed: {e}")

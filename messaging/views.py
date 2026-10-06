@@ -3,18 +3,27 @@ from collections import defaultdict
 from uuid import UUID
 
 import sentry_sdk
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
-from django.http import JsonResponse
+from django.http import FileResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.timezone import now
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView
+from rest_framework.parsers import MultiPartParser
 from rest_framework.views import APIView
 
 from messaging.const import ErrorCodes
 from messaging.models import Channel, Message, MessageDirection, MessageServer, MessageStatus, Notification
+from messaging.rich_messages import (
+    RichMessageRejected,
+    check_caller_version,
+    check_request_size,
+    parse_message_request,
+    store_message,
+)
 from messaging.serializers import (
     CCC_MESSAGE_ACTION,
     BulkMessageSerializer,
@@ -194,6 +203,76 @@ class SendServerConnectMessage(APIView):
         return JsonResponse(
             {"message_id": str(message.message_id)},
             status=status.HTTP_200_OK,
+        )
+
+
+class CreateMessageView(APIView):
+    """Receive a message, with or without attachments, from a messaging server. See messaging.rich_messages.
+
+    Off unless settings.RICH_MESSAGING_ENABLED. send_fcm stays as it was for callers that have not moved.
+    """
+
+    authentication_classes = [MessagingServerAuth]
+    parser_classes = [MultiPartParser]
+
+    def post(self, request, *args, **kwargs):
+        if not settings.RICH_MESSAGING_ENABLED:
+            return JsonResponse({"errors": ErrorCodes.RICH_MESSAGING_DISABLED}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            check_caller_version(request.headers)
+            check_request_size(request.META)
+            message_data = parse_message_request(request.data, request.FILES)
+        except RichMessageRejected as e:
+            return JsonResponse(e.body, status=e.status_code)
+
+        server = get_current_message_server(request)
+        channel = (
+            Channel.objects.filter(channel_id=message_data["channel"], server=server)
+            .select_related("connect_user")
+            .first()
+        )
+        if channel is None:
+            return JsonResponse({"errors": ErrorCodes.CHANNEL_DOES_NOT_EXIST}, status=status.HTTP_400_BAD_REQUEST)
+        if not channel.user_consent:
+            return JsonResponse({"errors": ErrorCodes.NO_USER_CONSENT}, status=status.HTTP_400_BAD_REQUEST)
+        # Checked up front so a retried send does not write its files again
+        if Message.objects.filter(message_id=message_data["message_id"]).exists():
+            return JsonResponse({"errors": ErrorCodes.MESSAGE_ID_ALREADY_EXISTS}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            message = store_message(channel, message_data, request.FILES)
+        except IntegrityError:
+            return JsonResponse({"errors": ErrorCodes.MESSAGE_ID_ALREADY_EXISTS}, status=status.HTTP_400_BAD_REQUEST)
+
+        send_bulk_notification_task.delay(
+            usernames=[channel.connect_user.username],
+            data=MessageSerializer(message).data,
+            fcm_options={},
+        )
+        return JsonResponse({"message_id": str(message.message_id)}, status=status.HTTP_200_OK)
+
+
+class MessageAttachmentView(APIView):
+    """Serve one encrypted attachment to the user whose channel the message is on.
+
+    The message is resolved first, scoped to the requesting user, and the attachment is looked up
+    only within it. The bytes are returned exactly as the sender uploaded them; the device decrypts
+    them with the channel key. Not gated by RICH_MESSAGING_ENABLED, so messages already delivered
+    keep their media if sending is switched off.
+    """
+
+    def get(self, request, message_id, attachment_id, *args, **kwargs):
+        message = Message.objects.filter(message_id=message_id, channel__connect_user=request.user).first()
+        if message is None:
+            return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
+        if message.expires_at is not None and message.expires_at <= now():
+            return JsonResponse({"errors": ErrorCodes.MESSAGE_EXPIRED}, status=status.HTTP_410_GONE)
+        attachment = message.attachments.filter(id=attachment_id).first()
+        if attachment is None:
+            return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
+        # filename keeps the storage key out of Content-Disposition
+        return FileResponse(
+            attachment.file.open("rb"), content_type="application/octet-stream", filename=attachment.name
         )
 
 
@@ -386,7 +465,9 @@ class RetrieveNotificationView(ListAPIView):
     serializer_class = NotificationSerializer
 
     def get_queryset(self):
-        return Notification.objects.filter(user=self.request.user, received__isnull=True)
+        return Notification.objects.filter(user=self.request.user, received__isnull=True).prefetch_related(
+            "message__attachments"
+        )
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()

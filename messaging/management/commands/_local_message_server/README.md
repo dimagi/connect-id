@@ -36,3 +36,24 @@ and pass it with the flags.
    There is no push locally, so open the messaging screen in the app to sync. Replies from the
    phone appear at the prompt. Channel keys persist in `.local_temp_state/`; delete it to start
    over.
+
+4. To send messages with attachments, also set `RICH_MESSAGING_ENABLED=True` in `.env`, then:
+
+   ```
+   send_rich last <folder>
+   ```
+
+   sends the folder as one message to `create_message`. In the folder, `content.txt` is the
+   message text (optional when there are attachments), `legacy.txt` is what apps that cannot show
+   rich messages display instead (required when there is no `content.txt`), `message.json` holds
+   cleartext fields merged over the defaults (e.g. `{"format": "gallery"}`), and every other file
+   is an attachment, sent in name order. Keep such folders outside the repo, e.g. under
+   `.local_temp_state/`.
+
+   Two commands help check how the app copes:
+
+   - `send_future_version last` delivers a message one format version newer than this server
+     supports. The app should show its plain text with a notice to update. No caller can send
+     such a message, so this one is written straight to the local database.
+   - `clear_pending last` deletes the channel's messages the phone has not yet acknowledged, so a
+     message the app cannot handle stops coming back on every sync.
