@@ -1157,7 +1157,7 @@ def confirm_session_otp(request):
                 status=401,
             )
         return JsonResponse(
-            {"error": ErrorCodes.INCORRECT_OTP, "attempts_left": device.verify_attempts_left}, status=401
+            {"error_code": ErrorCodes.INCORRECT_OTP, "attempts_left": device.verify_attempts_left}, status=401
         )
     request.auth.is_phone_validated = True
     request.auth.save()
@@ -1285,6 +1285,10 @@ def report_integrity(request):
 
     if not integrity_token or not request_hash:
         return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+
+    if settings.PLAYSTORE_INTEGRITY_DISABLED:
+        # No Google round trip locally. None is what the app already gets for a repeated sample.
+        return JsonResponse({"result_code": None})
 
     # This is for testing with demo users or test apps
     app_package = data.get("application_id")

@@ -81,7 +81,9 @@ deploy/             # Kamal deployment config
 - **Recovery pin**: Must use `set_recovery_pin()` method (hashes internally), never assign directly.
 - **Celery is NOT eager by default**: `CELERY_TASK_ALWAYS_EAGER` defaults to `False` (env-overridable) and is not overridden in dev/test/CI, so `.delay()`/`.apply_async()` enqueue to the broker rather than running inline. In tests, call tasks directly or via `.apply()` to run them synchronously; a running worker + Redis broker are required for `.delay()` to actually execute.
 - **API versioning**: Via Accept header, defaults to v2.0. v1.0 is deprecated but still supported.
-- **App integrity**: All app requests validate Google Play Integrity tokens. Use `@skip_app_integrity_check` decorator in tests.
+- **App integrity**: Registration validates Google Play Integrity tokens (`@require_app_integrity` on `start_device_configuration`). Use `@skip_app_integrity_check` decorator in tests.
+- **Running without external services**: `PLAYSTORE_INTEGRITY_DISABLED=True` (requires `DEBUG=True`), `CONNECT_DISABLED=True`, `SMS_DEFAULT_VENDOR=console` and `DEFAULT_FILE_STORAGE_BACKEND=django.core.files.storage.FileSystemStorage` each switch off one dependency. See the README.
+- **File storage**: Django's storage API (`default_storage`), `storages.backends.s3.S3Storage` from django-storages by default. Never call boto3 directly for files.
 - **Docker Compose PostgreSQL**: Runs on port **5433** (not 5432).
 - **User lock vs deactivation**: `is_locked` (security lock from failed attempts) is separate from `is_active` (account deactivation).
 - **Message status flow**: PENDING -> SENT_TO_SERVICE -> DELIVERED -> CONFIRMED_RECEIVED
@@ -93,6 +95,7 @@ deploy/             # Kamal deployment config
 - Factory Boy factories in each app (`users/factories.py`, `messaging/factories.py`, etc.)
 - `test_utils/decorators.py` has `@skip_app_integrity_check` for bypassing integrity checks in tests
 - CI runs linting + pytest against PostgreSQL 15
+- `manage.py local_message_server` (DEBUG only) stands in for an external message server to test two-way messaging with a phone; implementation, usage README and tests in `messaging/management/commands/_local_message_server/`
 
 ## Environment
 
@@ -104,6 +107,7 @@ All config via env vars (see `.env_template`). Key ones:
 - `FCM_*` - Firebase Cloud Messaging credentials
 - `GOOGLE_*` - Google Play Integrity / Analytics
 - `OIDC_RSA_PRIVATE_KEY` - OAuth2/OIDC signing key
-- `AWS_S3_PHOTO_BUCKET_NAME` - Photo storage bucket
+- `AWS_S3_PHOTO_BUCKET_NAME` - Profile photos bucket (`user_photos` storage)
+- `AWS_S3_MESSAGE_ATTACHMENTS_BUCKET_NAME` - Encrypted message attachments bucket (`message_attachments` storage). Each bucket is a named storage in `settings.FILE_STORAGE_BUCKETS`, used as `storages["<alias>"]`; a model `FileField` uses a lazy `utils.storage.BucketStorage` instead (see that module). There is no `default` storage. Locally each bucket is a directory under `local_blobs/`
 - `SENTRY_DSN` - Error tracking
 - `MAPBOX_ACCESS_TOKEN` - Geolocation/country code detection
