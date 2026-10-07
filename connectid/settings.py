@@ -16,6 +16,7 @@ from pathlib import Path
 
 import environ
 import sentry_sdk
+from django.core.exceptions import ImproperlyConfigured
 from sentry_sdk.integrations.celery import CeleryIntegration
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration, ignore_logger
@@ -56,6 +57,7 @@ INSTALLED_APPS = [
     "django.contrib.sites",
     "waffle",
     "anymail",
+    "storages",
 ] + LOCAL_APPS
 
 MIDDLEWARE = [
@@ -259,6 +261,16 @@ SECRET_KEY = env(
 # SECURITY WARNING: don't run with debug turned on in production!!
 DEBUG = env("DEBUG", default=False)
 
+# External service toggles
+PLAYSTORE_INTEGRITY_DISABLED = env.bool("PLAYSTORE_INTEGRITY_DISABLED", default=False)
+if PLAYSTORE_INTEGRITY_DISABLED and not DEBUG:
+    raise ImproperlyConfigured("PLAYSTORE_INTEGRITY_DISABLED requires DEBUG=True.")
+
+CONNECT_DISABLED = env.bool("CONNECT_DISABLED", default=False)
+# Accept messages, with or without attachments, on messaging/create_message/. Off until storage and
+# expiry are live.
+RICH_MESSAGING_ENABLED = env.bool("RICH_MESSAGING_ENABLED", default=False)
+
 DATABASES = {
     "default": env.db(
         "DATABASE_URL",
@@ -286,7 +298,11 @@ SMS_VENDORS = {
         "auth_token": TWILIO_AUTH_TOKEN,
         "messaging_service": TWILIO_MESSAGING_SERVICE,
     },
+    # Writes the message to the log instead of sending it.
+    "console": {},
 }
+# The vendor send_sms uses. Set to "console" to run without Twilio.
+SMS_DEFAULT_VENDOR = env("SMS_DEFAULT_VENDOR", default="twilio")
 
 EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Connect <noreply@commcare-connect.org>")
@@ -348,8 +364,39 @@ GOOGLE_APPLICATION_CREDENTIALS = {
     "universe_domain": "googleapis.com",
 }
 
-# Bucket where user photos are stored on S3
-AWS_S3_PHOTO_BUCKET_NAME = env("AWS_S3_PHOTO_BUCKET_NAME", default="personalid-user-photos")
+# Blob and file storage configuration
+# Each kind of file has its own bucket and its own STORAGES alias: an S3 bucket in production, a
+# directory under local_blobs/ named after the bucket when running on the file system. There is
+# deliberately no "default" storage, so code that stores files must name its bucket
+# (storages["<alias>"]; FileFields see utils.storage), and Django's default_storage fails loudly.
+PRODUCTION_FILE_STORAGE_BACKEND = "storages.backends.s3.S3Storage"
+LOCAL_FILE_STORAGE_BACKEND = "django.core.files.storage.FileSystemStorage"
+DEFAULT_FILE_STORAGE_BACKEND = env("DEFAULT_FILE_STORAGE_BACKEND", default=PRODUCTION_FILE_STORAGE_BACKEND)
+FILE_STORAGE_BUCKETS = {
+    "user_photos": env("AWS_S3_PHOTO_BUCKET_NAME", default="personalid-user-photos"),
+    "message_attachments": env("AWS_S3_MESSAGE_ATTACHMENTS_BUCKET_NAME", default="personalid-message-attachments"),
+}
+AWS_S3_FILE_OVERWRITE = True
+AWS_DEFAULT_ACL = None
+
+
+def bucket_storage(bucket_name, backend=DEFAULT_FILE_STORAGE_BACKEND, local_root=BASE_DIR / "local_blobs"):
+    """The STORAGES entry for one bucket."""
+    if backend == LOCAL_FILE_STORAGE_BACKEND:
+        # Set file system to overwrite, matching the same semantics for file updates as s3 storage for
+        # consistency. Note that FileSystemStorage still renames, however, unless told otherwise.
+        options = {"location": local_root / bucket_name, "allow_overwrite": True}
+    else:
+        options = {"bucket_name": bucket_name}
+    return {"BACKEND": backend, "OPTIONS": options}
+
+
+STORAGES = {
+    **{alias: bucket_storage(bucket_name) for alias, bucket_name in FILE_STORAGE_BUCKETS.items()},
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
 
 # Open Chat Studio (OCS) configuration
 OCS_CONFIG = {

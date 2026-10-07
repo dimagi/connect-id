@@ -1,6 +1,7 @@
 import logging
 
 import requests
+from django.conf import settings
 from django.http import HttpResponseBadRequest, HttpResponseForbidden, HttpResponseServerError, JsonResponse
 from googleapiclient.errors import HttpError
 from phonenumbers.phonenumberutil import NumberParseException
@@ -78,6 +79,11 @@ def require_app_integrity(view):
                 status=503,
             )
         request.invited_user = invited
+
+        if settings.PLAYSTORE_INTEGRITY_DISABLED:
+            # No Google round trip locally. The invite check above still ran, so a malformed
+            # phone number is reported the same way it is in production.
+            return view(request, *args, **kwargs)
 
         app_package = request.data.get("application_id")
         error_response = validate_app_integrity(integrity_token, request_hash, app_package, phone_number)

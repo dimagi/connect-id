@@ -25,14 +25,21 @@ class CommCareHQAPIException(Exception):
     pass
 
 
+MAC_DIGEST_HEADER = "X-MAC-DIGEST"
+
+
+def mac_digest(secret, body):
+    """The value of the X-MAC-DIGEST header for a request body: base64 of HMAC-SHA256(secret, body)."""
+    digest = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).digest()
+    return base64.b64encode(digest).decode("utf-8")
+
+
 def make_request(url, json_data, secret):
     try:
         data = json.dumps(json_data).encode("utf-8")
-        digest = hmac.new(secret.encode("utf-8"), data, hashlib.sha256).digest()
-        mac_digest = base64.b64encode(digest).decode("utf-8")
         headers = {
             "Content-Type": "application/json",
-            "X-MAC-DIGEST": mac_digest,
+            MAC_DIGEST_HEADER: mac_digest(secret, data),
         }
         response = requests.post(url, json=json_data, headers=headers)
         response.raise_for_status()

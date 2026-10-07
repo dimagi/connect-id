@@ -2,6 +2,7 @@ import dataclasses
 
 from rest_framework import serializers
 
+from messaging.const import MESSAGING_VERSION
 from messaging.models import Message, Notification, NotificationTypes
 
 CCC_MESSAGE_ACTION = "ccc_message"
@@ -64,6 +65,12 @@ class BulkMessageSerializer(serializers.Serializer):
 
 
 class MessageSerializer(serializers.ModelSerializer):
+    """A message as the push, retrieve_messages and reply forwarding carry it.
+
+    Its output must not change: apps in the field parse it, and push data has a 4 KB limit. Rich
+    fields go only in SyncedMessageSerializer. Pinned by test_message_projections.
+    """
+
     ciphertext = serializers.SerializerMethodField()
     channel = serializers.SerializerMethodField()
     channel_name = serializers.SerializerMethodField()
@@ -120,6 +127,67 @@ class MessageSerializer(serializers.ModelSerializer):
         return f"You received a new message from {obj.channel.visible_name}"
 
 
+class SyncedMessageSerializer(MessageSerializer):
+    """A message as the device syncs it from retrieve_notifications.
+
+    Every message carries "version", the lowest format version that can represent it. Messages sent
+    through send_fcm are otherwise exactly MessageSerializer's output. Messages sent through
+    create_message add their cleartext fields and attachment list; fields that were not set are left
+    out. "rich_text" is either an encrypted triple or "", meaning the message has no text to show
+    beyond its attachments.
+    """
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation["version"] = instance.version or MESSAGING_VERSION
+        if instance.version is None:
+            return representation
+        rich_fields = {
+            "rich_text": instance.rich_text,
+            "format": instance.format,
+            "attachments": [
+                {
+                    "id": str(attachment.id),
+                    "name": attachment.name,
+                    "type": attachment.content_type,
+                    "size": attachment.size,
+                }
+                for attachment in instance.attachments.all()
+            ],
+            "expires_at": serializers.DateTimeField().to_representation(instance.expires_at)
+            if instance.expires_at
+            else None,
+        }
+        representation.update({key: value for key, value in rich_fields.items() if value is not None})
+        return representation
+
+
+class EncryptedTextSerializer(serializers.Serializer):
+    ciphertext = serializers.CharField()
+    tag = serializers.CharField()
+    nonce = serializers.CharField()
+
+
+class RichAttachmentSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=255)
+    type = serializers.CharField(max_length=255)
+    size = serializers.IntegerField(min_value=1)
+
+
+class CreateMessageSerializer(serializers.Serializer):
+    """Shape of the JSON part of create_message. The rules between fields are in messaging.rich_messages."""
+
+    channel = serializers.UUIDField()
+    message_id = serializers.UUIDField()
+    # The message text. May be left out (or sent as "") only when there are attachments
+    content = EncryptedTextSerializer(required=False)
+    # What apps that cannot show rich messages display instead of content, e.g. a request to update
+    content_legacy_msg = EncryptedTextSerializer(required=False)
+    format = serializers.CharField(max_length=50, required=False)
+    attachments = serializers.ListField(child=RichAttachmentSerializer(), required=False, default=list)
+    expires_at = serializers.DateTimeField(required=False)
+
+
 class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
@@ -131,7 +199,11 @@ class NotificationSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         rep = super().to_representation(instance)
-        data = getattr(instance, "data", {})
+        if instance.notification_type == NotificationTypes.MESSAGING.value and instance.message is not None:
+            # The sync carries rich fields; the push (Notification.data) does not
+            data = SyncedMessageSerializer(instance.message).data
+        else:
+            data = getattr(instance, "data", {})
         # Add all keys from data dictionary to the top-level
         if isinstance(data, dict):
             rep.update(data)

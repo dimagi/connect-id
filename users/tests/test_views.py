@@ -7,6 +7,7 @@ from unittest.mock import patch
 import factory
 import pytest
 import requests
+from django.core.files.storage import storages
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse, reverse_lazy
 from django.utils.timezone import now
@@ -261,7 +262,7 @@ class TestConfirmOTP:
         response = auth_device.post(reverse("confirm_otp"), data={})
 
         assert response.status_code == 401
-        assert response.json() == {"error_code": ErrorCodes.INCORRECT_OTP}
+        assert response.json() == {"error_code": ErrorCodes.INCORRECT_OTP, "attempts_left": MAX_OTP_VERIFY_ATTEMPTS}
         user.refresh_from_db()
         assert not user.phone_validated
 
@@ -1220,15 +1221,10 @@ class TestUpdateProfile:
         assert updated_user.name == data["name"]
         assert updated_user.recovery_phone == data["secondary_phone"]
 
-    @mock.patch("users.services.boto3.client")
-    def test_update_photo(self, mock_boto3_client, auth_device, user):
-        mock_s3 = mock.MagicMock()
-        mock_boto3_client.return_value = mock_s3
+    def test_update_photo(self, auth_device, user):
         data = {"photo": "data:image/jpg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEB"}
         auth_device.post(self.url, data)
-        mock_s3.put_object.assert_called_once()
-        _, kwargs = mock_s3.put_object.call_args
-        assert kwargs["Key"] == f"{user.username}.jpg"
+        assert storages["user_photos"].exists(f"{user.username}.jpg")
 
     def test_update_photo_invalid(self, auth_device):
         data = {"photo": "data:image/png;base64,invalid-base64"}
@@ -1276,10 +1272,8 @@ class TestUpdateProfile:
         assert response.status_code == 200
         mock_push.assert_not_called()
 
-    @mock.patch("users.services.boto3.client")
     @mock.patch("users.views.push_profile_to_connect.delay")
-    def test_photo_only_update_is_not_pushed(self, mock_push, mock_boto3_client, auth_device):
-        mock_boto3_client.return_value = mock.MagicMock()
+    def test_photo_only_update_is_not_pushed(self, mock_push, auth_device):
         data = {"photo": "data:image/jpg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEB"}
 
         auth_device.post(self.url, data)
@@ -1994,7 +1988,7 @@ class TestConfirmSessionOtp:
         response = authed_client_token.post(self.url, data={"otp": "wrong"})
 
         assert response.status_code == 401
-        assert response.json()["error"] == ErrorCodes.INCORRECT_OTP
+        assert response.json()["error_code"] == ErrorCodes.INCORRECT_OTP
         mock_verify_token.assert_called_once_with("wrong")
 
         valid_token.refresh_from_db()
@@ -2039,7 +2033,7 @@ class TestConfirmSessionOtp:
         response = authed_client_token.post(self.url, data={})
 
         assert response.status_code == 401
-        assert response.json()["error"] == ErrorCodes.INCORRECT_OTP
+        assert response.json()["error_code"] == ErrorCodes.INCORRECT_OTP
         mock_verify_token.assert_called_once_with(None)
 
         valid_token.refresh_from_db()
@@ -2892,7 +2886,8 @@ class TestOtpVerifyLimit:
             response = client.post(url, data=data, format="json")
             assert response.status_code == 401
             if attempt < MAX_OTP_VERIFY_ATTEMPTS - 1:
-                assert response.json() == expected_incorrect_code
+                attempts_left = MAX_OTP_VERIFY_ATTEMPTS - attempt - 1
+                assert response.json() == {**expected_incorrect_code, "attempts_left": attempts_left}
         return response
 
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
@@ -2979,7 +2974,7 @@ class TestOtpVerifyLimit:
             authed_client_token,
             reverse("confirm_session_otp"),
             {"otp": WRONG_OTP},
-            {"error": ErrorCodes.INCORRECT_OTP},
+            {"error_code": ErrorCodes.INCORRECT_OTP},
         )
         assert response.json()["error_code"] == ErrorCodes.OTP_LIMIT_EXCEEDED
         # Phone codes keep the ordinary resend backoff after a burn, not the email hours.
