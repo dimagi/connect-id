@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import exceptions
 from rest_framework.authentication import BasicAuthentication, TokenAuthentication
 
@@ -10,6 +11,18 @@ from utils.rest_framework import OauthClientUser
 class SessionTokenAuthentication(TokenAuthentication):
     keyword = "Bearer"
     model = ConfigurationSession
+
+    def authenticate(self, request):
+        """Clients before 3.0 cannot handle an active account whose backup code is locked, so refuse them."""
+        result = super().authenticate(request)
+        if result is None:
+            return None
+        _, token = result
+        version = getattr(request, "version", None) or settings.API_VERSION.V2
+        if version in (settings.API_VERSION.V1, settings.API_VERSION.V2):
+            if ConnectUser.objects.filter(phone_number=token.phone_number, is_locked=True).exists():
+                raise exceptions.AuthenticationFailed({"error_code": ErrorCodes.LOCKED_ACCOUNT})
+        return result
 
     def authenticate_credentials(self, key):
         model = self.get_model()

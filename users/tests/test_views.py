@@ -330,6 +330,19 @@ class TestRecoverAccount:
         assert status.step == RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY
         assert status.secret_key == response.json()["secret"]
 
+    @patch.object(PhoneDevice, "generate_challenge")
+    def test_locked_user_refused(self, generate_challenge_mock, client, user):
+        user.is_locked = True
+        user.save()
+        PhoneDeviceFactory(user=user, phone_number=user.phone_number)
+
+        response = client.post(reverse("recover_account"), data={"phone": user.phone_number})
+
+        assert response.status_code == 401
+        assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
+        generate_challenge_mock.assert_not_called()
+        assert not RecoveryStatus.objects.filter(user=user).exists()
+
 
 class TestConfirmRecoverOTP:
     secret_key = "chamber_of_secrets"
@@ -918,6 +931,18 @@ class TestRecoveryPinConfirmationApi:
         assert response.status_code == 400
         assert response.json() == {"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}
 
+    def test_locked_user_refused(self, recovery_status, client):
+        recovery_status.user.set_recovery_pin("1234")
+        recovery_status.user.is_locked = True
+        recovery_status.user.save()
+
+        response = client.post(self.url, data=self._get_post_data(recovery_status))
+
+        recovery_status.refresh_from_db()
+        assert response.status_code == 401
+        assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
+        assert recovery_status.step == RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
+
     def test_confirm_recovery_pin_success(self, recovery_status, client):
         recovery_status.user.set_recovery_pin("1234")
         recovery_status.user.save()
@@ -957,7 +982,7 @@ class TestConfirmBackupCodeApi:
         assert user.failed_backup_code_attempts == 1
         assert response.json() == {"attempts_left": 2}
 
-    def test_account_orphaned(self, authed_client_token, user):
+    def test_third_wrong_code_locks_backup_code(self, authed_client_token, user):
         user.set_recovery_pin("4321")
         user.failed_backup_code_attempts = 2
         user.save()
@@ -967,8 +992,24 @@ class TestConfirmBackupCodeApi:
         assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
 
         user.refresh_from_db()
-        assert not user.is_active
+        assert user.is_active
         assert user.is_locked
+
+    def test_locked_backup_code_refused_before_check(self, authed_client_token_v3, valid_token, user):
+        user.set_recovery_pin("1234")
+        user.failed_backup_code_attempts = 3
+        user.is_locked = True
+        user.save()
+
+        response = authed_client_token_v3.post(self.url, data={"recovery_pin": "1234"})
+        assert response.status_code == 401
+        assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
+
+        user.refresh_from_db()
+        valid_token.refresh_from_db()
+        assert user.failed_backup_code_attempts == 3
+        assert user.is_locked
+        assert not valid_token.backup_code_verified
 
     def test_successful_code_check(self, authed_client_token, valid_token, user):
         user.set_recovery_pin("1234")
@@ -3159,7 +3200,7 @@ class TestCompleteRecoveryApi:
         assert user.failed_backup_code_attempts == 1
         assert user.is_active
 
-    def test_third_wrong_backup_code_locks_account(self, authed_client_token, user):
+    def test_third_wrong_backup_code_locks_backup_code(self, authed_client_token, user):
         user.set_recovery_pin(self.BACKUP_CODE)
         user.failed_backup_code_attempts = 2
         user.save()
@@ -3171,8 +3212,44 @@ class TestCompleteRecoveryApi:
         assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
 
         user.refresh_from_db()
-        assert not user.is_active
+        assert user.is_active
         assert user.is_locked
+
+    def test_locked_backup_code_refused_before_check(self, authed_client_token_v3, valid_token, user):
+        user.set_recovery_pin(self.BACKUP_CODE)
+        user.failed_backup_code_attempts = 3
+        user.is_locked = True
+        user.save()
+
+        response = authed_client_token_v3.post(
+            self.url, data={"method": RecoveryMethods.BACKUP_CODE, "backup_code": self.BACKUP_CODE}, format="json"
+        )
+        assert response.status_code == 401
+        assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
+
+        user.refresh_from_db()
+        valid_token.refresh_from_db()
+        assert user.failed_backup_code_attempts == 3
+        assert user.is_locked
+        assert not valid_token.backup_code_verified
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_email_recovery_clears_backup_code_lock(self, authed_client_token_v3, user, valid_token):
+        user.email = self.EMAIL
+        user.failed_backup_code_attempts = 3
+        user.is_locked = True
+        user.save()
+        device = self._send_otp(SessionEmailOTPDeviceFactory(session=valid_token, email=self.EMAIL))
+
+        response = authed_client_token_v3.post(
+            self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": device.token}, format="json"
+        )
+        assert response.status_code == 200
+
+        user.refresh_from_db()
+        assert user.is_active
+        assert not user.is_locked
+        assert user.failed_backup_code_attempts == 0
 
     def test_correct_backup_code_resets_counter(self, authed_client_token, user):
         user.set_recovery_pin(self.BACKUP_CODE)
