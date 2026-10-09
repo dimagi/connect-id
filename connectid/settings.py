@@ -177,6 +177,7 @@ LOGGING = {
 class APIVersion:
     V1 = "1.0"
     V2 = "2.0"
+    V3 = "3.0"
 
 
 API_VERSION = APIVersion
@@ -199,6 +200,7 @@ REST_FRAMEWORK = {
     "ALLOWED_VERSIONS": [
         API_VERSION.V1,
         API_VERSION.V2,
+        API_VERSION.V3,
     ],
 }
 

@@ -1,13 +1,16 @@
 import base64
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from django.test import RequestFactory
+from django.urls import reverse
 from django.utils.timezone import now
 from rest_framework import exceptions
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.test import APIRequestFactory
 
+from services.ai.ocs import OpenChatStudio
 from users.auth import DeviceBasicAuthentication
 from users.const import ErrorCodes
 from users.factories import UserDeviceInfoFactory, UserFactory
@@ -48,6 +51,48 @@ class TestSessionTokenAuthentication:
         with pytest.raises(exceptions.AuthenticationFailed) as excinfo:
             token_auth.authenticate(request)
         assert excinfo.value.detail == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
+
+    @pytest.mark.parametrize("version", [None, "1.0", "2.0", "3.0"])
+    def test_inactive_locked_user_refused_on_every_version(self, token_auth, valid_token, user, version):
+        user.is_locked = True
+        user.is_active = False
+        user.save()
+        request = APIRequestFactory().get("/", HTTP_AUTHORIZATION=f"Bearer {valid_token.key}")
+        request.version = version
+        with pytest.raises(exceptions.AuthenticationFailed) as excinfo:
+            token_auth.authenticate(request)
+        assert excinfo.value.detail == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
+
+    @pytest.mark.parametrize("version", [None, "1.0", "2.0"])
+    def test_active_locked_user_refused_before_3_0(self, token_auth, valid_token, user, version):
+        user.is_locked = True
+        user.save()
+        request = APIRequestFactory().get("/", HTTP_AUTHORIZATION=f"Bearer {valid_token.key}")
+        request.version = version
+        with pytest.raises(exceptions.AuthenticationFailed) as excinfo:
+            token_auth.authenticate(request)
+        assert excinfo.value.detail == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
+
+    def test_active_locked_user_allowed_on_3_0(self, token_auth, valid_token, user):
+        user.is_locked = True
+        user.save()
+        request = APIRequestFactory().get("/", HTTP_AUTHORIZATION=f"Bearer {valid_token.key}")
+        request.version = "3.0"
+        _, token = token_auth.authenticate(request)
+        assert token == valid_token
+
+    @pytest.mark.parametrize(("version", "status_code"), [("2.0", 401), ("3.0", 200)])
+    @patch.object(OpenChatStudio, "check_name_similarity", return_value=True)
+    def test_version_comes_from_accept_header(self, _, api_client, valid_token, user, version, status_code):
+        user.is_locked = True
+        user.save()
+        response = api_client.post(
+            reverse("check_user_similarity"),
+            data={"name": "Test User"},
+            HTTP_AUTHORIZATION=f"Bearer {valid_token.key}",
+            HTTP_ACCEPT=f"application/json; version={version}",
+        )
+        assert response.status_code == status_code
 
 
 @pytest.mark.django_db
