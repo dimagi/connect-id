@@ -319,6 +319,8 @@ def recover_account(request):
         return JsonResponse({"error": "OTP missing required key phone"}, status=400)
 
     user = ConnectUser.objects.get(phone_number=data["phone"], is_active=True)
+    if user.is_locked:
+        return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=401)
     device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
     device.generate_challenge()
     secret = token_hex()
@@ -581,6 +583,8 @@ def confirm_recovery_pin(request):
     phone_number = data["phone"]
     secret_key = data["secret_key"]
     user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
+    if user.is_locked:
+        return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=401)
     status = RecoveryStatus.objects.get(user=user)
     if status.secret_key != secret_key:
         return JsonResponse({"error_code": ErrorCodes.INVALID_SECRET_KEY}, status=401)
@@ -600,6 +604,9 @@ def confirm_recovery_pin(request):
 
 
 def _verify_backup_code(user, backup_code):
+    if user.is_locked:
+        raise AccountLockedError()
+
     if user.check_recovery_pin(backup_code):
         return
 
@@ -645,10 +652,11 @@ def _apply_device_info(user, session, password, response_data):
 
 
 def _complete_recovery_for_user(user, session):
-    """Rotate the password, clear the backup-code counter, and build the config payload."""
+    """Rotate the password, clear the backup-code lock and counter, and build the config payload."""
     with transaction.atomic():
         password = token_hex(16)
         user.set_password(password)
+        user.is_locked = False
         user.reset_failed_backup_code_attempts()
         user.save()
 
