@@ -982,7 +982,7 @@ class TestConfirmBackupCodeApi:
         assert user.failed_backup_code_attempts == 1
         assert response.json() == {"attempts_left": 2}
 
-    def test_account_orphaned(self, authed_client_token, user):
+    def test_third_wrong_code_locks_backup_code(self, authed_client_token, user):
         user.set_recovery_pin("4321")
         user.failed_backup_code_attempts = 2
         user.save()
@@ -992,7 +992,7 @@ class TestConfirmBackupCodeApi:
         assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
 
         user.refresh_from_db()
-        assert not user.is_active
+        assert user.is_active
         assert user.is_locked
 
     def test_locked_backup_code_refused_before_check(self, authed_client_token_v3, valid_token, user):
@@ -3200,7 +3200,7 @@ class TestCompleteRecoveryApi:
         assert user.failed_backup_code_attempts == 1
         assert user.is_active
 
-    def test_third_wrong_backup_code_locks_account(self, authed_client_token, user):
+    def test_third_wrong_backup_code_locks_backup_code(self, authed_client_token, user):
         user.set_recovery_pin(self.BACKUP_CODE)
         user.failed_backup_code_attempts = 2
         user.save()
@@ -3212,7 +3212,7 @@ class TestCompleteRecoveryApi:
         assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
 
         user.refresh_from_db()
-        assert not user.is_active
+        assert user.is_active
         assert user.is_locked
 
     def test_locked_backup_code_refused_before_check(self, authed_client_token_v3, valid_token, user):

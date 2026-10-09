@@ -613,7 +613,6 @@ def _verify_backup_code(user, backup_code):
     user.add_failed_backup_code_attempt()
 
     if user.backup_code_attempts_left == 0:
-        user.is_active = False
         user.is_locked = True
         user.save()
         raise AccountLockedError()
