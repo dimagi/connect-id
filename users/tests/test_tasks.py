@@ -7,12 +7,12 @@ import requests
 from django.utils.timezone import make_aware
 
 from users.factories import UserFactory
-from users.models import ConnectUser
 from users.tasks import (
     CONNECT_USER_DUMP_FIELDS,
     BigQueryUploader,
     CSVGenerator,
     SupersetUploader,
+    connect_user_dump_queryset,
     push_profile_to_connect,
 )
 
@@ -48,8 +48,11 @@ def test_csv_generator_outputs_expected_rows():
         "hq_sso_date": make_aware(datetime(2023, 1, 2, 12, 0, 0)),
     }
     user = UserFactory(**user_data)
+    user.set_recovery_pin("123456")
+    user.save()
+    user = connect_user_dump_queryset().get(pk=user.pk)
 
-    with CSVGenerator(ConnectUser.objects.all(), CONNECT_USER_DUMP_FIELDS) as csv_path:
+    with CSVGenerator(connect_user_dump_queryset(), CONNECT_USER_DUMP_FIELDS) as csv_path:
         with csv_path.open(newline="") as handle:
             rows = list(csv.DictReader(handle))
 
@@ -59,13 +62,43 @@ def test_csv_generator_outputs_expected_rows():
     for field in CONNECT_USER_DUMP_FIELDS:
         assert row[field] == expected_row[field]
     assert list(row.keys()) == CONNECT_USER_DUMP_FIELDS
+    assert row["has_backup_code"] == "True"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "recovery_pin, expected",
+    [
+        ("set", "True"),
+        (None, "False"),
+        ("", "False"),
+    ],
+)
+def test_csv_generator_exports_has_backup_code(recovery_pin, expected):
+    user = UserFactory()
+    if recovery_pin == "set":
+        user.set_recovery_pin("123456")
+    else:
+        user.recovery_pin = recovery_pin
+    user.save()
+
+    with CSVGenerator(connect_user_dump_queryset(), CONNECT_USER_DUMP_FIELDS) as csv_path:
+        content = csv_path.read_text()
+        with csv_path.open(newline="") as handle:
+            rows = list(csv.DictReader(handle))
+
+    assert len(rows) == 1
+    assert rows[0]["has_backup_code"] == expected
+    assert "recovery_pin" not in rows[0]
+    if user.recovery_pin:
+        assert user.recovery_pin not in content
 
 
 @pytest.mark.django_db
 def test_csv_generator_raises_when_max_rows_exceeded():
     UserFactory.create_batch(3)
     with pytest.raises(ValueError, match="exceeds limit"):
-        with CSVGenerator(ConnectUser.objects.all(), CONNECT_USER_DUMP_FIELDS, max_rows=2):
+        with CSVGenerator(connect_user_dump_queryset(), CONNECT_USER_DUMP_FIELDS, max_rows=2):
             pass
 
 

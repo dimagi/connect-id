@@ -9,6 +9,7 @@ import requests
 from celery import shared_task
 from django.conf import settings
 from django.core.management import call_command
+from django.db.models import BooleanField, Case, Q, Value, When
 from google.auth.exceptions import GoogleAuthError
 from google.cloud import bigquery
 from google.oauth2 import service_account
@@ -34,6 +35,7 @@ CONNECT_USER_DUMP_FIELDS = [
     "is_active",
     "failed_backup_code_attempts",
     "hq_sso_date",
+    "has_backup_code",
 ]
 
 CONFIGURATION_SESSION_DUMP_FIELDS = [
@@ -48,6 +50,16 @@ CONFIGURATION_SESSION_DUMP_FIELDS = [
     "device",
     "verified_email",
 ]
+
+
+def connect_user_dump_queryset():
+    return ConnectUser.objects.annotate(
+        has_backup_code=Case(
+            When(Q(recovery_pin__isnull=True) | Q(recovery_pin=""), then=Value(False)),
+            default=Value(True),
+            output_field=BooleanField(),
+        )
+    )
 
 
 class SupersetUploadException(Exception):
@@ -226,7 +238,7 @@ def upload_configuration_sessions():
 @shared_task(name="users.tasks.upload_connect_users_to_superset")
 def upload_connect_users_to_superset():
     table_name = settings.SUPERSET_UPLOAD_CONFIG["table_name"]
-    with CSVGenerator(ConnectUser.objects.all(), CONNECT_USER_DUMP_FIELDS, max_rows=100000) as csv_path:
+    with CSVGenerator(connect_user_dump_queryset(), CONNECT_USER_DUMP_FIELDS, max_rows=100000) as csv_path:
         uploaded = SupersetUploader(table_name).upload(csv_path)
     logger.info("ConnectUser upload to Superset finished (uploaded=%s)", uploaded)
 
