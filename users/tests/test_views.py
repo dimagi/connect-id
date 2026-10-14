@@ -1550,6 +1550,23 @@ class TestStartConfigurationView:
         )
         assert response.json().get("required_lock") == ConnectUser.DeviceSecurity.PIN
 
+    @skip_app_integrity_check
+    @patch("users.models.ConfigurationSession.country_code")
+    @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
+    def test_invited_user_gets_pin_lock_over_stored_biometric(self, check_number_mock, mock_country_code, client):
+        check_number_mock.return_value = True
+        biometric_user = UserFactory()
+        biometric_user.device_security = ConnectUser.DeviceSecurity.BIOMETRIC
+        biometric_user.save()
+
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": biometric_user.phone_number, "gps_location": "0 0"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+        assert response.json().get("required_lock") == ConnectUser.DeviceSecurity.PIN
+
     @patch("users.models.ConfigurationSession.country_code")
     @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
     @patch("utils.app_integrity.decorators.AppIntegrityService")
