@@ -1912,13 +1912,14 @@ class TestCompleteProfileView:
 class TestSendSessionOtp:
     url = "/users/send_session_otp"
 
-    def test_not_invited_user(self, authed_client_token, valid_token):
+    @patch("users.models.SessionPhoneDevice.generate_challenge")
+    def test_not_invited_user(self, mock_generate_challenge, authed_client_token, valid_token):
         valid_token.invited_user = False
         valid_token.save()
 
         response = authed_client_token.post(self.url)
-        assert response.status_code == 403
-        assert response.json() == {"error_code": ErrorCodes.NOT_ALLOWED}
+        assert response.status_code == 200
+        mock_generate_challenge.assert_called_once()
 
     @patch("users.models.SessionPhoneDevice.generate_challenge")
     def test_success(self, mock_generate_challenge, authed_client_token, valid_token):
@@ -1964,13 +1965,17 @@ class TestSendSessionOtp:
 class TestConfirmSessionOtp:
     url = "/users/confirm_session_otp"
 
-    def test_not_invited_user(self, authed_client_token, valid_token):
+    @patch("users.models.SessionPhoneDevice.verify_token")
+    def test_not_invited_user(self, mock_verify_token, authed_client_token, valid_token):
+        mock_verify_token.return_value = True
         valid_token.invited_user = False
         valid_token.save()
+        SessionPhoneDeviceFactory(session=valid_token, phone_number=valid_token.phone_number)
 
-        response = authed_client_token.post(self.url)
-        assert response.status_code == 403
-        assert response.json() == {"error_code": ErrorCodes.NOT_ALLOWED}
+        response = authed_client_token.post(self.url, data={"otp": "123456"})
+        assert response.status_code == 200
+        valid_token.refresh_from_db()
+        assert valid_token.is_phone_validated
 
     @patch("users.models.SessionPhoneDevice.verify_token")
     def test_invalid_token(self, mock_verify_token, authed_client_token, valid_token):
