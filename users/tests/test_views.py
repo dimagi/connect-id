@@ -259,12 +259,35 @@ class TestConfirmOTP:
         user.save()
         PhoneDeviceFactory(user=user, phone_number=user.phone_number)
 
-        response = auth_device.post(reverse("confirm_otp"), data={})
+        response = auth_device.post(reverse("confirm_otp"), data={"token": "999999"})
 
         assert response.status_code == 401
         assert response.json() == {"error_code": ErrorCodes.INCORRECT_OTP, "attempts_left": MAX_OTP_VERIFY_ATTEMPTS}
         user.refresh_from_db()
         assert not user.phone_validated
+
+    def test_missing_token(self, auth_device, user):
+        device = PhoneDeviceFactory(user=user, phone_number=user.phone_number)
+
+        response = auth_device.post(reverse("confirm_otp"), data={})
+
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
+        device.refresh_from_db()
+        assert device.failed_verifications == 0
+        user.refresh_from_db()
+        assert not user.phone_validated
+
+    def test_correct_code_validates_phone(self, auth_device, user):
+        device = PhoneDeviceFactory(user=user, phone_number=user.phone_number)
+        with mock.patch("users.models.send_sms"):
+            device.generate_challenge()
+
+        response = auth_device.post(reverse("confirm_otp"), data={"token": device.token})
+
+        assert response.status_code == 200
+        user.refresh_from_db()
+        assert user.phone_validated
 
     def test_no_code_sent(self, auth_device, user):
         response = auth_device.post(reverse("confirm_otp"), data={"token": "112233"})
@@ -329,6 +352,19 @@ class TestRecoverAccount:
         status = RecoveryStatus.objects.get(user=user)
         assert status.step == RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY
         assert status.secret_key == response.json()["secret"]
+
+    @patch.object(PhoneDevice, "generate_challenge")
+    def test_locked_user_refused(self, generate_challenge_mock, client, user):
+        user.is_locked = True
+        user.save()
+        PhoneDeviceFactory(user=user, phone_number=user.phone_number)
+
+        response = client.post(reverse("recover_account"), data={"phone": user.phone_number})
+
+        assert response.status_code == 401
+        assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
+        generate_challenge_mock.assert_not_called()
+        assert not RecoveryStatus.objects.filter(user=user).exists()
 
 
 class TestConfirmRecoverOTP:
@@ -918,6 +954,18 @@ class TestRecoveryPinConfirmationApi:
         assert response.status_code == 400
         assert response.json() == {"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}
 
+    def test_locked_user_refused(self, recovery_status, client):
+        recovery_status.user.set_recovery_pin("1234")
+        recovery_status.user.is_locked = True
+        recovery_status.user.save()
+
+        response = client.post(self.url, data=self._get_post_data(recovery_status))
+
+        recovery_status.refresh_from_db()
+        assert response.status_code == 401
+        assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
+        assert recovery_status.step == RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
+
     def test_confirm_recovery_pin_success(self, recovery_status, client):
         recovery_status.user.set_recovery_pin("1234")
         recovery_status.user.save()
@@ -957,7 +1005,7 @@ class TestConfirmBackupCodeApi:
         assert user.failed_backup_code_attempts == 1
         assert response.json() == {"attempts_left": 2}
 
-    def test_account_orphaned(self, authed_client_token, user):
+    def test_third_wrong_code_locks_backup_code(self, authed_client_token, user):
         user.set_recovery_pin("4321")
         user.failed_backup_code_attempts = 2
         user.save()
@@ -967,8 +1015,24 @@ class TestConfirmBackupCodeApi:
         assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
 
         user.refresh_from_db()
-        assert not user.is_active
+        assert user.is_active
         assert user.is_locked
+
+    def test_locked_backup_code_refused_before_check(self, authed_client_token_v3, valid_token, user):
+        user.set_recovery_pin("1234")
+        user.failed_backup_code_attempts = 3
+        user.is_locked = True
+        user.save()
+
+        response = authed_client_token_v3.post(self.url, data={"recovery_pin": "1234"})
+        assert response.status_code == 401
+        assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
+
+        user.refresh_from_db()
+        valid_token.refresh_from_db()
+        assert user.failed_backup_code_attempts == 3
+        assert user.is_locked
+        assert not valid_token.backup_code_verified
 
     def test_successful_code_check(self, authed_client_token, valid_token, user):
         user.set_recovery_pin("1234")
@@ -2050,13 +2114,11 @@ class TestConfirmSessionOtp:
             phone_number=valid_token.phone_number,
         )
 
-        mock_verify_token.return_value = False
-
         response = authed_client_token.post(self.url, data={})
 
-        assert response.status_code == 401
-        assert response.json()["error_code"] == ErrorCodes.INCORRECT_OTP
-        mock_verify_token.assert_called_once_with(None)
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.MISSING_DATA}
+        mock_verify_token.assert_not_called()
 
         valid_token.refresh_from_db()
         assert not valid_token.is_phone_validated
@@ -3181,7 +3243,7 @@ class TestCompleteRecoveryApi:
         assert user.failed_backup_code_attempts == 1
         assert user.is_active
 
-    def test_third_wrong_backup_code_locks_account(self, authed_client_token, user):
+    def test_third_wrong_backup_code_locks_backup_code(self, authed_client_token, user):
         user.set_recovery_pin(self.BACKUP_CODE)
         user.failed_backup_code_attempts = 2
         user.save()
@@ -3193,8 +3255,44 @@ class TestCompleteRecoveryApi:
         assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
 
         user.refresh_from_db()
-        assert not user.is_active
+        assert user.is_active
         assert user.is_locked
+
+    def test_locked_backup_code_refused_before_check(self, authed_client_token_v3, valid_token, user):
+        user.set_recovery_pin(self.BACKUP_CODE)
+        user.failed_backup_code_attempts = 3
+        user.is_locked = True
+        user.save()
+
+        response = authed_client_token_v3.post(
+            self.url, data={"method": RecoveryMethods.BACKUP_CODE, "backup_code": self.BACKUP_CODE}, format="json"
+        )
+        assert response.status_code == 401
+        assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
+
+        user.refresh_from_db()
+        valid_token.refresh_from_db()
+        assert user.failed_backup_code_attempts == 3
+        assert user.is_locked
+        assert not valid_token.backup_code_verified
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    def test_email_recovery_clears_backup_code_lock(self, authed_client_token_v3, user, valid_token):
+        user.email = self.EMAIL
+        user.failed_backup_code_attempts = 3
+        user.is_locked = True
+        user.save()
+        device = self._send_otp(SessionEmailOTPDeviceFactory(session=valid_token, email=self.EMAIL))
+
+        response = authed_client_token_v3.post(
+            self.url, data={"method": RecoveryMethods.EMAIL_OTP, "otp": device.token}, format="json"
+        )
+        assert response.status_code == 200
+
+        user.refresh_from_db()
+        assert user.is_active
+        assert not user.is_locked
+        assert user.failed_backup_code_attempts == 0
 
     def test_correct_backup_code_resets_counter(self, authed_client_token, user):
         user.set_recovery_pin(self.BACKUP_CODE)

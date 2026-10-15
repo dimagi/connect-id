@@ -2,6 +2,7 @@ import base64
 from datetime import timedelta
 
 import pytest
+from django.conf import settings
 from django.utils.timezone import now
 from oauth2_provider.models import AccessToken, Application
 from rest_framework.test import APIClient
@@ -115,6 +116,12 @@ def credential_issuing_client(api_client, credential_issuing_authority):
 def authed_client_token(authed_client, valid_token):
     authed_client.defaults["HTTP_AUTHORIZATION"] = f"Bearer {valid_token.key}"
     return authed_client
+
+
+@pytest.fixture
+def authed_client_token_v3(authed_client_token):
+    authed_client_token.defaults["HTTP_ACCEPT"] = f"application/json; version={settings.API_VERSION.V3}"
+    return authed_client_token
 
 
 @pytest.fixture

@@ -203,12 +203,14 @@ def confirm_otp(request):
     # check otp code for user
     # mark phone as confirmed on user model
     user = request.user
+    token = request.data.get("token")
+    if not token:
+        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
     try:
         device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
     except PhoneDevice.DoesNotExist:
         return JsonResponse({"error_code": ErrorCodes.INVALID_DATA}, status=400)
-    data = request.data
-    verified = device.verify_token(data.get("token"))
+    verified = device.verify_token(token)
     if not verified:
         if device.is_exhausted:
             return JsonResponse(
@@ -319,6 +321,8 @@ def recover_account(request):
         return JsonResponse({"error": "OTP missing required key phone"}, status=400)
 
     user = ConnectUser.objects.get(phone_number=data["phone"], is_active=True)
+    if user.is_locked:
+        return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=401)
     device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
     device.generate_challenge()
     secret = token_hex()
@@ -581,6 +585,8 @@ def confirm_recovery_pin(request):
     phone_number = data["phone"]
     secret_key = data["secret_key"]
     user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
+    if user.is_locked:
+        return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=401)
     status = RecoveryStatus.objects.get(user=user)
     if status.secret_key != secret_key:
         return JsonResponse({"error_code": ErrorCodes.INVALID_SECRET_KEY}, status=401)
@@ -600,13 +606,15 @@ def confirm_recovery_pin(request):
 
 
 def _verify_backup_code(user, backup_code):
+    if user.is_locked:
+        raise AccountLockedError()
+
     if user.check_recovery_pin(backup_code):
         return
 
     user.add_failed_backup_code_attempt()
 
     if user.backup_code_attempts_left == 0:
-        user.is_active = False
         user.is_locked = True
         user.save()
         raise AccountLockedError()
@@ -645,10 +653,11 @@ def _apply_device_info(user, session, password, response_data):
 
 
 def _complete_recovery_for_user(user, session):
-    """Rotate the password, clear the backup-code counter, and build the config payload."""
+    """Rotate the password, clear the backup-code lock and counter, and build the config payload."""
     with transaction.atomic():
         password = token_hex(16)
         user.set_password(password)
+        user.is_locked = False
         user.reset_failed_backup_code_attempts()
         user.save()
 
@@ -1134,9 +1143,12 @@ def send_session_otp(request):
 @api_view(["POST"])
 @authentication_classes([SessionTokenAuthentication])
 def confirm_session_otp(request):
+    otp = request.data.get("otp")
+    if not otp:
+        return JsonResponse({"error_code": ErrorCodes.MISSING_DATA}, status=400)
+
     device = SessionPhoneDevice.objects.get(phone_number=request.auth.phone_number, session=request.auth)
-    data = request.data
-    verified = device.verify_token(data.get("otp"))
+    verified = device.verify_token(otp)
     if not verified:
         if device.is_exhausted:
             return JsonResponse(
