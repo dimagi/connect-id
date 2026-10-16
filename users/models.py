@@ -59,13 +59,12 @@ class ConnectUser(AbstractUser):
 
     @classmethod
     def get_device_security_requirement(cls, phone_number, invited_user=False) -> str:
+        if invited_user:
+            return ConnectUser.DeviceSecurity.PIN.value
         try:
             user = cls.objects.get(phone_number=phone_number, is_active=True)
         except ConnectUser.DoesNotExist:
-            if invited_user:
-                return ConnectUser.DeviceSecurity.PIN.value
-            else:
-                return ConnectUser.DeviceSecurity.BIOMETRIC.value
+            return ConnectUser.DeviceSecurity.BIOMETRIC.value
         return user.device_security
 
     def set_recovery_pin(self, pin):
