@@ -40,6 +40,7 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       actions: read
@@ -71,10 +72,27 @@ jobs:
             fi
           fi
 
-          ci_conclusion=$(gh run list --workflow ci.yaml --event push --commit "$GITHUB_SHA" --limit 1 \
-            --json conclusion --jq '.[0].conclusion // ""')
+          # Something merged just before the scheduled time may still be in CI, so give it time to finish
+          deadline=$((SECONDS + 20 * 60))
+          while true; do
+            read -r ci_status ci_conclusion < <(
+              gh run list --workflow ci.yaml --event push --commit "$GITHUB_SHA" --limit 1 \
+                --json status,conclusion --jq '.[0] | "\(.status // "none") \(.conclusion // "")"'
+            )
+            if [ "$ci_status" = "completed" ] || [ "$SECONDS" -ge "$deadline" ]; then
+              break
+            fi
+            echo "CI on ${GITHUB_SHA::7} is ${ci_status}, waiting for it to finish..."
+            sleep 30
+          done
+
           if [ "$ci_conclusion" != "success" ]; then
-            reason="CI has not passed on ${GITHUB_SHA::7} (${ci_conclusion:-no run found})"
+            case "$ci_status" in
+              completed) ci_detail="$ci_conclusion" ;;
+              none) ci_detail="no CI run found" ;;
+              *) ci_detail="still ${ci_status} after 20 minutes" ;;
+            esac
+            reason="CI has not passed on ${GITHUB_SHA::7} (${ci_detail})"
             echo "::warning::$reason, skipping deploy."
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
             echo "skip_reason=$reason" >> "$GITHUB_OUTPUT"
