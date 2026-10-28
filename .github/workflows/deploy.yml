@@ -63,8 +63,10 @@ jobs:
           if [ -n "$last_release_tag" ]; then
             last_deployed_sha=$(gh api "repos/$GH_REPO/commits/$last_release_tag" --jq .sha)
             if [ "$last_deployed_sha" = "$GITHUB_SHA" ]; then
-              echo "::notice::Nothing new since the last release ($last_release_tag), skipping deploy."
+              reason="Nothing new since the last release ($last_release_tag)"
+              echo "::notice::$reason, skipping deploy."
               echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+              echo "skip_reason=$reason" >> "$GITHUB_OUTPUT"
               exit 0
             fi
           fi
@@ -72,12 +74,53 @@ jobs:
           ci_conclusion=$(gh run list --workflow ci.yaml --event push --commit "$GITHUB_SHA" --limit 1 \
             --json conclusion --jq '.[0].conclusion // ""')
           if [ "$ci_conclusion" != "success" ]; then
-            echo "::warning::CI has not passed on $GITHUB_SHA (${ci_conclusion:-no run found}), skipping deploy."
+            reason="CI has not passed on ${GITHUB_SHA::7} (${ci_conclusion:-no run found})"
+            echo "::warning::$reason, skipping deploy."
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "skip_reason=$reason" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Deploy Skipped
+        if: ${{ steps.check.outputs.should_deploy == 'false' }}
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          channel-id: 'C09HWCJSVJ6'
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                      "type": "mrkdwn",
+                      "text": "*PersonalID Deploy to ${{ env.DEPLOY_ENVIRONMENT }}*"
+                  }
+                },
+                {
+                  "type": "divider"
+                },
+                {
+                  "type": "section",
+                  "text": {
+                      "type": "mrkdwn",
+                      "text": "*Status*: Skipped\n${{ steps.check.outputs.skip_reason }}"
+                  }
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                      {
+                          "type": "mrkdwn",
+                          "text": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Deploy Run>"
+                      }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN}}
 
   deploy:
     needs: check
