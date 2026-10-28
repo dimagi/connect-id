@@ -38,7 +38,50 @@ on:
           - adhoc
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+    steps:
+      # Scheduled deploys only go out when there is something new on main and CI passed on it.
+      # Manual deploys always go ahead.
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Releases are only created by successful deploys, so the latest one marks what is live
+          last_release_tag=$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName // ""')
+          if [ -n "$last_release_tag" ]; then
+            last_deployed_sha=$(gh api "repos/$GH_REPO/commits/$last_release_tag" --jq .sha)
+            if [ "$last_deployed_sha" = "$GITHUB_SHA" ]; then
+              echo "::notice::Nothing new since the last release ($last_release_tag), skipping deploy."
+              echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          ci_conclusion=$(gh run list --workflow ci.yaml --event push --commit "$GITHUB_SHA" --limit 1 \
+            --json conclusion --jq '.[0].conclusion // ""')
+          if [ "$ci_conclusion" != "success" ]; then
+            echo "::warning::CI has not passed on $GITHUB_SHA (${ci_conclusion:-no run found}), skipping deploy."
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+
   deploy:
+    needs: check
+    if: needs.check.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source code
