@@ -1894,6 +1894,59 @@ class TestCheckUserSimilarity:
         assert response.status_code == 200
         assert "masked_email" not in response.json()
 
+    @patch.object(ConnectUser, "get_photo")
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_backup_code_locked_returned_for_matched_locked_account(
+        self, check_similarity_mock, get_photo_mock, authed_client_token_v3, user, valid_token
+    ):
+        check_similarity_mock.return_value = True
+        get_photo_mock.return_value = ""
+
+        user.name = "ExistingUser"
+        user.is_locked = True
+        user.save()
+
+        response = authed_client_token_v3.post(reverse(self.urlname), data={"name": user.name})
+        assert response.status_code == 200
+        assert response.json()["backup_code_locked"] is True
+
+    @patch.object(ConnectUser, "get_photo")
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_backup_code_locked_omitted_when_name_does_not_match(
+        self, check_similarity_mock, get_photo_mock, authed_client_token_v3, user, valid_token
+    ):
+        check_similarity_mock.return_value = False
+        get_photo_mock.return_value = ""
+
+        valid_token.invited_user = False
+        valid_token.save()
+
+        user.name = "ExistingUser"
+        user.is_locked = True
+        user.save()
+
+        response = authed_client_token_v3.post(reverse(self.urlname), data={"name": "DifferentUser"})
+        assert response.status_code == 200
+        assert response.json()["account_exists"] is False
+        assert "backup_code_locked" not in response.json()
+
+    @patch.object(ConnectUser, "get_photo")
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_backup_code_locked_omitted_when_account_is_not_locked(
+        self, check_similarity_mock, get_photo_mock, authed_client_token, user, valid_token
+    ):
+        check_similarity_mock.return_value = True
+        get_photo_mock.return_value = ""
+
+        user.name = "ExistingUser"
+        user.save()
+        assert not user.is_locked
+
+        response = authed_client_token.post(reverse(self.urlname), data={"name": user.name})
+        assert response.status_code == 200
+        assert response.json()["account_exists"] is True
+        assert "backup_code_locked" not in response.json()
+
 
 class TestCompleteProfileView:
     url = reverse("complete_profile")
