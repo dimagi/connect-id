@@ -2612,6 +2612,71 @@ class TestCompleteProfileCopiesEmail:
         user = ConnectUser.objects.get(phone_number=session.phone_number)
         assert user.email == expected_email
 
+    @patch("users.views.upload_photo_to_s3")
+    def test_email_taken_since_verification_returns_400(self, mock_upload, session_client):
+        session = ConfigurationSessionFactory(is_phone_validated=True, verified_email="taken@example.com")
+        UserFactory(email="taken@example.com")
+
+        response = session_client(session).post(
+            reverse("complete_profile"),
+            data={"name": "Test User", "recovery_pin": "1234", "photo": "base64data"},
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert response.json() == {"error": ErrorCodes.EMAIL_ALREADY_IN_USE}
+        assert not ConnectUser.objects.filter(phone_number=session.phone_number).exists()
+        mock_upload.assert_not_called()
+
+    @patch("users.views.upload_photo_to_s3")
+    def test_email_held_by_inactive_user_is_allowed(self, mock_upload, session_client):
+        mock_upload.return_value = None
+        session = ConfigurationSessionFactory(is_phone_validated=True, verified_email="reused@example.com")
+        UserFactory(email="reused@example.com", is_active=False)
+
+        response = session_client(session).post(
+            reverse("complete_profile"),
+            data={"name": "Test User", "recovery_pin": "1234", "photo": "base64data"},
+            format="json",
+        )
+
+        assert response.status_code == 200
+        user = ConnectUser.objects.get(phone_number=session.phone_number, is_active=True)
+        assert user.email == "reused@example.com"
+
+    @patch("users.views.upload_photo_to_s3")
+    def test_photo_uploaded_after_user_saved(self, mock_upload, session_client):
+        session = ConfigurationSessionFactory(is_phone_validated=True)
+
+        def assert_user_saved(photo, username):
+            assert ConnectUser.objects.filter(username=username).exists()
+
+        mock_upload.side_effect = assert_user_saved
+
+        response = session_client(session).post(
+            reverse("complete_profile"),
+            data={"name": "Test User", "recovery_pin": "1234", "photo": "base64data"},
+            format="json",
+        )
+
+        assert response.status_code == 200
+        mock_upload.assert_called_once()
+
+    @patch("users.views.upload_photo_to_s3")
+    def test_failed_upload_leaves_no_user(self, mock_upload, session_client):
+        mock_upload.return_value = ErrorCodes.FAILED_TO_UPLOAD
+        session = ConfigurationSessionFactory(is_phone_validated=True)
+
+        response = session_client(session).post(
+            reverse("complete_profile"),
+            data={"name": "Test User", "recovery_pin": "1234", "photo": "base64data"},
+            format="json",
+        )
+
+        assert response.status_code == 500
+        assert response.json() == {"error": ErrorCodes.FAILED_TO_UPLOAD}
+        assert not ConnectUser.objects.filter(phone_number=session.phone_number).exists()
+
 
 @pytest.mark.django_db
 class TestSendEmailOtp:
@@ -2887,6 +2952,54 @@ class TestVerifyEmailOtp:
         assert response.status_code == 200
         session.refresh_from_db()
         assert session.verified_email == "verified@example.com"
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.verify_token")
+    def test_session_email_in_use_by_active_user_returns_400(self, mock_verify, session_client):
+        mock_verify.return_value = True
+        UserFactory(email="taken@example.com")
+        session = ConfigurationSessionFactory(is_phone_validated=True)
+        SessionEmailOTPDeviceFactory(session=session, email="taken@example.com")
+
+        response = session_client(session).post(
+            self.url, data={"email": "taken@example.com", "otp": "123456"}, format="json"
+        )
+
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.EMAIL_ALREADY_IN_USE}
+        session.refresh_from_db()
+        assert not session.verified_email
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.verify_token")
+    def test_session_email_held_by_inactive_user_sets_verified_email(self, mock_verify, session_client):
+        mock_verify.return_value = True
+        UserFactory(email="reused@example.com", is_active=False)
+        session = ConfigurationSessionFactory(is_phone_validated=True)
+        SessionEmailOTPDeviceFactory(session=session, email="reused@example.com")
+
+        response = session_client(session).post(
+            self.url, data={"email": "reused@example.com", "otp": "123456"}, format="json"
+        )
+
+        assert response.status_code == 200
+        session.refresh_from_db()
+        assert session.verified_email == "reused@example.com"
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.verify_token")
+    def test_session_email_in_use_with_incorrect_otp_returns_incorrect_otp(self, mock_verify, session_client):
+        mock_verify.return_value = False
+        UserFactory(email="taken@example.com")
+        session = ConfigurationSessionFactory(is_phone_validated=True)
+        SessionEmailOTPDeviceFactory(session=session, email="taken@example.com")
+
+        response = session_client(session).post(
+            self.url, data={"email": "taken@example.com", "otp": "000000"}, format="json"
+        )
+
+        assert response.status_code == 401
+        assert response.json()["error_code"] == ErrorCodes.INCORRECT_OTP
 
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
     @patch("users.models.SessionEmailOTPDevice.verify_token")
