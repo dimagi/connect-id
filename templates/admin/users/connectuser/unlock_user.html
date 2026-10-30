@@ -78,13 +78,14 @@
             {{ confirm_form.unlock_user_id }}
           </div>
         </div>
-        {% if confirm_form.active_user %}
+        {% if confirm_form.offers_deactivation %}
         <div class="form-row">
           <label>Currently active</label>
           <div class="unlock-field">
             <p class="help">
               <strong>{{ confirm_form.active_user.username }}</strong> is currently active on
               {{ confirm_form.active_user.phone_number }}. Only one account per phone number can be active.
+              This applies only when unlocking an inactive account.
             </p>
             <p class="unlock-checkbox">
               {{ confirm_form.disable_current_active_user }}
