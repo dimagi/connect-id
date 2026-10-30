@@ -76,6 +76,21 @@ class TestReactivateLockedAccountsCommand:
         assert f"id={locked.pk} " in out
         assert "phone number is in use by an active account" in out
 
+    def test_locked_account_with_a_newer_deactivated_account_on_its_phone_is_skipped(self, capsys):
+        phone_number = Faker().phone_number()
+        locked = UserFactory(
+            phone_number=phone_number, is_active=False, is_locked=True, date_joined=now() - timedelta(days=2)
+        )
+        UserFactory(phone_number=phone_number, is_active=False, is_locked=False, date_joined=now())
+
+        call_command("reactivate_locked_accounts")
+
+        locked.refresh_from_db()
+        assert locked.is_active is False
+        out = capsys.readouterr().out
+        assert f"id={locked.pk} " in out
+        assert "a newer account on this phone number was deactivated" in out
+
     def test_email_conflict_with_active_account_is_skipped_and_listed(self, capsys):
         UserFactory(email="shared@example.com", is_active=True)
         locked = UserFactory(email="shared@example.com", is_active=False, is_locked=True)

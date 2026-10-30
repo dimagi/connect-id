@@ -1,5 +1,6 @@
 from django.core.management.base import BaseCommand
 from django.db import IntegrityError, transaction
+from django.db.models import Exists, OuterRef
 
 from users.models import ConnectUser
 
@@ -10,7 +11,14 @@ def plan_reactivations():
     Candidates are taken newest first, so the newest account wins both per phone number and
     when two candidates share an email address.
     """
-    candidates = list(ConnectUser.objects.filter(is_active=False, is_locked=True).order_by("-date_joined", "-pk"))
+    newer_on_phone = ConnectUser.objects.filter(
+        phone_number=OuterRef("phone_number"), date_joined__gt=OuterRef("date_joined")
+    )
+    candidates = list(
+        ConnectUser.objects.filter(is_active=False, is_locked=True)
+        .annotate(has_newer_account=Exists(newer_on_phone))
+        .order_by("-date_joined", "-pk")
+    )
     active = ConnectUser.objects.filter(is_active=True)
     taken_phones = {
         str(phone)
@@ -32,6 +40,8 @@ def plan_reactivations():
             skipped.append((user, "not the newest locked account on this phone number"))
         elif phone in taken_phones:
             skipped.append((user, "phone number is in use by an active account"))
+        elif user.has_newer_account:
+            skipped.append((user, "a newer account on this phone number was deactivated"))
         elif user.email and user.email in taken_emails:
             skipped.append((user, "email is in use by an active account"))
         elif user.email and user.email in planned_emails:
