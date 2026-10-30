@@ -1119,6 +1119,8 @@ def check_user_similarity(request):
         masked_email = mask_email(existing_user.email)
         if masked_email:
             response_data["masked_email"] = masked_email
+        if existing_user.is_locked:
+            response_data["backup_code_locked"] = True
 
     return JsonResponse(response_data)
 
