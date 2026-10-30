@@ -2294,6 +2294,43 @@ class TestReportIntegrityView:
         assert not existing_sample.is_demo_user
 
     @patch.object(AppIntegrityService, "obtain_verdict")
+    def test_concurrent_duplicate_request(self, obtain_verdict_mock, client):
+        raw_verdict = self._load_verdict_from_file("utils/tests/data/success_integrity_response.json")
+
+        def create_concurrent_sample():
+            # Simulate a concurrent request inserting the same request_id while the
+            # Google API call is in flight (after the exists() check has passed).
+            DeviceIntegritySample.objects.create(
+                request_id="test_uuid",
+                device_id="new_device_id",
+                google_verdict={"concurrent": "verdict"},
+                passed=True,
+                passed_request_check=True,
+                passed_app_integrity_check=True,
+                passed_device_integrity_check=True,
+                passed_account_details_check=True,
+                is_demo_user=False,
+            )
+            return raw_verdict["tokenPayloadExternal"]
+
+        obtain_verdict_mock.side_effect = create_concurrent_sample
+
+        response = client.post(
+            self.url,
+            data={
+                "cc_device_id": "new_device_id",
+                "request_id": "test_uuid",
+            },
+            HTTP_CC_INTEGRITY_TOKEN="test_token",
+            HTTP_CC_REQUEST_HASH="aGVsbG8gd29scmQgdGhlcmU",
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"result_code": None}
+        sample = DeviceIntegritySample.objects.get(request_id="test_uuid")
+        assert sample.google_verdict == {"concurrent": "verdict"}
+
+    @patch.object(AppIntegrityService, "obtain_verdict")
     @patch.object(AppIntegrityService, "analyze_verdict")
     def test_demo_user_detection(self, analyze_verdict_mock, obtain_verdict_mock, client):
         raw_verdict = self._load_verdict_from_file("utils/tests/data/success_integrity_response.json")
