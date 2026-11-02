@@ -6,7 +6,7 @@ from users.models import ConnectUser
 from users.unlock import (
     find_unlock_candidates,
     get_active_user,
-    get_inactive_user,
+    get_user_to_unlock,
     unlock_and_issue_backup_code,
 )
 
@@ -68,38 +68,51 @@ class TestFindUnlockCandidates:
 
 
 @pytest.mark.django_db
-class TestGetInactiveUser:
+class TestGetUserToUnlock:
     def test_by_phone_number(self, locked_user):
-        assert get_inactive_user(locked_user.phone_number).pk == locked_user.pk
+        assert get_user_to_unlock(locked_user.phone_number).pk == locked_user.pk
 
     def test_by_user_id(self, locked_user):
-        assert get_inactive_user(phone_number=None, inactive_user_id=locked_user.pk).pk == locked_user.pk
+        assert get_user_to_unlock(phone_number=None, user_id=locked_user.pk).pk == locked_user.pk
 
     def test_multiple_matches_is_an_unlock_error(self):
         UserFactory.create_batch(2, phone_number=PHONE, is_active=False, is_locked=True)
 
         with pytest.raises(UnlockUserError):
-            get_inactive_user(PHONE)
+            get_user_to_unlock(PHONE)
+
+    def test_by_phone_number_finds_an_active_locked_user(self):
+        active_locked = UserFactory.create(phone_number=PHONE, is_locked=True)
+
+        assert get_user_to_unlock(PHONE).pk == active_locked.pk
+
+    def test_active_and_inactive_locked_users_are_ambiguous(self):
+        # An inactive locked account predates locks leaving the account active.
+        UserFactory.create(phone_number=PHONE, is_locked=True)
+        UserFactory.create(phone_number=PHONE, is_active=False, is_locked=True)
+
+        with pytest.raises(UnlockUserError, match="use a user ID"):
+            get_user_to_unlock(PHONE)
 
     def test_no_match_is_an_unlock_error(self):
         with pytest.raises(UnlockUserError):
-            get_inactive_user(PHONE)
+            get_user_to_unlock(PHONE)
 
     def test_inactive_but_not_locked_is_an_unlock_error(self):
         UserFactory.create(phone_number=PHONE, is_active=False, is_locked=False)
 
         with pytest.raises(UnlockUserError):
-            get_inactive_user(PHONE)
+            get_user_to_unlock(PHONE)
 
     def test_unknown_user_id_is_an_unlock_error(self):
         with pytest.raises(UnlockUserError):
-            get_inactive_user(phone_number=None, inactive_user_id=-1)
+            get_user_to_unlock(phone_number=None, user_id=-1)
 
     def test_active_user_id_is_still_accepted(self):
         # Naming an id is an operator override, so the id path stays unfiltered.
         active = UserFactory.create(phone_number=PHONE)
 
-        assert get_inactive_user(phone_number=None, inactive_user_id=active.pk).pk == active.pk
+        assert get_user_to_unlock(phone_number=None, user_id=active.pk).pk == active.pk
 
 
 @pytest.mark.django_db
