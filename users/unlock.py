@@ -61,7 +61,9 @@ def unlock_and_issue_backup_code(inactive_user, disable_current_active_user=True
     inactive_user.reset_failed_backup_code_attempts()
 
     if disable_current_active_user:
-        ConnectUser.objects.filter(phone_number=inactive_user.phone_number, is_active=True).update(is_active=False)
+        ConnectUser.objects.filter(phone_number=inactive_user.phone_number, is_active=True).exclude(
+            pk=inactive_user.pk
+        ).update(is_active=False)
 
     inactive_user.save(update_fields=["is_active", "is_locked", "failed_backup_code_attempts", "recovery_pin"])
     return backup_code

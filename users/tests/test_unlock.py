@@ -118,6 +118,16 @@ class TestUnlockAndIssueBackupCode:
         active.refresh_from_db()
         assert active.is_active is False
 
+    def test_unlocking_the_active_account_keeps_it_active(self):
+        active_locked = UserFactory.create(phone_number=PHONE, is_locked=True, failed_backup_code_attempts=3)
+
+        unlock_and_issue_backup_code(active_locked, disable_current_active_user=True)
+
+        active_locked.refresh_from_db()
+        assert active_locked.is_active is True
+        assert active_locked.is_locked is False
+        assert active_locked.failed_backup_code_attempts == 0
+
     def test_active_user_stays_active_when_the_unlock_fails(self, monkeypatch):
         active = UserFactory.create(phone_number=PHONE)
         locked = UserFactory.create(phone_number=PHONE, is_active=False, is_locked=True)
