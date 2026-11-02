@@ -80,7 +80,7 @@ sequenceDiagram
     App->>FB: submit code
     FB-->>App: Firebase ID token
     App->>CID: POST validate_firebase_id_token {token}
-    Note over CID: verify_id_token(); phone in token must match<br/>session phone (or user.phone_number)
+    Note over CID: verify_id_token()<br/>phone in token must match session phone<br/>(or user.phone_number)
     Note over CID: session caller: session.is_phone_validated = True
 ```
 
