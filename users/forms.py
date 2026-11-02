@@ -48,16 +48,22 @@ class UnlockUserConfirmForm(forms.Form):
         self.fields["unlock_user_id"].choices = [(user.pk, _candidate_label(user)) for user in candidates]
         if len(candidates) == 1:
             self.fields["unlock_user_id"].initial = candidates[0].pk
+        self.offers_deactivation = self.active_user is not None and any(not user.is_active for user in candidates)
 
     @property
     def selected_user(self):
         """The chosen candidate, or None until unlock_user_id has validated."""
         return self.candidates.get(self.cleaned_data.get("unlock_user_id"))
 
+    @property
+    def deactivates_active_user(self):
+        """Whether unlocking the chosen candidate deactivates the active account, once valid."""
+        return self.active_user is not None and not self.selected_user.is_active
+
     def clean(self):
         cleaned_data = super().clean()
         selected_user = self.selected_user
-        if selected_user is None:
+        if selected_user is None or selected_user.is_active:
             return cleaned_data
 
         disable_current_active_user = cleaned_data.get("disable_current_active_user")
@@ -92,9 +98,9 @@ class UnlockUserConfirmForm(forms.Form):
 
 
 def _candidate_label(user):
-    # Candidates are always inactive, but the user-ID path also admits accounts that are
-    # not locked, so the lock state is worth stating rather than assuming.
-    status = f"inactive, {'locked' if user.is_locked else 'not locked'}"
+    # A phone number can carry both an active and an inactive locked account, and the
+    # user-ID path also admits inactive accounts that are not locked, so both are stated.
+    status = f"{'active' if user.is_active else 'inactive'}, {'locked' if user.is_locked else 'not locked'}"
     return format_html(
         '<strong>{}</strong> &mdash; {} &mdash; joined {} <span class="unlock-status">({})</span>',
         user.username,

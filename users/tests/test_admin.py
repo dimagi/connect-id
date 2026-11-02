@@ -79,6 +79,37 @@ class TestUnlockPageSearch:
 
         assert response.context["confirm_form"].active_user.pk == active.pk
 
+    def test_active_locked_account_is_found_by_phone_number(self, su_client, unlock_url):
+        locked = UserFactory(phone_number=PHONE, is_locked=True)
+
+        response = su_client.post(unlock_url, {"phone_number": PHONE, "search": "Search"})
+
+        confirm_form = response.context["confirm_form"]
+        assert [choice[0] for choice in confirm_form.fields["unlock_user_id"].choices] == [locked.pk]
+        assert "Deactivate the currently active account" not in response.content.decode()
+
+    def test_active_locked_account_is_found_by_user_id(self, su_client, unlock_url):
+        locked = UserFactory(phone_number=PHONE, is_locked=True)
+
+        response = su_client.post(unlock_url, {"user_id": str(locked.pk), "search": "Search"})
+
+        assert [choice[0] for choice in response.context["confirm_form"].fields["unlock_user_id"].choices] == [
+            locked.pk
+        ]
+
+    def test_active_and_inactive_locked_accounts_are_both_offered(self, su_client, unlock_url):
+        active = UserFactory(phone_number=PHONE, is_locked=True)
+        inactive = UserFactory(phone_number=PHONE, is_active=False, is_locked=True)
+
+        response = su_client.post(unlock_url, {"phone_number": PHONE, "search": "Search"})
+
+        offered = {choice[0] for choice in response.context["confirm_form"].fields["unlock_user_id"].choices}
+        assert offered == {active.pk, inactive.pk}
+        content = response.content.decode()
+        assert "(active, locked)" in content
+        assert "(inactive, locked)" in content
+        assert "Deactivate the currently active account" in content
+
     def test_no_match_stays_on_the_search_form(self, su_client, unlock_url):
         response = su_client.post(unlock_url, {"phone_number": PHONE, "search": "Search"})
 
@@ -200,6 +231,40 @@ class TestUnlockPageConfirm:
         assert locked.is_active is False
         assert locked.is_locked is True
 
+    def test_unlocks_an_active_locked_account_without_deactivating_it(self, su_client, unlock_url):
+        locked = UserFactory(phone_number=PHONE, is_locked=True, failed_backup_code_attempts=3)
+
+        response = su_client.post(unlock_url, confirm_post(PHONE, locked.pk, disable_active=False))
+
+        backup_code = extract_backup_code(response)
+        locked.refresh_from_db()
+        assert locked.is_active is True
+        assert locked.is_locked is False
+        assert locked.failed_backup_code_attempts == 0
+        assert locked.check_recovery_pin(backup_code) is True
+
+    def test_active_locked_account_chosen_over_an_inactive_one(self, su_client, unlock_url):
+        active = UserFactory(phone_number=PHONE, is_locked=True)
+        inactive = UserFactory(phone_number=PHONE, is_active=False, is_locked=True)
+
+        su_client.post(unlock_url, confirm_post(PHONE, active.pk))
+
+        active.refresh_from_db()
+        inactive.refresh_from_db()
+        assert (active.is_active, active.is_locked) == (True, False)
+        assert (inactive.is_active, inactive.is_locked) == (False, True)
+
+    def test_inactive_account_chosen_over_an_active_locked_one(self, su_client, unlock_url):
+        active = UserFactory(phone_number=PHONE, is_locked=True)
+        inactive = UserFactory(phone_number=PHONE, is_active=False, is_locked=True)
+
+        su_client.post(unlock_url, confirm_post(PHONE, inactive.pk))
+
+        active.refresh_from_db()
+        inactive.refresh_from_db()
+        assert active.is_active is False
+        assert (inactive.is_active, inactive.is_locked) == (True, False)
+
     def test_already_active_user_id_is_rejected(self, su_client, unlock_url):
         active = UserFactory(phone_number=PHONE)
         UserFactory(phone_number=PHONE, is_active=False, is_locked=True)
@@ -246,6 +311,14 @@ class TestUnlockPageAuditLog:
         entry = self._entries_for(active).get()
         assert entry.user_id == superuser.pk
         assert entry.change_message == f"Deactivated in favour of unlocked user {locked.pk}"
+
+    def test_no_deactivation_entry_for_an_active_locked_account(self, su_client, unlock_url):
+        locked = UserFactory(phone_number=PHONE, is_locked=True)
+
+        su_client.post(unlock_url, confirm_post(PHONE, locked.pk))
+
+        entry = self._entries_for(locked).get()
+        assert entry.change_message == f"Unlocked user (ID: {locked.pk}) and generated a new backup code"
 
     def test_no_deactivation_entry_when_there_was_no_active_account(self, su_client, unlock_url):
         locked = UserFactory(phone_number=PHONE, is_active=False, is_locked=True)
