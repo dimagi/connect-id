@@ -1,23 +1,23 @@
 import secrets
 
 from django.db import transaction
+from django.db.models import Q
 
 from users.exceptions import UnlockUserError
 from users.models import ConnectUser
 
 
 def find_unlock_candidates(phone_number=None, user_id=None):
-    """Inactive accounts the unlock flow may act on, looked up by phone number or by id.
+    """Accounts the unlock flow may act on, looked up by phone number or by id.
 
-    The phone-number path returns the locked-out accounts newest first, and reports ambiguity
-    to the caller instead of failing on it so the admin can offer the choice. The id path also
-    admits an inactive account that is not locked.
+    A locked account may be active: a locked backup code leaves the account active. The
+    phone-number path returns the locked accounts newest first, and reports ambiguity to the
+    caller instead of failing on it so the admin can offer the choice. The id path also admits
+    an inactive account that is not locked.
     """
     if user_id:
-        return list(ConnectUser.objects.filter(id=user_id, is_active=False))
-    return list(
-        ConnectUser.objects.filter(phone_number=phone_number, is_active=False, is_locked=True).order_by("-date_joined")
-    )
+        return list(ConnectUser.objects.filter(Q(is_active=False) | Q(is_locked=True), id=user_id))
+    return list(ConnectUser.objects.filter(phone_number=phone_number, is_locked=True).order_by("-date_joined"))
 
 
 def get_active_user(phone_number):

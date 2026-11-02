@@ -46,15 +46,25 @@ class TestFindUnlockCandidates:
 
         assert find_unlock_candidates(phone_number=PHONE) == []
 
+    def test_by_phone_number_includes_active_locked_users(self):
+        active_locked = UserFactory.create(phone_number=PHONE, is_locked=True)
+
+        assert [u.pk for u in find_unlock_candidates(phone_number=PHONE)] == [active_locked.pk]
+
     def test_by_user_id_does_not_require_is_locked(self):
         inactive = UserFactory.create(phone_number=PHONE, is_active=False, is_locked=False)
 
         assert [u.pk for u in find_unlock_candidates(user_id=inactive.pk)] == [inactive.pk]
 
-    def test_by_user_id_excludes_active_users(self):
+    def test_by_user_id_excludes_active_unlocked_users(self):
         active = UserFactory.create(phone_number=PHONE)
 
         assert find_unlock_candidates(user_id=active.pk) == []
+
+    def test_by_user_id_includes_active_locked_users(self):
+        active_locked = UserFactory.create(phone_number=PHONE, is_locked=True)
+
+        assert [u.pk for u in find_unlock_candidates(user_id=active_locked.pk)] == [active_locked.pk]
 
 
 @pytest.mark.django_db

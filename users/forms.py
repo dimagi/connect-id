@@ -54,6 +54,24 @@ class UnlockUserConfirmForm(forms.Form):
         """The chosen candidate, or None until unlock_user_id has validated."""
         return self.candidates.get(self.cleaned_data.get("unlock_user_id"))
 
+    @property
+    def active_user_is_candidate(self):
+        """The active account is itself locked, so it can be unlocked in place."""
+        return self.active_user is not None and self.active_user.pk in self.candidates
+
+    @property
+    def offers_deactivation(self):
+        """Some candidate other than the active account could be chosen, so the checkbox matters."""
+        return self.active_user is not None and any(pk != self.active_user.pk for pk in self.candidates)
+
+    @property
+    def user_to_deactivate(self):
+        """The active account this unlock replaces, or None when the unlocked account is the active one."""
+        selected_user = self.selected_user
+        if self.active_user is None or selected_user is None or selected_user.pk == self.active_user.pk:
+            return None
+        return self.active_user
+
     def clean(self):
         cleaned_data = super().clean()
         selected_user = self.selected_user
@@ -62,7 +80,7 @@ class UnlockUserConfirmForm(forms.Form):
 
         disable_current_active_user = cleaned_data.get("disable_current_active_user")
 
-        if not disable_current_active_user and self.active_user is not None:
+        if not disable_current_active_user and self.user_to_deactivate is not None:
             raise forms.ValidationError(
                 "There is already an active account on this phone number. Only one account per phone "
                 "number can be active, so the current one must be deactivated."
@@ -71,7 +89,7 @@ class UnlockUserConfirmForm(forms.Form):
         if selected_user.email:
             # Mirrors the email_active_user constraint on ConnectUser, minus the accounts that will
             # not be active once this unlock commits. Past the check above, an active user here
-            # is always being deactivated.
+            # is either the one being unlocked or one being deactivated, so it never conflicts.
             leaving_active = {selected_user.pk}
             if self.active_user is not None:
                 leaving_active.add(self.active_user.pk)
@@ -92,9 +110,9 @@ class UnlockUserConfirmForm(forms.Form):
 
 
 def _candidate_label(user):
-    # Candidates are always inactive, but the user-ID path also admits accounts that are
-    # not locked, so the lock state is worth stating rather than assuming.
-    status = f"inactive, {'locked' if user.is_locked else 'not locked'}"
+    # A locked account may still be active, and the user-ID path also admits inactive accounts
+    # that are not locked, so both states are worth stating rather than assuming.
+    status = f"{'active' if user.is_active else 'inactive'}, {'locked' if user.is_locked else 'not locked'}"
     return format_html(
         '<strong>{}</strong> &mdash; {} &mdash; joined {} <span class="unlock-status">({})</span>',
         user.username,
