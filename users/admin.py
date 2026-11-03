@@ -89,12 +89,12 @@ class ConnectUserAdmin(UserAdmin):
             return render(search_form=search_form, confirm_form=confirm_form)
 
         user = confirm_form.selected_user
-        active_user = confirm_form.active_user
+        user_to_deactivate = confirm_form.user_to_deactivate
         disable_active = confirm_form.cleaned_data["disable_current_active_user"]
         with transaction.atomic():
             backup_code = unlock_and_issue_backup_code(user, disable_current_active_user=disable_active)
-            if active_user is not None:
-                self.log_change(request, active_user, f"Deactivated in favour of unlocked user {user.pk}")
+            if user_to_deactivate is not None:
+                self.log_change(request, user_to_deactivate, f"Deactivated in favour of unlocked user {user.pk}")
             self.log_change(request, user, f"Unlocked user (ID: {user.pk}) and generated a new backup code")
 
         # The backup code is only ever shown here, once, in the rendered response. It must
