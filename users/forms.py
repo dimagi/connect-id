@@ -67,8 +67,7 @@ class UnlockUserConfirmForm(forms.Form):
     @property
     def user_to_deactivate(self):
         """The active account this unlock replaces, or None when the unlocked account is the active one."""
-        selected_user = self.selected_user
-        if self.active_user is None or selected_user is None or selected_user.pk == self.active_user.pk:
+        if self.selected_user in (None, self.active_user):
             return None
         return self.active_user
 

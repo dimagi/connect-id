@@ -17,7 +17,7 @@ class TestUnlockAndGenerateBackupCodeCommand:
 
     def test_unknown_user_id_raises_command_error(self):
         with pytest.raises(CommandError):
-            call_command("unlock_and_generate_backup_code", inactive_user_id=-1)
+            call_command("unlock_and_generate_backup_code", user_id=-1)
 
     def test_successful_unlock_via_the_command(self, locked_user, capsys):
         call_command(
