@@ -8,7 +8,14 @@ class TwilioVendor(BaseSmsVendor):
     name = "twilio"
 
     # Alphanumeric sender IDs registered with Twilio, by country calling code.
-    SENDER_IDS = {"265": "ConnectID", "258": "ConnectID", "232": "ConnectID", "44": "ConnectID", "233": "ConnectID"}
+    SENDER_IDS = {
+        "265": "ConnectID",
+        "258": "ConnectID",
+        "232": "ConnectID",
+        "44": "ConnectID",
+        "233": "ConnectID",
+        "252": "ConnectID",
+    }
 
     def __init__(self, account_sid: str, auth_token: str, messaging_service: str):
         self._client = Client(account_sid, auth_token)
