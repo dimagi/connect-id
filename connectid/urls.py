@@ -10,12 +10,12 @@ Class-based views
     1. Add an import:  from other_app.views import Home
     2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
 Including another URLconf
-    1. Import the include() function: from django.urls import include, path
+    1. Import the include() function: from django.urls import include, path, re_path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
 from django.views.generic import TemplateView
 
 from . import views
@@ -32,4 +32,7 @@ urlpatterns = [
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
     path("hq_invite/", TemplateView.as_view(template_name="connectid/deeplink.html"), name="deeplink"),
     path(".well-known/assetlinks.json", views.assetlinks_json, name="assetlinks_json"),
+    re_path(r"^up/?$", views.up, name="up"),
+    path("status/", views.HealthCheck.as_view(), name="health_check"),
+    path("status/<slug:subset>/", views.HealthCheck.as_view(), name="health_check_subset"),
 ]

@@ -65,6 +65,25 @@ Individual external services (Connect, SMS, service integrity) can be disabled i
 to support local development. Some service toggles can only be disabled if `DEBUG=True`, and
 some services may require `CELERY_TASK_ALWAYS_EAGER=True` if there is no local celery config.
 
+## Health checks
+
+| Path              | Use                                                            | Checks                                                  | Auth  |
+| ----------------- | -------------------------------------------------------------- | ------------------------------------------------------- | ----- |
+| `/up`             | Container health check (Kamal, see `deploy/config/deploy.yml`) | None: Django is serving requests                        | None  |
+| `/status/`        | Status page / uptime monitor                                   | Database, Redis (Celery broker)                         | Token |
+| `/status/celery/` | Status page / uptime monitor                                   | A Celery worker answers a ping and consumes every queue | Token |
+
+`/status/` URLs return 200 when every check passes and 500 when any fails, with one line per
+check. Pick the format with `?format=json` or `?format=text`, or the `Accept` header.
+
+When `HEALTH_CHECK_TOKENS` (comma-separated) is set, `/status/` URLs need `?token=<one of them>`;
+a missing or wrong token gets a 404. `/up` is never protected. `/status/` leaves out Celery
+so the web tier is not reported down because workers are. Neither `/up` nor `/status/` is
+traced in Sentry.
+
+The checks are defined in `connectid/health_checks.py`, built on
+[django-health-check](https://codingjoe.dev/django-health-check/).
+
 ## Production Deploy
 
 ### Setup
