@@ -233,7 +233,8 @@ SENTRY_TRACES_SAMPLE_RATE = env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.0)
 UNSAMPLED_PATHS = ("/up", "/up/")
 UNSAMPLED_PATH_PREFIXES = ("/status/",)
 
-# Tokens accepted by /status/ as ?token=. Empty leaves the endpoint open. See connectid.views.HealthCheck.
+# Tokens accepted by /status/ as an Authorization: Bearer header or ?token=. Empty leaves the endpoint
+# open. See connectid.views.HealthCheck.
 HEALTH_CHECK_TOKENS = env.list("HEALTH_CHECK_TOKENS", default=[])
 
 CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)

@@ -118,6 +118,21 @@ class TestStatusAccess:
         settings.HEALTH_CHECK_TOKENS = ["secret", "other"]
         assert client.get(f"/status/celery/?token={token}").status_code == 200
 
+    @pytest.mark.parametrize("header", ["Bearer secret", "bearer other", "Bearer  secret "])
+    def test_valid_token_in_header(self, client, settings, celery_workers, header):
+        settings.HEALTH_CHECK_TOKENS = ["secret", "other"]
+        assert client.get("/status/celery/", HTTP_AUTHORIZATION=header).status_code == 200
+
+    @pytest.mark.parametrize("header", ["Bearer wrong", "Bearer ", "Basic secret", "secret", "Token secret"])
+    def test_bad_token_in_header_404(self, client, settings, header):
+        settings.HEALTH_CHECK_TOKENS = ["secret", "other"]
+        assert client.get("/status/celery/", HTTP_AUTHORIZATION=header).status_code == 404
+
+    def test_valid_header_with_wrong_query_token(self, client, settings, celery_workers):
+        settings.HEALTH_CHECK_TOKENS = ["secret"]
+        response = client.get("/status/celery/?token=wrong", HTTP_AUTHORIZATION="Bearer secret")
+        assert response.status_code == 200
+
     def test_open_when_no_tokens(self, client, settings, celery_workers):
         settings.HEALTH_CHECK_TOKENS = []
         assert client.get("/status/celery/").status_code == 200

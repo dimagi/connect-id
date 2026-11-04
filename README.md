@@ -76,8 +76,10 @@ some services may require `CELERY_TASK_ALWAYS_EAGER=True` if there is no local c
 `/status/` URLs return 200 when every check passes and 500 when any fails, with one line per
 check. Pick the format with `?format=json` or `?format=text`, or the `Accept` header.
 
-When `HEALTH_CHECK_TOKENS` (comma-separated) is set, `/status/` URLs need `?token=<one of them>`;
-a missing or wrong token gets a 404. `/up` is never protected. `/status/` leaves out Celery
+When `HEALTH_CHECK_TOKENS` (comma-separated) is set, `/status/` URLs need one of those tokens,
+either in an `Authorization: Bearer <token>` header (preferred: it keeps the token out of URLs
+and access logs) or as `?token=<token>`. A missing or wrong token gets a 404. `/up` is never
+protected. `/status/` leaves out Celery
 so the web tier is not reported down because workers are. Neither `/up` nor `/status/` is
 traced in Sentry.
 

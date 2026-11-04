@@ -88,7 +88,7 @@ deploy/             # Kamal deployment config
 - **User lock vs deactivation**: `is_locked` (security lock from failed attempts) is separate from `is_active` (account deactivation).
 - **Message status flow**: PENDING -> SENT_TO_SERVICE -> DELIVERED -> CONFIRMED_RECEIVED
 - **AllowCIDRMiddleware**: Runs first in middleware stack for IP whitelisting.
-- **Health checks**: `/up` is the container liveness probe (no dependencies). `/status/` and `/status/celery/` (django-health-check, subsets in `connectid/health_checks.py`) are for the status page; `HEALTH_CHECK_TOKENS` gates them with `?token=` and a 404 otherwise.
+- **Health checks**: `/up` is the container liveness probe (no dependencies). `/status/` and `/status/celery/` (django-health-check, subsets in `connectid/health_checks.py`) are for the status page; `HEALTH_CHECK_TOKENS` gates them (`Authorization: Bearer <token>` header or `?token=`), answering 404 otherwise.
 
 ## Testing
 
@@ -111,5 +111,5 @@ All config via env vars (see `.env_template`). Key ones:
 - `AWS_S3_PHOTO_BUCKET_NAME` - Profile photos bucket (`user_photos` storage)
 - `AWS_S3_MESSAGE_ATTACHMENTS_BUCKET_NAME` - Encrypted message attachments bucket (`message_attachments` storage). Each bucket is a named storage in `settings.FILE_STORAGE_BUCKETS`, used as `storages["<alias>"]`; a model `FileField` uses a lazy `utils.storage.BucketStorage` instead (see that module). There is no `default` storage. Locally each bucket is a directory under `local_blobs/`
 - `SENTRY_DSN` - Error tracking
-- `HEALTH_CHECK_TOKENS` - Comma-separated tokens required as `?token=` on `/status/` (open when unset)
+- `HEALTH_CHECK_TOKENS` - Comma-separated tokens required on `/status/` as `Authorization: Bearer <token>` or `?token=` (open when unset)
 - `MAPBOX_ACCESS_TOKEN` - Geolocation/country code detection
