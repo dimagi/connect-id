@@ -1821,26 +1821,61 @@ class TestCheckUserSimilarity:
         assert response.json()["account_exists"] is True
         assert response.json()["photo"] == "some_base64_photo_data"
 
+    @pytest.mark.parametrize("is_locked", [False, True])
     @patch.object(ConnectUser, "get_photo")
     @patch.object(OpenChatStudio, "check_name_similarity")
     def test_user_is_not_similar_user(
-        self, check_similarity_mock, get_photo_mock, authed_client_token, user, valid_token
+        self, check_similarity_mock, get_photo_mock, authed_client_token_v3, user, valid_token, is_locked
     ):
         check_similarity_mock.return_value = False
 
-        valid_token.phone_number = user.phone_number
-        valid_token.is_phone_validated = True
         valid_token.invited_user = False
         valid_token.save()
 
         user.name = "ExistingUser"
+        user.email = "someone@dimagi.com"
+        user.is_locked = is_locked
         user.save()
         get_photo_mock.return_value = "some_base64_photo_data"
 
+        response = authed_client_token_v3.post(reverse(self.urlname), data={"name": "DifferentUser"})
+        assert response.status_code == 403
+        # Nothing about the existing account: no photo, masked email or lock state.
+        assert response.json() == {"error_code": ErrorCodes.REGISTRATION_INELIGIBLE}
+
+    @pytest.mark.parametrize(
+        "invited_user,name_is_similar",
+        [
+            # Invited sessions skip the name check.
+            (True, False),
+            # No verdict from OCS: the number's owner is assumed, and recovery still needs the backup code.
+            (False, None),
+        ],
+    )
+    @patch.object(ConnectUser, "get_photo")
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_existing_account_without_a_mismatch_verdict_goes_to_recovery(
+        self,
+        check_similarity_mock,
+        get_photo_mock,
+        authed_client_token,
+        user,
+        valid_token,
+        invited_user,
+        name_is_similar,
+    ):
+        check_similarity_mock.return_value = name_is_similar
+        get_photo_mock.return_value = ""
+
+        valid_token.invited_user = invited_user
+        valid_token.save()
+
+        user.name = "ExistingUser"
+        user.save()
+
         response = authed_client_token.post(reverse(self.urlname), data={"name": "DifferentUser"})
         assert response.status_code == 200
-        assert response.json()["account_exists"] is False
-        assert response.json()["photo"] == ""
+        assert response.json()["account_exists"] is True
 
     @patch.object(ConnectUser, "get_photo")
     @patch.object(OpenChatStudio, "check_name_similarity")
@@ -1909,26 +1944,6 @@ class TestCheckUserSimilarity:
         response = authed_client_token_v3.post(reverse(self.urlname), data={"name": user.name})
         assert response.status_code == 200
         assert response.json()["backup_code_locked"] is True
-
-    @patch.object(ConnectUser, "get_photo")
-    @patch.object(OpenChatStudio, "check_name_similarity")
-    def test_backup_code_locked_omitted_when_name_does_not_match(
-        self, check_similarity_mock, get_photo_mock, authed_client_token_v3, user, valid_token
-    ):
-        check_similarity_mock.return_value = False
-        get_photo_mock.return_value = ""
-
-        valid_token.invited_user = False
-        valid_token.save()
-
-        user.name = "ExistingUser"
-        user.is_locked = True
-        user.save()
-
-        response = authed_client_token_v3.post(reverse(self.urlname), data={"name": "DifferentUser"})
-        assert response.status_code == 200
-        assert response.json()["account_exists"] is False
-        assert "backup_code_locked" not in response.json()
 
     @patch.object(ConnectUser, "get_photo")
     @patch.object(OpenChatStudio, "check_name_similarity")
