@@ -24,6 +24,7 @@ def vendor():
         ("+23276123456", "ConnectID"),  # Sierra Leone
         ("+447400123456", "ConnectID"),  # UK
         ("+233241234567", "ConnectID"),  # Ghana
+        ("+252612345678", "ConnectID"),  # Somalia
         ("+12025550123", None),  # no registered sender ID, Twilio picks one
         ("+27821234567", None),
         ("garbage", None),  # unparseable number has no country code
