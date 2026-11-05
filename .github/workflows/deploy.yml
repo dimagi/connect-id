@@ -1,16 +1,21 @@
 name: Deploy
-run-name: Deploy to ${{ inputs.environment }} (${{ inputs.deploy_type }})
+run-name: Deploy to ${{ inputs.environment || 'production' }} (${{ inputs.deploy_type || 'scheduled' }})
 
 env:
   AWS_REGION: 'us-east-1'
   SENTRY_ORG: 'dimagi'
   SENTRY_PROJECT: 'connect-id'
+  # Scheduled runs have no inputs, so fall back to the defaults
+  DEPLOY_ENVIRONMENT: ${{ inputs.environment || 'production' }}
 
 permissions:
   id-token: write
   contents: write
 
 on:
+  schedule:
+    # 12:00 UTC on Monday, Wednesday and Friday
+    - cron: '0 12 * * 1,3,5'
   #  workflow_run:
   #    workflows: [CI]
   #    types: [completed]
@@ -33,7 +38,111 @@ on:
           - adhoc
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+    steps:
+      # Scheduled deploys only go out when there is something new on main and CI passed on it.
+      # Manual deploys always go ahead.
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Releases are only created by successful deploys, so the latest one marks what is live
+          last_release_tag=$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName // ""')
+          if [ -n "$last_release_tag" ]; then
+            last_deployed_sha=$(gh api "repos/$GH_REPO/commits/$last_release_tag" --jq .sha)
+            if [ "$last_deployed_sha" = "$GITHUB_SHA" ]; then
+              reason="Nothing new since the last release ($last_release_tag)"
+              echo "::notice::$reason, skipping deploy."
+              echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+              echo "skip_reason=$reason" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          # Something merged just before the scheduled time may still be in CI, so give it time to finish
+          deadline=$((SECONDS + 20 * 60))
+          while true; do
+            read -r ci_status ci_conclusion < <(
+              gh run list --workflow ci.yaml --event push --commit "$GITHUB_SHA" --limit 1 \
+                --json status,conclusion --jq '.[0] | "\(.status // "none") \(.conclusion // "")"'
+            )
+            if [ "$ci_status" = "completed" ] || [ "$SECONDS" -ge "$deadline" ]; then
+              break
+            fi
+            echo "CI on ${GITHUB_SHA::7} is ${ci_status}, waiting for it to finish..."
+            sleep 30
+          done
+
+          if [ "$ci_conclusion" != "success" ]; then
+            case "$ci_status" in
+              completed) ci_detail="$ci_conclusion" ;;
+              none) ci_detail="no CI run found" ;;
+              *) ci_detail="still ${ci_status} after 20 minutes" ;;
+            esac
+            reason="CI has not passed on ${GITHUB_SHA::7} (${ci_detail})"
+            echo "::warning::$reason, skipping deploy."
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "skip_reason=$reason" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Deploy Skipped
+        if: ${{ steps.check.outputs.should_deploy == 'false' }}
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          channel-id: 'C09HWCJSVJ6'
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                      "type": "mrkdwn",
+                      "text": "*PersonalID Deploy to ${{ env.DEPLOY_ENVIRONMENT }}*"
+                  }
+                },
+                {
+                  "type": "divider"
+                },
+                {
+                  "type": "section",
+                  "text": {
+                      "type": "mrkdwn",
+                      "text": "*Status*: Skipped\n${{ steps.check.outputs.skip_reason }}"
+                  }
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                      {
+                          "type": "mrkdwn",
+                          "text": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Deploy Run>"
+                      }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN}}
+
   deploy:
+    needs: check
+    if: needs.check.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source code
@@ -80,7 +189,7 @@ jobs:
                   "type": "section",
                   "text": {
                       "type": "mrkdwn",
-                      "text": "*PersonalID Deploy to ${{ inputs.environment }}*"
+                      "text": "*PersonalID Deploy to ${{ env.DEPLOY_ENVIRONMENT }}*"
                   }
                 },
                 {
@@ -117,7 +226,7 @@ jobs:
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         with:
-          environment: ${{ inputs.environment }}
+          environment: ${{ env.DEPLOY_ENVIRONMENT }}
           release: ${{ env.APP_RELEASE }}
           projects: ${{ env.SENTRY_PROJECT }}
           set_commits: manual
@@ -125,11 +234,11 @@ jobs:
           commit: ${{ github.sha }}
 
       - name: Set release tag
-        if: ${{ success() && inputs.environment == 'production' }}
+        if: ${{ success() && env.DEPLOY_ENVIRONMENT == 'production' }}
         run: echo "RELEASE_TAG=$(date -u +'%Y-%m-%d_%H-%M-%S')" >> "$GITHUB_ENV"
 
       - name: Create GitHub release
-        if: ${{ success() && inputs.environment == 'production' }}
+        if: ${{ success() && env.DEPLOY_ENVIRONMENT == 'production' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
@@ -150,7 +259,7 @@ jobs:
                   "type": "section",
                   "text": {
                       "type": "mrkdwn",
-                      "text": "*PersonalID Deploy to ${{ inputs.environment }}*"
+                      "text": "*PersonalID Deploy to ${{ env.DEPLOY_ENVIRONMENT }}*"
                   }
                 },
                 {
