@@ -9,6 +9,7 @@ env:
 permissions:
   id-token: write
   contents: write
+  deployments: write
 
 on:
   #  workflow_run:
@@ -35,10 +36,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # Associating the job with an environment makes GitHub create a deployment record
-    # (and track its status) for every run, visible under the repo's Deployments tab.
-    environment:
-      name: ${{ inputs.environment }}
+    env:
+      LOG_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
@@ -48,6 +47,32 @@ jobs:
           # Sentry release versions cannot contain slashes, so sanitize the ref name
           SAFE_REF_NAME="${GITHUB_REF_NAME//\//-}"
           echo "APP_RELEASE=${SAFE_REF_NAME}.${GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      # Record the deploy in GitHub's Deployments API so the environment shows what is running there.
+      # Created explicitly rather than via the job-level `environment:` key, which would change the
+      # OIDC subject used to assume the AWS deploy role and apply environment protection rules.
+      # Bookkeeping only: a failure here must not block the deploy.
+      - id: gh_deployment
+        name: Create GitHub deployment
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_ENV: ${{ inputs.environment }}
+          DEPLOY_TYPE: ${{ inputs.deploy_type }}
+        run: |
+          # required_contexts=[] skips GitHub's commit-status check; CI gating is the deploy process's job
+          DEPLOYMENT_ID="$(jq -n \
+            --arg ref "${GITHUB_SHA}" \
+            --arg environment "${DEPLOY_ENV}" \
+            --arg description "${DEPLOY_TYPE} deploy of ${GITHUB_REF_NAME}" \
+            --argjson production "${{ inputs.environment == 'production' }}" \
+            '{ref: $ref, environment: $environment, description: $description, auto_merge: false,
+              required_contexts: [], production_environment: $production}' \
+            | gh api "repos/${GITHUB_REPOSITORY}/deployments" --input - --jq '.id')"
+          echo "id=${DEPLOYMENT_ID}" >> "$GITHUB_OUTPUT"
+          gh api "repos/${GITHUB_REPOSITORY}/deployments/${DEPLOYMENT_ID}/statuses" \
+            -f state=in_progress \
+            -f log_url="${LOG_URL}" > /dev/null
 
       - name: Set up Ruby
         uses: actions/setup-ruby@v1
@@ -140,6 +165,20 @@ jobs:
           name: ${{ env.RELEASE_TAG }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
+
+      - name: Update GitHub deployment status
+        if: ${{ always() && steps.gh_deployment.outputs.id }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOYMENT_ID: ${{ steps.gh_deployment.outputs.id }}
+          # success → success; failure → failure; cancelled or skipped (an earlier step failed) → error
+          DEPLOY_STATE: ${{ steps.deploy.conclusion == 'success' && 'success' || steps.deploy.conclusion == 'failure' && 'failure' || 'error' }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/deployments/${DEPLOYMENT_ID}/statuses" \
+            -f state="${DEPLOY_STATE}" \
+            -f log_url="${LOG_URL}" \
+            -F auto_inactive=true > /dev/null
 
       - name: Notify Deploy End
         uses: slackapi/slack-github-action@v1.24.0
