@@ -35,6 +35,10 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Associating the job with an environment makes GitHub create a deployment record
+    # (and track its status) for every run, visible under the repo's Deployments tab.
+    environment:
+      name: ${{ inputs.environment }}
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
