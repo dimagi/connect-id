@@ -1109,12 +1109,16 @@ def check_user_similarity(request):
         user_name_is_similar = OpenChatStudio().check_name_similarity(
             reference_name=existing_user.name,
             candidate_name=name,
-            cultural_context=request.auth.phone_number.country_code,
+            cultural_context=f"Country code: {request.auth.phone_number.country_code}",
         )
 
         # For now we don't do anything with the response for Connect users
         if not request.auth.invited_user and user_name_is_similar is not None:
             is_same_user = user_name_is_similar
+
+    if existing_user and not is_same_user:
+        logger.info(f"Name did not match the active account on this number: existing user {existing_user.username}")
+        return JsonResponse({"error_code": ErrorCodes.REGISTRATION_INELIGIBLE}, status=403)
 
     response_data = {
         "account_exists": is_same_user,
