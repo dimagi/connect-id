@@ -1109,7 +1109,7 @@ def check_user_similarity(request):
         user_name_is_similar = OpenChatStudio().check_name_similarity(
             reference_name=existing_user.name,
             candidate_name=name,
-            cultural_context=request.auth.phone_number.country_code,
+            cultural_context=f"Country code: {request.auth.phone_number.country_code}",
         )
 
         # For now we don't do anything with the response for Connect users

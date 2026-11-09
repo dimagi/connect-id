@@ -1820,6 +1820,11 @@ class TestCheckUserSimilarity:
         assert response.status_code == 200
         assert response.json()["account_exists"] is True
         assert response.json()["photo"] == "some_base64_photo_data"
+        check_similarity_mock.assert_called_once_with(
+            reference_name=user.name,
+            candidate_name=user.name,
+            cultural_context=f"Country code: {user.phone_number.country_code}",
+        )
 
     @pytest.mark.parametrize("is_locked", [False, True])
     @patch.object(ConnectUser, "get_photo")
