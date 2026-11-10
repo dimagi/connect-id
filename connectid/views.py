@@ -1,4 +1,11 @@
-from django.http import JsonResponse
+import hmac
+
+from django.conf import settings
+from django.http import Http404, HttpResponse, JsonResponse
+from django.views.decorators.cache import never_cache
+from health_check.views import HealthCheckView
+
+from .health_checks import CHECK_SUBSETS
 
 
 def assetlinks_json(request):
@@ -26,3 +33,41 @@ def assetlinks_json(request):
         },
     ]
     return JsonResponse(assetfile, safe=False)
+
+
+@never_cache
+def up(request):
+    """Liveness probe for the container health check.
+
+    Only shows that Django is serving requests: it touches no database or other service, so an
+    outage elsewhere does not get a healthy container restarted. Use /status/ for dependencies.
+    """
+    return HttpResponse("OK", content_type="text/plain")
+
+
+class HealthCheck(HealthCheckView):
+    """Dependency health for the status page: /status/ and /status/<subset>/.
+
+    When ``HEALTH_CHECK_TOKENS`` is set, a request must pass one of them, either in an
+    ``Authorization: Bearer <token>`` header or as ``?token=``. A missing or wrong token, like an
+    unknown subset, gets a 404 so the endpoint does not reveal itself.
+    """
+
+    async def dispatch(self, request, *args, subset="general", **kwargs):
+        if not _has_valid_token(request) or subset not in CHECK_SUBSETS:
+            raise Http404
+        self.checks = CHECK_SUBSETS[subset]
+        return await super().dispatch(request, *args, **kwargs)
+
+
+def _has_valid_token(request):
+    tokens = settings.HEALTH_CHECK_TOKENS
+    if not tokens:
+        return True
+    scheme, _, header_token = request.headers.get("Authorization", "").partition(" ")
+    given = [request.GET.get("token", "")]
+    if scheme.lower() == "bearer":
+        given.append(header_token.strip())
+    # Compare against every token, without stopping early, so timing does not reveal a match.
+    matches = [hmac.compare_digest(value.encode(), token.encode()) for value in given if value for token in tokens]
+    return any(matches)

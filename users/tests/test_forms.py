@@ -81,6 +81,36 @@ class TestUnlockUserConfirmForm:
         assert form.is_valid(), form.errors
         assert form.cleaned_data["disable_current_active_user"] is False
 
+    def test_unchecked_box_is_fine_when_unlocking_the_active_account_itself(self):
+        active_locked = UserFactory.create(phone_number=PHONE, is_locked=True)
+        form = _confirm_form(active_locked, disable_active=False)
+
+        assert form.is_valid(), form.errors
+        assert form.active_user_is_candidate is True
+        assert form.user_to_deactivate is None
+
+    def test_unlocking_another_account_deactivates_the_active_locked_one(self):
+        active_locked = UserFactory.create(phone_number=PHONE, is_locked=True)
+        inactive_locked = UserFactory.create(phone_number=PHONE, is_active=False, is_locked=True)
+        form = UnlockUserConfirmForm(
+            {"unlock_user_id": str(inactive_locked.pk), "disable_current_active_user": "on"},
+            candidates=[active_locked, inactive_locked],
+        )
+
+        assert form.is_valid(), form.errors
+        assert form.user_to_deactivate.pk == active_locked.pk
+
+    def test_offers_deactivation_when_another_account_could_be_unlocked(self):
+        UserFactory.create(phone_number=PHONE)
+        locked = UserFactory.create(phone_number=PHONE, is_active=False, is_locked=True)
+
+        assert UnlockUserConfirmForm(candidates=[locked]).offers_deactivation is True
+
+    def test_no_deactivation_offered_when_the_active_account_is_the_only_candidate(self):
+        active_locked = UserFactory.create(phone_number=PHONE, is_locked=True)
+
+        assert UnlockUserConfirmForm(candidates=[active_locked]).offers_deactivation is False
+
     def test_unbound_form_defaults_the_checkbox_to_on(self):
         locked = UserFactory.create(phone_number=PHONE, is_active=False, is_locked=True)
         form = UnlockUserConfirmForm(candidates=[locked])
@@ -143,6 +173,11 @@ class TestCandidateLabel:
         user = UserFactory.create(phone_number=PHONE, is_active=False, is_locked=True)
 
         assert "(inactive, locked)" in self._label_for(user)
+
+    def test_distinguishes_an_active_account_that_is_locked(self):
+        user = UserFactory.create(phone_number=PHONE, is_active=True, is_locked=True)
+
+        assert "(active, locked)" in self._label_for(user)
 
     def test_distinguishes_an_inactive_account_that_is_not_locked(self):
         user = UserFactory.create(phone_number=PHONE, is_active=False, is_locked=False)

@@ -20,7 +20,7 @@ class TestUnlockAndGenerateBackupCodeCommand:
 
     def test_unknown_user_id_raises_command_error(self):
         with pytest.raises(CommandError):
-            call_command("unlock_and_generate_backup_code", inactive_user_id=-1)
+            call_command("unlock_and_generate_backup_code", user_id=-1)
 
     def test_successful_unlock_via_the_command(self, locked_user, capsys):
         call_command(
@@ -35,6 +35,21 @@ class TestUnlockAndGenerateBackupCodeCommand:
 
         captured = capsys.readouterr()
         assert "has been unlocked and a backup code has been generated" in captured.out
+
+    def test_unlocks_an_active_locked_user_by_phone_number(self):
+        phone_number = Faker().phone_number()
+        active_locked = UserFactory.create(phone_number=phone_number, is_locked=True, failed_backup_code_attempts=3)
+
+        call_command(
+            "unlock_and_generate_backup_code",
+            phone_number=phone_number,
+            disable_current_active_user=True,
+        )
+
+        active_locked.refresh_from_db()
+        assert active_locked.is_locked is False
+        assert active_locked.is_active is True
+        assert active_locked.failed_backup_code_attempts == 0
 
 
 @pytest.mark.django_db

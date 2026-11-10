@@ -6,7 +6,7 @@ from users.models import ConnectUser
 from users.unlock import (
     find_unlock_candidates,
     get_active_user,
-    get_inactive_user,
+    get_user_to_unlock,
     unlock_and_issue_backup_code,
 )
 
@@ -51,45 +51,70 @@ class TestFindUnlockCandidates:
 
         assert [u.pk for u in find_unlock_candidates(user_id=inactive.pk)] == [inactive.pk]
 
-    def test_by_user_id_excludes_active_users(self):
+    def test_by_user_id_excludes_active_unlocked_users(self):
         active = UserFactory.create(phone_number=PHONE)
 
         assert find_unlock_candidates(user_id=active.pk) == []
 
+    @pytest.mark.parametrize(
+        "lookup",
+        [
+            pytest.param(lambda user: {"phone_number": user.phone_number}, id="by_phone_number"),
+            pytest.param(lambda user: {"user_id": user.pk}, id="by_user_id"),
+        ],
+    )
+    def test_includes_active_locked_users(self, lookup):
+        active_locked = UserFactory.create(phone_number=PHONE, is_locked=True)
+
+        assert [u.pk for u in find_unlock_candidates(**lookup(active_locked))] == [active_locked.pk]
+
 
 @pytest.mark.django_db
-class TestGetInactiveUser:
+class TestGetUserToUnlock:
     def test_by_phone_number(self, locked_user):
-        assert get_inactive_user(locked_user.phone_number).pk == locked_user.pk
+        assert get_user_to_unlock(locked_user.phone_number).pk == locked_user.pk
 
     def test_by_user_id(self, locked_user):
-        assert get_inactive_user(phone_number=None, inactive_user_id=locked_user.pk).pk == locked_user.pk
+        assert get_user_to_unlock(phone_number=None, user_id=locked_user.pk).pk == locked_user.pk
 
     def test_multiple_matches_is_an_unlock_error(self):
         UserFactory.create_batch(2, phone_number=PHONE, is_active=False, is_locked=True)
 
         with pytest.raises(UnlockUserError):
-            get_inactive_user(PHONE)
+            get_user_to_unlock(PHONE)
+
+    def test_by_phone_number_finds_an_active_locked_user(self):
+        active_locked = UserFactory.create(phone_number=PHONE, is_locked=True)
+
+        assert get_user_to_unlock(PHONE).pk == active_locked.pk
+
+    def test_active_and_inactive_locked_users_are_ambiguous(self):
+        # An inactive locked account predates locks leaving the account active.
+        UserFactory.create(phone_number=PHONE, is_locked=True)
+        UserFactory.create(phone_number=PHONE, is_active=False, is_locked=True)
+
+        with pytest.raises(UnlockUserError, match="use a user ID"):
+            get_user_to_unlock(PHONE)
 
     def test_no_match_is_an_unlock_error(self):
         with pytest.raises(UnlockUserError):
-            get_inactive_user(PHONE)
+            get_user_to_unlock(PHONE)
 
     def test_inactive_but_not_locked_is_an_unlock_error(self):
         UserFactory.create(phone_number=PHONE, is_active=False, is_locked=False)
 
         with pytest.raises(UnlockUserError):
-            get_inactive_user(PHONE)
+            get_user_to_unlock(PHONE)
 
     def test_unknown_user_id_is_an_unlock_error(self):
         with pytest.raises(UnlockUserError):
-            get_inactive_user(phone_number=None, inactive_user_id=-1)
+            get_user_to_unlock(phone_number=None, user_id=-1)
 
     def test_active_user_id_is_still_accepted(self):
         # Naming an id is an operator override, so the id path stays unfiltered.
         active = UserFactory.create(phone_number=PHONE)
 
-        assert get_inactive_user(phone_number=None, inactive_user_id=active.pk).pk == active.pk
+        assert get_user_to_unlock(phone_number=None, user_id=active.pk).pk == active.pk
 
 
 @pytest.mark.django_db
@@ -117,6 +142,16 @@ class TestUnlockAndIssueBackupCode:
 
         active.refresh_from_db()
         assert active.is_active is False
+
+    def test_unlocking_the_active_account_keeps_it_active(self):
+        active_locked = UserFactory.create(phone_number=PHONE, is_locked=True, failed_backup_code_attempts=3)
+
+        unlock_and_issue_backup_code(active_locked, disable_current_active_user=True)
+
+        active_locked.refresh_from_db()
+        assert active_locked.is_active is True
+        assert active_locked.is_locked is False
+        assert active_locked.failed_backup_code_attempts == 0
 
     def test_active_user_stays_active_when_the_unlock_fails(self, monkeypatch):
         active = UserFactory.create(phone_number=PHONE)

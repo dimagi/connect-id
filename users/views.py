@@ -289,11 +289,19 @@ def complete_profile(request):
     if session.verified_email:
         user.email = session.verified_email
 
-    error_code = upload_photo_to_s3(photo, user.username)
+    try:
+        with transaction.atomic():
+            user.save()
+            error_code = upload_photo_to_s3(photo, user.username)
+            if error_code:
+                transaction.set_rollback(True)
+    except IntegrityError:
+        if user.email and ConnectUser.objects.filter(email=user.email, is_active=True).exists():
+            return JsonResponse({"error": ErrorCodes.EMAIL_ALREADY_IN_USE}, status=400)
+        return JsonResponse({"error": ErrorCodes.ACTIVE_USER_EXISTS}, status=401)
     if error_code:
         return JsonResponse({"error": error_code}, status=500)
 
-    user.save()
     if session.device:
         device_info = UserDeviceInfo(
             user=user,
@@ -1101,12 +1109,16 @@ def check_user_similarity(request):
         user_name_is_similar = OpenChatStudio().check_name_similarity(
             reference_name=existing_user.name,
             candidate_name=name,
-            cultural_context=request.auth.phone_number.country_code,
+            cultural_context=f"Country code: {request.auth.phone_number.country_code}",
         )
 
         # For now we don't do anything with the response for Connect users
         if not request.auth.invited_user and user_name_is_similar is not None:
             is_same_user = user_name_is_similar
+
+    if existing_user and not is_same_user:
+        logger.info(f"Name did not match the active account on this number: existing user {existing_user.username}")
+        return JsonResponse({"error_code": ErrorCodes.REGISTRATION_INELIGIBLE}, status=403)
 
     response_data = {
         "account_exists": is_same_user,
@@ -1119,6 +1131,8 @@ def check_user_similarity(request):
         masked_email = mask_email(existing_user.email)
         if masked_email:
             response_data["masked_email"] = masked_email
+        if existing_user.is_locked:
+            response_data["backup_code_locked"] = True
 
     return JsonResponse(response_data)
 
@@ -1258,6 +1272,8 @@ def verify_email_otp(request):
         )
 
     if is_session and not recovering_account:
+        if ConnectUser.objects.filter(email=email, is_active=True).exists():
+            return JsonResponse({"error_code": ErrorCodes.EMAIL_ALREADY_IN_USE}, status=400)
         request.auth.verified_email = email
         request.auth.save()
         return HttpResponse()

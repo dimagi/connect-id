@@ -1,23 +1,23 @@
 import secrets
 
 from django.db import transaction
+from django.db.models import Q
 
 from users.exceptions import UnlockUserError
 from users.models import ConnectUser
 
 
 def find_unlock_candidates(phone_number=None, user_id=None):
-    """Inactive accounts the unlock flow may act on, looked up by phone number or by id.
+    """Accounts the unlock flow may act on, looked up by phone number or by id.
 
-    The phone-number path returns the locked-out accounts newest first, and reports ambiguity
-    to the caller instead of failing on it so the admin can offer the choice. The id path also
-    admits an inactive account that is not locked.
+    A locked account may be active: a locked backup code leaves the account active. The
+    phone-number path returns the locked accounts newest first, and reports ambiguity to the
+    caller instead of failing on it so the admin can offer the choice. The id path also admits
+    an inactive account that is not locked.
     """
     if user_id:
-        return list(ConnectUser.objects.filter(id=user_id, is_active=False))
-    return list(
-        ConnectUser.objects.filter(phone_number=phone_number, is_active=False, is_locked=True).order_by("-date_joined")
-    )
+        return list(ConnectUser.objects.filter(Q(is_active=False) | Q(is_locked=True), id=user_id))
+    return list(ConnectUser.objects.filter(phone_number=phone_number, is_locked=True).order_by("-date_joined"))
 
 
 def get_active_user(phone_number):
@@ -25,29 +25,28 @@ def get_active_user(phone_number):
     return ConnectUser.objects.filter(phone_number=phone_number, is_active=True).first()
 
 
-def get_inactive_user(phone_number, inactive_user_id=None):
+def get_user_to_unlock(phone_number, user_id=None):
     """The single account the command should unlock, by phone number or by id.
 
     The id path stays unfiltered on purpose: naming an id is an operator override, so an
     account that is already active or already unlocked is still accepted there.
     """
-    if inactive_user_id:
+    if user_id:
         try:
-            return ConnectUser.objects.get(id=inactive_user_id)
+            return ConnectUser.objects.get(id=user_id)
         except ConnectUser.DoesNotExist:
-            raise UnlockUserError(f"No user found with ID {inactive_user_id}.") from None
+            raise UnlockUserError(f"No user found with ID {user_id}.") from None
 
     candidates = find_unlock_candidates(phone_number=phone_number)
-    if len(candidates) != 1:
-        raise UnlockUserError(
-            "Failed to query for inactive user. Please use a user ID instead, "
-            "or ensure that there aren't multiple inactive users."
-        )
+    if not candidates:
+        raise UnlockUserError("No locked account found for this phone number.")
+    if len(candidates) > 1:
+        raise UnlockUserError("Several locked accounts share this phone number. Please use a user ID instead.")
     return candidates[0]
 
 
 @transaction.atomic
-def unlock_and_issue_backup_code(inactive_user, disable_current_active_user=True):
+def unlock_and_issue_backup_code(user, disable_current_active_user=True):
     """Unlock the account and return a fresh 6-digit backup code.
 
     Both entry points go through here, so the unlock and the code that makes the account
@@ -55,13 +54,15 @@ def unlock_and_issue_backup_code(inactive_user, disable_current_active_user=True
     """
     # Hash before the UPDATE below takes a row lock, so the lock is not held for the hash.
     backup_code = str(secrets.randbelow(900000) + 100000)
-    inactive_user.set_recovery_pin(backup_code)
-    inactive_user.is_locked = False
-    inactive_user.is_active = True
-    inactive_user.reset_failed_backup_code_attempts()
+    user.set_recovery_pin(backup_code)
+    user.is_locked = False
+    user.is_active = True
+    user.reset_failed_backup_code_attempts()
 
     if disable_current_active_user:
-        ConnectUser.objects.filter(phone_number=inactive_user.phone_number, is_active=True).update(is_active=False)
+        ConnectUser.objects.filter(phone_number=user.phone_number, is_active=True).exclude(pk=user.pk).update(
+            is_active=False
+        )
 
-    inactive_user.save(update_fields=["is_active", "is_locked", "failed_backup_code_attempts", "recovery_pin"])
+    user.save(update_fields=["is_active", "is_locked", "failed_backup_code_attempts", "recovery_pin"])
     return backup_code

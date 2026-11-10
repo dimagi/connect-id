@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "waffle",
     "anymail",
     "storages",
+    "health_check",
 ] + LOCAL_APPS
 
 MIDDLEWARE = [
@@ -227,13 +228,31 @@ SITE_ID = 1
 
 SENTRY_DSN = env("SENTRY_DSN", default=None)
 SENTRY_ENVIRONMENT = env("SENTRY_ENVIRONMENT", default="production")
-SENTRY_TRACES_SAMPLE_RATE = env("SENTRY_TRACES_SAMPLE_RATE", default="0.0")
+SENTRY_TRACES_SAMPLE_RATE = env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.0)
+# Requests to these paths are never traced: uptime monitors and health checks poll them constantly.
+UNSAMPLED_PATHS = ("/up", "/up/")
+UNSAMPLED_PATH_PREFIXES = ("/status/",)
+
+# Tokens accepted by /status/ as an Authorization: Bearer header or ?token=. Empty leaves the endpoint
+# open. See connectid.views.HealthCheck.
+HEALTH_CHECK_TOKENS = env.list("HEALTH_CHECK_TOKENS", default=[])
 
 CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
 CELERY_TASK_EAGER_PROPAGATES = env.bool("CELERY_TASK_EAGER_PROPAGATES", default=False)
 
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+
+def traces_sampler(sampling_context):
+    path = sampling_context.get("wsgi_environ", {}).get("PATH_INFO", "")
+    if path in UNSAMPLED_PATHS or path.startswith(UNSAMPLED_PATH_PREFIXES):
+        return 0
+    parent_sampled = sampling_context.get("parent_sampled")
+    if parent_sampled is not None:
+        return float(parent_sampled)
+    return SENTRY_TRACES_SAMPLE_RATE
+
 
 if SENTRY_DSN:
     ignore_logger("django.security.DisallowedHost")
@@ -252,7 +271,7 @@ if SENTRY_DSN:
         dsn=SENTRY_DSN,
         integrations=integrations,
         environment=SENTRY_ENVIRONMENT,
-        traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+        traces_sampler=traces_sampler,
     )
 
 SECRET_KEY = env(

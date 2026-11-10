@@ -1820,27 +1820,67 @@ class TestCheckUserSimilarity:
         assert response.status_code == 200
         assert response.json()["account_exists"] is True
         assert response.json()["photo"] == "some_base64_photo_data"
+        check_similarity_mock.assert_called_once_with(
+            reference_name=user.name,
+            candidate_name=user.name,
+            cultural_context=f"Country code: {user.phone_number.country_code}",
+        )
 
+    @pytest.mark.parametrize("is_locked", [False, True])
     @patch.object(ConnectUser, "get_photo")
     @patch.object(OpenChatStudio, "check_name_similarity")
     def test_user_is_not_similar_user(
-        self, check_similarity_mock, get_photo_mock, authed_client_token, user, valid_token
+        self, check_similarity_mock, get_photo_mock, authed_client_token_v3, user, valid_token, is_locked
     ):
         check_similarity_mock.return_value = False
 
-        valid_token.phone_number = user.phone_number
-        valid_token.is_phone_validated = True
         valid_token.invited_user = False
         valid_token.save()
 
         user.name = "ExistingUser"
+        user.email = "someone@dimagi.com"
+        user.is_locked = is_locked
         user.save()
         get_photo_mock.return_value = "some_base64_photo_data"
 
+        response = authed_client_token_v3.post(reverse(self.urlname), data={"name": "DifferentUser"})
+        assert response.status_code == 403
+        # Nothing about the existing account: no photo, masked email or lock state.
+        assert response.json() == {"error_code": ErrorCodes.REGISTRATION_INELIGIBLE}
+
+    @pytest.mark.parametrize(
+        "invited_user,name_is_similar",
+        [
+            # Invited sessions skip the name check.
+            (True, False),
+            # No verdict from OCS: the number's owner is assumed, and recovery still needs the backup code.
+            (False, None),
+        ],
+    )
+    @patch.object(ConnectUser, "get_photo")
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_existing_account_without_a_mismatch_verdict_goes_to_recovery(
+        self,
+        check_similarity_mock,
+        get_photo_mock,
+        authed_client_token,
+        user,
+        valid_token,
+        invited_user,
+        name_is_similar,
+    ):
+        check_similarity_mock.return_value = name_is_similar
+        get_photo_mock.return_value = ""
+
+        valid_token.invited_user = invited_user
+        valid_token.save()
+
+        user.name = "ExistingUser"
+        user.save()
+
         response = authed_client_token.post(reverse(self.urlname), data={"name": "DifferentUser"})
         assert response.status_code == 200
-        assert response.json()["account_exists"] is False
-        assert response.json()["photo"] == ""
+        assert response.json()["account_exists"] is True
 
     @patch.object(ConnectUser, "get_photo")
     @patch.object(OpenChatStudio, "check_name_similarity")
@@ -1893,6 +1933,39 @@ class TestCheckUserSimilarity:
         response = authed_client_token.post(reverse(self.urlname), data={"name": user.name})
         assert response.status_code == 200
         assert "masked_email" not in response.json()
+
+    @patch.object(ConnectUser, "get_photo")
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_backup_code_locked_returned_for_matched_locked_account(
+        self, check_similarity_mock, get_photo_mock, authed_client_token_v3, user, valid_token
+    ):
+        check_similarity_mock.return_value = True
+        get_photo_mock.return_value = ""
+
+        user.name = "ExistingUser"
+        user.is_locked = True
+        user.save()
+
+        response = authed_client_token_v3.post(reverse(self.urlname), data={"name": user.name})
+        assert response.status_code == 200
+        assert response.json()["backup_code_locked"] is True
+
+    @patch.object(ConnectUser, "get_photo")
+    @patch.object(OpenChatStudio, "check_name_similarity")
+    def test_backup_code_locked_omitted_when_account_is_not_locked(
+        self, check_similarity_mock, get_photo_mock, authed_client_token, user, valid_token
+    ):
+        check_similarity_mock.return_value = True
+        get_photo_mock.return_value = ""
+
+        user.name = "ExistingUser"
+        user.save()
+        assert not user.is_locked
+
+        response = authed_client_token.post(reverse(self.urlname), data={"name": user.name})
+        assert response.status_code == 200
+        assert response.json()["account_exists"] is True
+        assert "backup_code_locked" not in response.json()
 
 
 class TestCompleteProfileView:
@@ -2559,6 +2632,71 @@ class TestCompleteProfileCopiesEmail:
         user = ConnectUser.objects.get(phone_number=session.phone_number)
         assert user.email == expected_email
 
+    @patch("users.views.upload_photo_to_s3")
+    def test_email_taken_since_verification_returns_400(self, mock_upload, session_client):
+        session = ConfigurationSessionFactory(is_phone_validated=True, verified_email="taken@example.com")
+        UserFactory(email="taken@example.com")
+
+        response = session_client(session).post(
+            reverse("complete_profile"),
+            data={"name": "Test User", "recovery_pin": "1234", "photo": "base64data"},
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert response.json() == {"error": ErrorCodes.EMAIL_ALREADY_IN_USE}
+        assert not ConnectUser.objects.filter(phone_number=session.phone_number).exists()
+        mock_upload.assert_not_called()
+
+    @patch("users.views.upload_photo_to_s3")
+    def test_email_held_by_inactive_user_is_allowed(self, mock_upload, session_client):
+        mock_upload.return_value = None
+        session = ConfigurationSessionFactory(is_phone_validated=True, verified_email="reused@example.com")
+        UserFactory(email="reused@example.com", is_active=False)
+
+        response = session_client(session).post(
+            reverse("complete_profile"),
+            data={"name": "Test User", "recovery_pin": "1234", "photo": "base64data"},
+            format="json",
+        )
+
+        assert response.status_code == 200
+        user = ConnectUser.objects.get(phone_number=session.phone_number, is_active=True)
+        assert user.email == "reused@example.com"
+
+    @patch("users.views.upload_photo_to_s3")
+    def test_photo_uploaded_after_user_saved(self, mock_upload, session_client):
+        session = ConfigurationSessionFactory(is_phone_validated=True)
+
+        def assert_user_saved(photo, username):
+            assert ConnectUser.objects.filter(username=username).exists()
+
+        mock_upload.side_effect = assert_user_saved
+
+        response = session_client(session).post(
+            reverse("complete_profile"),
+            data={"name": "Test User", "recovery_pin": "1234", "photo": "base64data"},
+            format="json",
+        )
+
+        assert response.status_code == 200
+        mock_upload.assert_called_once()
+
+    @patch("users.views.upload_photo_to_s3")
+    def test_failed_upload_leaves_no_user(self, mock_upload, session_client):
+        mock_upload.return_value = ErrorCodes.FAILED_TO_UPLOAD
+        session = ConfigurationSessionFactory(is_phone_validated=True)
+
+        response = session_client(session).post(
+            reverse("complete_profile"),
+            data={"name": "Test User", "recovery_pin": "1234", "photo": "base64data"},
+            format="json",
+        )
+
+        assert response.status_code == 500
+        assert response.json() == {"error": ErrorCodes.FAILED_TO_UPLOAD}
+        assert not ConnectUser.objects.filter(phone_number=session.phone_number).exists()
+
 
 @pytest.mark.django_db
 class TestSendEmailOtp:
@@ -2834,6 +2972,54 @@ class TestVerifyEmailOtp:
         assert response.status_code == 200
         session.refresh_from_db()
         assert session.verified_email == "verified@example.com"
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.verify_token")
+    def test_session_email_in_use_by_active_user_returns_400(self, mock_verify, session_client):
+        mock_verify.return_value = True
+        UserFactory(email="taken@example.com")
+        session = ConfigurationSessionFactory(is_phone_validated=True)
+        SessionEmailOTPDeviceFactory(session=session, email="taken@example.com")
+
+        response = session_client(session).post(
+            self.url, data={"email": "taken@example.com", "otp": "123456"}, format="json"
+        )
+
+        assert response.status_code == 400
+        assert response.json() == {"error_code": ErrorCodes.EMAIL_ALREADY_IN_USE}
+        session.refresh_from_db()
+        assert not session.verified_email
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.verify_token")
+    def test_session_email_held_by_inactive_user_sets_verified_email(self, mock_verify, session_client):
+        mock_verify.return_value = True
+        UserFactory(email="reused@example.com", is_active=False)
+        session = ConfigurationSessionFactory(is_phone_validated=True)
+        SessionEmailOTPDeviceFactory(session=session, email="reused@example.com")
+
+        response = session_client(session).post(
+            self.url, data={"email": "reused@example.com", "otp": "123456"}, format="json"
+        )
+
+        assert response.status_code == 200
+        session.refresh_from_db()
+        assert session.verified_email == "reused@example.com"
+
+    @override_switch(EMAIL_OTP_VERIFICATION, active=True)
+    @patch("users.models.SessionEmailOTPDevice.verify_token")
+    def test_session_email_in_use_with_incorrect_otp_returns_incorrect_otp(self, mock_verify, session_client):
+        mock_verify.return_value = False
+        UserFactory(email="taken@example.com")
+        session = ConfigurationSessionFactory(is_phone_validated=True)
+        SessionEmailOTPDeviceFactory(session=session, email="taken@example.com")
+
+        response = session_client(session).post(
+            self.url, data={"email": "taken@example.com", "otp": "000000"}, format="json"
+        )
+
+        assert response.status_code == 401
+        assert response.json()["error_code"] == ErrorCodes.INCORRECT_OTP
 
     @override_switch(EMAIL_OTP_VERIFICATION, active=True)
     @patch("users.models.SessionEmailOTPDevice.verify_token")
