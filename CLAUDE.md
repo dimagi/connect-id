@@ -88,6 +88,7 @@ deploy/             # Kamal deployment config
 - **User lock vs deactivation**: `is_locked` (security lock from failed attempts) is separate from `is_active` (account deactivation).
 - **Message status flow**: PENDING -> SENT_TO_SERVICE -> DELIVERED -> CONFIRMED_RECEIVED
 - **AllowCIDRMiddleware**: Runs first in middleware stack for IP whitelisting.
+- **Automated PR review**: `.github/workflows/claude-code-review.yml` runs OpenCodeReview (rules in `.opencodereview/`), then a Claude review if that found nothing. Drafts are reviewed only with the `review-draft` label. See `docs/automated-code-review.md`.
 - **Health checks**: `/up` is the container liveness probe (no dependencies). `/status/` and `/status/celery/` (django-health-check, subsets in `connectid/health_checks.py`) are for the status page; `HEALTH_CHECK_TOKENS` gates them (`Authorization: Bearer <token>` header or `?token=`), answering 404 otherwise.
 
 ## Testing
