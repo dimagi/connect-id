@@ -1,0 +1,14 @@
+{
+  "include": ["**/test_*.py"],
+  "rules": [
+    {
+      "path": "**/migrations/*.py",
+      "rule": ".opencodereview/rules/django_migrations.md"
+    },
+    {
+      "path": "**/models.py",
+      "rule": ".opencodereview/rules/django_models.md",
+      "merge_system_rule": true
+    }
+  ]
+}
