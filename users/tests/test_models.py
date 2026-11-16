@@ -371,3 +371,43 @@ class TestUserOTPLimitWindows:
             PhoneDeviceFactory(user=user).generate_challenge(suppress_rate_limit=False)
 
         PhoneDeviceFactory(user=user).generate_challenge(suppress_rate_limit=False)
+
+
+@pytest.mark.django_db
+class TestRateLimitLogging:
+    def _events(self, caplog, event):
+        return [r.rate_limit for r in caplog.records if getattr(r, "rate_limit", {}).get("event") == event]
+
+    def test_a_resend_within_the_cooldown_is_logged(self, caplog):
+        device = PhoneDeviceFactory()
+        device.generate_challenge()
+
+        with pytest.raises(RateLimitedError):
+            device.generate_challenge(suppress_rate_limit=False)
+
+        (blocked,) = self._events(caplog, "rate_limit_blocked")
+        assert blocked["kind"] == "resend_cooldown"
+        assert blocked["device"] == "PhoneDevice"
+        assert blocked["user_id"] == device.user_id
+        assert blocked["retry_after_seconds"] > 0
+
+    def test_a_suppressed_rate_limit_is_logged(self, caplog):
+        device = PhoneDeviceFactory()
+        device.generate_challenge()
+
+        device.generate_challenge()
+
+        (suppressed,) = self._events(caplog, "rate_limit_suppressed")
+        assert suppressed["user_id"] == device.user_id
+        assert suppressed["retry_after_seconds"] > 0
+
+    def test_a_blocked_user_otp_is_logged_with_the_user(self, settings, caplog):
+        settings.OTP_USER_HOURLY_LIMIT = 0
+        device = PhoneDeviceFactory()
+
+        with pytest.raises(RateLimitedError):
+            device.generate_challenge(suppress_rate_limit=False)
+
+        (blocked,) = self._events(caplog, "rate_limit_blocked")
+        assert blocked["kind"] == "user"
+        assert blocked["user_id"] == device.user_id

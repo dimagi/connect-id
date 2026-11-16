@@ -30,7 +30,6 @@ def send_sms(to: PhoneNumber, body: str) -> SendResult:
 
     exceeded = hit_number_limit(to) or hit_country_limit("sms", to)
     if exceeded:
-        logger.warning("SMS to %s blocked: rate limited for %ss", mask(to), exceeded.retry_after_seconds)
         raise SmsRateLimitedError(exceeded.retry_after_seconds)
 
     # in future work the vendor will be determined based on the country code

@@ -372,6 +372,8 @@ SMS_NUMBER_DAILY_LIMIT = env.int("SMS_NUMBER_DAILY_LIMIT", default=10)
 # Caps on OTP SMS sent for one user, across all their numbers (primary, secondary, payment).
 OTP_USER_HOURLY_LIMIT = env.int("OTP_USER_HOURLY_LIMIT", default=10)
 OTP_USER_DAILY_LIMIT = env.int("OTP_USER_DAILY_LIMIT", default=20)
+# Share of a country limit at which a warning goes to Sentry, ahead of the limit blocking people.
+RATE_LIMIT_WARN_FRACTION = env.float("RATE_LIMIT_WARN_FRACTION", default=0.8)
 
 EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Connect <noreply@commcare-connect.org>")
