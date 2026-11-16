@@ -19,7 +19,8 @@ def mask(number: PhoneNumber) -> str:
 
 
 def is_country_supported(number: PhoneNumber) -> bool:
-    supported = settings.SMS_SUPPORTED_COUNTRY_CODES
+    # env.list keeps the spaces in "265, 258".
+    supported = {code.strip() for code in settings.SMS_SUPPORTED_COUNTRY_CODES} - {""}
     return not supported or str(number.country_code) in supported
 
 

@@ -69,6 +69,14 @@ def test_number_in_supported_countries_is_sent(get_vendor, settings):
     get_vendor.return_value.send.assert_called_once()
 
 
+def test_supported_country_codes_may_have_spaces(get_vendor, settings):
+    settings.SMS_SUPPORTED_COUNTRY_CODES = ["265", " 258"]
+
+    send_sms(to_python("+258821234567"), "hi")
+
+    get_vendor.return_value.send.assert_called_once()
+
+
 def test_sends_to_one_number_are_capped(get_vendor, settings):
     settings.SMS_NUMBER_HOURLY_LIMIT = 2
     to = to_python("+265991234567")
