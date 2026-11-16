@@ -338,3 +338,19 @@ class TestUserOTPLimit:
 
         device.refresh_from_db()
         assert device.otp_last_sent is not None
+
+
+@pytest.mark.django_db
+class TestUserOTPLimitWindows:
+    def test_hourly_rejections_do_not_use_up_the_daily_limit(self, settings):
+        settings.OTP_USER_HOURLY_LIMIT = 1
+        settings.OTP_USER_DAILY_LIMIT = 2
+        user = UserFactory()
+        with mock.patch("utils.rate_limit.time.time", return_value=1000.0):
+            PhoneDeviceFactory(user=user).generate_challenge()
+            for _ in range(3):
+                with pytest.raises(RateLimitedError):
+                    PhoneDeviceFactory(user=user).generate_challenge(suppress_rate_limit=False)
+
+        with mock.patch("utils.rate_limit.time.time", return_value=1000.0 + 60 * 60):
+            PhoneDeviceFactory(user=user).generate_challenge(suppress_rate_limit=False)

@@ -29,26 +29,43 @@ class Exceeded:
         return self.count == self.limit.max_count + 1
 
 
-def hit(key: str, limits: list[Limit]) -> Exceeded | None:
+def hit(key: str, limits: list[Limit], count_rejected: bool = True) -> Exceeded | None:
     """Count one event under `key` against each limit.
 
-    Returns the exceeded limit with the longest wait, or None if every limit still has room. If the
-    cache cannot be reached, the event is allowed and the failure is logged as an error.
+    Returns the exceeded limit with the longest wait, or None if every limit still has room. With
+    `count_rejected=False`, an event that exceeds any limit is taken off every count again, so a rejection
+    in a short window doesn't use up a longer one. The increment still decides, so concurrent callers
+    can't both take the last place. If the cache cannot be reached, the event is allowed and the failure
+    is logged as an error.
     """
     now = time.time()
+    counted = []
     exceeded = []
     try:
         for limit in limits:
             window = int(now // limit.window_seconds)
-            count = _increment(f"{key}:{limit.window_seconds}:{window}", limit.window_seconds)
+            cache_key = f"{key}:{limit.window_seconds}:{window}"
+            count = _increment(cache_key, limit.window_seconds)
+            counted.append(cache_key)
             if count > limit.max_count:
                 retry_after = int((window + 1) * limit.window_seconds - now) + 1
                 exceeded.append(Exceeded(limit, count, retry_after))
+        if exceeded and not count_rejected:
+            _decrement(counted)
     except Exception:
         # The key can end in a phone number, so log only its scope.
         logger.exception("Rate limit cache unavailable; allowing %s", key.rpartition(":")[0])
         return None
     return max(exceeded, key=lambda e: e.retry_after_seconds, default=None)
+
+
+def _decrement(cache_keys):
+    cache = caches[CACHE_ALIAS]
+    for cache_key in cache_keys:
+        try:
+            cache.decr(cache_key)
+        except ValueError:
+            pass  # The window has ended, so there is nothing to take off.
 
 
 def _increment(cache_key, timeout):

@@ -68,3 +68,15 @@ def test_a_key_that_expires_between_calls_starts_again():
         assert hit("key", [Limit(1, 60)]) is None
 
     assert cache.add.call_count == 2
+
+
+def test_rejected_events_can_be_left_uncounted():
+    minute, hour = Limit(1, 60), Limit(2, 60 * 60)
+    with mock.patch("utils.rate_limit.time.time", return_value=1000.0):
+        assert hit("key", [minute, hour], count_rejected=False) is None
+        for _ in range(3):
+            assert hit("key", [minute, hour], count_rejected=False).limit == minute
+    with mock.patch("utils.rate_limit.time.time", return_value=1030.0):
+        # Only the two allowed events count towards the hour.
+        assert hit("key", [minute, hour], count_rejected=False) is None
+        assert hit("key", [minute, hour], count_rejected=False).limit == hour

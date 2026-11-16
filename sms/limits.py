@@ -54,6 +54,8 @@ def hit_user_otp_limit(user_id: int) -> Exceeded | None:
             Limit(settings.OTP_USER_HOURLY_LIMIT, HOUR),
             Limit(settings.OTP_USER_DAILY_LIMIT, DAY),
         ],
+        # A blocked OTP leaves the device's resend cooldown unchanged, so retries come straight back.
+        count_rejected=False,
     )
 
 
