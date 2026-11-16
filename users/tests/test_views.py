@@ -19,6 +19,7 @@ from waffle.testutils import override_switch
 from flags.const import EMAIL_OTP_VERIFICATION
 from payments.models import PaymentProfile
 from services.ai.ocs import OpenChatStudio
+from sms import SmsCountryNotSupportedError, SmsRateLimitedError
 from test_utils.decorators import skip_app_integrity_check
 from users.const import (
     MAX_OTP_VERIFY_ATTEMPTS,
@@ -4008,3 +4009,20 @@ class TestCompleteRecoveryApi:
         response = authed_client_token.post(self.url, data=payload, format="json")
         assert response.status_code == 200
         assert "previous_device" not in response.json()
+
+
+@pytest.mark.parametrize("error", [SmsRateLimitedError(60), SmsCountryNotSupportedError(92)])
+def test_forward_hq_invite_hides_sms_failures(authed_client, user, error):
+    data = {
+        "phone_number": str(user.phone_number),
+        "callback_url": "https://www.commcarehq.org/callback",
+        "username": "hq-user",
+        "user_domain": "domain",
+        "invite_code": "code",
+    }
+    with mock.patch("users.views.send_sms", side_effect=error) as send_sms:
+        response = authed_client.post(reverse("forward_hq_invite"), data)
+
+    send_sms.assert_called_once()
+    assert response.status_code == 200
+    assert response.json() == {"success": True}

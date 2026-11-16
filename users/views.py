@@ -970,12 +970,9 @@ class ForwardHQInvite(APIView):
         """
         try:
             send_sms(user.phone_number, message)
-        except SmsRateLimitedError as e:
-            return JsonResponse(
-                {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": e.retry_after_seconds}, status=429
-            )
-        except SmsCountryNotSupportedError:
-            return JsonResponse({"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}, status=403)
+        except (SmsRateLimitedError, SmsCountryNotSupportedError) as e:
+            # Report success as for an unknown number, so the response doesn't reveal that the account exists.
+            logger.warning("HQ invite SMS not sent: %r", e)
         return JsonResponse({"success": True})
 
 
