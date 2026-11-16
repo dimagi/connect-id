@@ -1,4 +1,5 @@
 import base64
+import dataclasses
 from collections import defaultdict
 from uuid import UUID
 
@@ -36,6 +37,7 @@ from messaging.tasks import (
     CommCareHQAPIException,
     make_request,
     send_bulk_notification_task,
+    send_bulk_notifications_task,
     send_messages_to_service_and_mark_status,
 )
 from users.models import ConnectUser
@@ -99,6 +101,10 @@ class SendMessageBulk(APIView):
         ]
     }
 
+    Sending in the request keeps this worker busy for the whole FCM round trip, so a large batch can
+    starve the web tier. Add ``"async": true`` to queue the sends on Celery instead. The response is then
+    ``{"queued": true, "messages": <count>}`` with status 202, and there are no per-user results.
+
     Response:
     {
         "all_success": false,
@@ -120,6 +126,10 @@ class SendMessageBulk(APIView):
         serializer = BulkMessageSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         messages = serializer.save()
+
+        if request.data.get("async") is True:
+            send_bulk_notifications_task.delay([dataclasses.asdict(message) for message in messages])
+            return JsonResponse({"queued": True, "messages": len(messages)}, status=status.HTTP_202_ACCEPTED)
 
         results = send_bulk_notifications(messages)
         global_all_success = all(result["all_success"] for result in results)

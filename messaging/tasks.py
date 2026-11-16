@@ -14,7 +14,7 @@ from rest_framework.generics import get_object_or_404
 
 from messaging.models import Channel, Message, MessageDirection, MessageStatus
 from messaging.serializers import MessageSerializer, NotificationData
-from utils.notification import send_bulk_notification
+from utils.notification import send_bulk_notification, send_bulk_notifications
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +92,16 @@ def send_bulk_notification_task(usernames, data=None, fcm_options=None, title=No
         body=body,
     )
     send_bulk_notification(message)
+
+
+@shared_task(name="messaging.tasks.send_bulk_notifications_task")
+def send_bulk_notifications_task(messages: list[dict]):
+    """Send the notifications of a /messaging/send_bulk/ request that asked for ``"async": true``.
+
+    Not retried: a retry after a partial send would notify every user a second time. FCM errors are
+    reported per message, so only a failure outside the FCM calls reaches Sentry as a task failure.
+    """
+    send_bulk_notifications([NotificationData(**message) for message in messages])
 
 
 @shared_task(name="messaging.tasks.delete_old_messages")

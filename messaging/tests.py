@@ -31,7 +31,7 @@ from messaging.serializers import (
     MessageSerializer,
     NotificationData,
 )
-from messaging.tasks import CommCareHQAPIException, send_bulk_notification_task
+from messaging.tasks import CommCareHQAPIException, send_bulk_notification_task, send_bulk_notifications_task
 from users.factories import FCMDeviceFactory, ServerKeysFactory
 from utils import batched
 from utils.notification import send_bulk_notification
@@ -233,6 +233,55 @@ def test_send_message_bulk_limits(authed_client, messages, expected_status, expe
         assert str(expected_limit) in json.dumps(response.json())
         mock_send_message.assert_not_called()
         assert not Notification.objects.exists()
+
+
+def test_send_message_bulk_async_queues_task(authed_client, fcm_device):
+    url = reverse("messaging:send_message_bulk")
+    messages = [{"usernames": [fcm_device.user.username], "body": "hello", "data": {"a": "b"}}]
+
+    with (
+        mock.patch("messaging.views.send_bulk_notifications_task") as mock_task,
+        mock.patch("messaging.views.send_bulk_notifications") as mock_send,
+    ):
+        response = authed_client.post(
+            url, data=json.dumps({"messages": messages, "async": True}), content_type=APPLICATION_JSON
+        )
+
+    assert response.status_code == 202, response.content
+    assert response.json() == {"queued": True, "messages": 1}
+    mock_send.assert_not_called()
+    mock_task.delay.assert_called_once()
+    (queued,) = mock_task.delay.call_args.args
+    assert queued[0]["usernames"] == [fcm_device.user.username]
+    assert queued[0]["body"] == "hello"
+    assert queued[0]["data"] == {"a": "b"}
+
+
+@pytest.mark.parametrize("async_value", [False, "true", 1, None])
+def test_send_message_bulk_async_must_be_literal_true(authed_client, fcm_device, async_value):
+    url = reverse("messaging:send_message_bulk")
+    messages = [{"usernames": [fcm_device.user.username], "body": "hello"}]
+
+    with (
+        mock.patch("messaging.views.send_bulk_notifications_task") as mock_task,
+        mock.patch("firebase_admin.messaging.send_each", wraps=_fake_send_each),
+    ):
+        response = authed_client.post(
+            url, data=json.dumps({"messages": messages, "async": async_value}), content_type=APPLICATION_JSON
+        )
+
+    assert response.status_code == 200, response.content
+    assert response.json()["all_success"] is True
+    mock_task.delay.assert_not_called()
+
+
+def test_send_message_bulk_async_validates_before_queueing(authed_client):
+    url = reverse("messaging:send_message_bulk")
+    with mock.patch("messaging.views.send_bulk_notifications_task") as mock_task:
+        response = authed_client.post(url, data=json.dumps({"async": True}), content_type=APPLICATION_JSON)
+
+    assert response.status_code == 400
+    mock_task.delay.assert_not_called()
 
 
 def _fake_send_each(messages, **kwargs):
@@ -992,6 +1041,30 @@ def _fake_send_each_raises_error(error):
         )
 
     return _batch_error_return
+
+
+@pytest.mark.django_db
+class TestSendBulkNotificationsTask:
+    def test_sends_every_message(self, fcm_device):
+        fcm_device2 = FCMDeviceFactory()
+        messages = [
+            {"usernames": [fcm_device.user.username], "body": "one", "fcm_options": {}},
+            {"usernames": [fcm_device2.user.username], "body": "two", "fcm_options": {}},
+        ]
+        with mock.patch("firebase_admin.messaging.send_each", wraps=_fake_send_each) as mock_send_each:
+            send_bulk_notifications_task.apply(args=[messages], throw=True)
+
+        mock_send_each.assert_called_once()
+        assert len(mock_send_each.call_args.args[0]) == 2
+        assert Notification.objects.filter(user=fcm_device.user).count() == 1
+        assert Notification.objects.filter(user=fcm_device2.user).count() == 1
+
+    def test_is_not_retried(self):
+        with mock.patch("messaging.tasks.send_bulk_notifications", side_effect=RuntimeError("db down")):
+            result = send_bulk_notifications_task.apply(args=[[{"usernames": ["user1"]}]])
+
+        assert result.failed()
+        assert not getattr(send_bulk_notifications_task, "autoretry_for", ())
 
 
 @pytest.mark.django_db
