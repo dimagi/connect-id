@@ -1,8 +1,18 @@
 from unittest import mock
 
+import pytest
+
 from utils.rate_limit import Limit, hit
 
 
+@pytest.fixture
+def frozen_time():
+    """Fix the clock mid-window, so the counts don't move to a new window during a test."""
+    with mock.patch("utils.rate_limit.time.time", return_value=1000.0):
+        yield
+
+
+@pytest.mark.usefixtures("frozen_time")
 def test_allows_events_up_to_the_limit():
     limits = [Limit(2, 60)]
     assert hit("key", limits) is None
@@ -13,7 +23,7 @@ def test_allows_events_up_to_the_limit():
     assert exceeded.limit == Limit(2, 60)
     assert exceeded.count == 3
     assert exceeded.is_first
-    assert 0 < exceeded.retry_after_seconds <= 61
+    assert exceeded.retry_after_seconds == 21
     assert not hit("key", limits).is_first
 
 
@@ -23,6 +33,7 @@ def test_keys_are_counted_separately():
     assert hit("two", limits) is None
 
 
+@pytest.mark.usefixtures("frozen_time")
 def test_reports_the_exceeded_limit_with_the_longest_wait():
     hour, day = Limit(1, 60 * 60), Limit(1, 24 * 60 * 60)
     hit("key", [hour, day])
