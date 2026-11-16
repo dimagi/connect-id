@@ -45,3 +45,14 @@ def test_allows_events_when_the_cache_is_unavailable(caplog):
         assert hit("key", [Limit(0, 60)]) is None
 
     assert "Rate limit cache unavailable" in caplog.text
+
+
+def test_a_key_that_expires_between_calls_starts_again():
+    cache = mock.Mock()
+    cache.add.side_effect = [False, True]
+    cache.incr.side_effect = ValueError("key expired")
+    with mock.patch("utils.rate_limit.caches") as caches:
+        caches.__getitem__.return_value = cache
+        assert hit("key", [Limit(1, 60)]) is None
+
+    assert cache.add.call_count == 2

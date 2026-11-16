@@ -51,11 +51,12 @@ def hit(key: str, limits: list[Limit]) -> Exceeded | None:
 
 
 def _increment(cache_key, timeout):
+    """Add 1 to the key's count. add() and incr() are each atomic, so concurrent callers never share a count."""
     cache = caches[CACHE_ALIAS]
-    cache.add(cache_key, 0, timeout=timeout)
+    if cache.add(cache_key, 1, timeout=timeout):
+        return 1
     try:
         return cache.incr(cache_key)
     except ValueError:
-        # The key expired between add() and incr().
-        cache.set(cache_key, 1, timeout=timeout)
-        return 1
+        # The key expired after add() found it: start it again, unless another caller just did.
+        return 1 if cache.add(cache_key, 1, timeout=timeout) else cache.incr(cache_key)
