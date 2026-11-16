@@ -11,7 +11,7 @@ ssh:
 servers:
   web:
     hosts:
-      - i-01d4755cad044dcae
+      - i-053c44cb9426822d0
     options:
       env-file: '/home/connect/www/docker.env'
     logging:
@@ -49,6 +49,8 @@ logging:
   driver: awslogs
   options:
     awslogs-region: 'us-east-1'
+    # Traefik only gets these global options; the roles set their own groups.
+    awslogs-group: 'connect-id'
 
 builder:
   multiarch: false
