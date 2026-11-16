@@ -29,29 +29,21 @@ class Exceeded:
         return self.count == self.limit.max_count + 1
 
 
-def hit(key: str, limits: list[Limit], count_rejected: bool = True) -> Exceeded | None:
+def hit(key: str, limits: list[Limit]) -> Exceeded | None:
     """Count one event under `key` against each limit.
 
-    Returns the exceeded limit with the longest wait, or None if every limit still has room. With
-    `count_rejected=False`, an event that exceeds any limit is taken off every count again, so a rejection
-    in a short window doesn't use up a longer one. The increment still decides, so concurrent callers
-    can't both take the last place. If the cache cannot be reached, the event is allowed and the failure
-    is logged as an error.
+    Returns the exceeded limit with the longest wait, or None if every limit still has room. If the
+    cache cannot be reached, the event is allowed and the failure is logged as an error.
     """
     now = time.time()
-    counted = []
     exceeded = []
     try:
         for limit in limits:
             window = int(now // limit.window_seconds)
-            cache_key = f"{key}:{limit.window_seconds}:{window}"
-            count = _increment(cache_key, limit.window_seconds)
-            counted.append(cache_key)
+            count = _increment(f"{key}:{limit.window_seconds}:{window}", limit.window_seconds)
             if count > limit.max_count:
                 retry_after = int((window + 1) * limit.window_seconds - now) + 1
                 exceeded.append(Exceeded(limit, count, retry_after))
-        if exceeded and not count_rejected:
-            _decrement(counted)
     except Exception:
         # The key can end in a phone number, so log only its scope.
         logger.exception("Rate limit cache unavailable; allowing %s", key.rpartition(":")[0])
@@ -60,7 +52,7 @@ def hit(key: str, limits: list[Limit], count_rejected: bool = True) -> Exceeded 
 
 
 def release(key: str, limits: list[Limit]):
-    """Take back one allowed hit(), for an event that then didn't happen.
+    """Take back one hit(), for an event that was rejected or then didn't happen.
 
     If a window has ended in between, the count in the new window is reduced instead. That is at most
     one event, once per window, and it errs on the side of allowing.

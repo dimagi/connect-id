@@ -47,13 +47,13 @@ def hit_country_limit(scope: str, number: PhoneNumber) -> Exceeded | None:
 
 
 def hit_user_otp_limit(user_id: int) -> Exceeded | None:
-    """Count one OTP for the user, whichever of their numbers it goes to."""
-    return hit(
-        f"otp:user:{user_id}",
-        _user_otp_limits(),
+    """Count one OTP for the user, whichever of their numbers it goes to. A rejected OTP isn't counted."""
+    exceeded = hit(f"otp:user:{user_id}", _user_otp_limits())
+    if exceeded:
         # A blocked OTP leaves the device's resend cooldown unchanged, so retries come straight back.
-        count_rejected=False,
-    )
+        # Counting them would let hourly rejections use up the daily limit.
+        release_user_otp_limit(user_id)
+    return exceeded
 
 
 def release_user_otp_limit(user_id: int):
