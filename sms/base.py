@@ -25,6 +25,18 @@ class SmsSendError(Exception):
         self.vendor_error_code = vendor_error_code
 
 
+class SmsRateLimitedError(Exception):
+    def __init__(self, retry_after_seconds: int):
+        super().__init__(f"SMS rate limited. Retry after {retry_after_seconds} seconds.")
+        self.retry_after_seconds = retry_after_seconds
+
+
+class SmsCountryNotSupportedError(Exception):
+    def __init__(self, country_code: int | None):
+        super().__init__(f"SMS to country code {country_code} is not supported")
+        self.country_code = country_code
+
+
 class BaseSmsVendor(ABC):
     name: str
 

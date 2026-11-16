@@ -19,6 +19,7 @@ from waffle.testutils import override_switch
 from flags.const import EMAIL_OTP_VERIFICATION
 from payments.models import PaymentProfile
 from services.ai.ocs import OpenChatStudio
+from sms import SmsCountryNotSupportedError, SmsRateLimitedError
 from test_utils.decorators import skip_app_integrity_check
 from users.const import (
     MAX_OTP_VERIFY_ATTEMPTS,
@@ -791,6 +792,20 @@ class TestInitiateDeactivation(BaseTestDeactivation):
             expected_status=400,
         )
 
+    def test_rate_limited_sms_saves_no_token(self, client, recovery_status, settings):
+        settings.SMS_NUMBER_HOURLY_LIMIT = 0
+        user = recovery_status.user
+        user.phone_number = "+265991234567"
+        user.save()
+        token_before = user.deactivation_token
+
+        with mock.patch("sms.get_vendor"):
+            response = client.post(self.endpoint, self.get_post_data(user, recovery_status))
+
+        assert response.status_code == 429
+        user.refresh_from_db()
+        assert user.deactivation_token == token_before
+
     def test_invalid_secret_key(self, client, recovery_status):
         response = client.post(
             self.endpoint,
@@ -1522,6 +1537,38 @@ class TestStartConfigurationView:
         assert response.json() == {"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}
 
     @skip_app_integrity_check
+    def test_sessions_per_country_are_capped(self, client, settings):
+        settings.PHONE_COUNTRY_HOURLY_LIMIT = 1
+        responses = [
+            client.post(
+                reverse("start_device_configuration"),
+                data={"phone_number": phone_number},
+                HTTP_CC_INTEGRITY_TOKEN="token",
+                HTTP_CC_REQUEST_HASH="hash",
+            )
+            for phone_number in ["+265991234567", "+265991234568"]
+        ]
+
+        assert responses[0].status_code == 200
+        assert responses[1].status_code == 429
+        assert responses[1].json()["error_code"] == ErrorCodes.RATE_LIMITED
+        assert responses[1].json()["retry_after_seconds"] > 0
+        assert ConfigurationSession.objects.count() == 1
+
+    @skip_app_integrity_check
+    def test_demo_users_are_not_capped(self, client, settings):
+        settings.PHONE_COUNTRY_HOURLY_LIMIT = 0
+
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": TEST_NUMBER_PREFIX + "1234567"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+
+        assert response.status_code == 200
+
+    @skip_app_integrity_check
     @patch("users.models.ConfigurationSession.country_code")
     def test_session_started(self, mock_country_code, client):
         phone_number = Faker().phone_number()
@@ -2099,6 +2146,31 @@ class TestSendSessionOtp:
         response = authed_client_token.post(self.url)
         assert response.status_code == 429
         assert response.json() == {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": 120}
+
+    def test_sms_limit_returns_429(self, authed_client_token, valid_token, settings):
+        settings.SMS_NUMBER_HOURLY_LIMIT = 0
+        valid_token.phone_number = "+265991234567"
+        valid_token.save()
+
+        with patch("sms.get_vendor") as get_vendor:
+            response = authed_client_token.post(self.url)
+
+        assert response.status_code == 429
+        assert response.json()["error_code"] == ErrorCodes.RATE_LIMITED
+        assert response.json()["retry_after_seconds"] > 0
+        get_vendor.assert_not_called()
+
+    def test_unsupported_country_returns_403(self, authed_client_token, valid_token, settings):
+        settings.SMS_SUPPORTED_COUNTRY_CODES = ["265"]
+        valid_token.phone_number = "+963944123456"
+        valid_token.save()
+
+        with patch("sms.get_vendor") as get_vendor:
+            response = authed_client_token.post(self.url)
+
+        assert response.status_code == 403
+        assert response.json() == {"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}
+        get_vendor.assert_not_called()
 
     def test_resend_inside_cooldown_reports_the_wait_instead_of_silently_dropping_it(
         self, authed_client_token, valid_token
@@ -3937,3 +4009,20 @@ class TestCompleteRecoveryApi:
         response = authed_client_token.post(self.url, data=payload, format="json")
         assert response.status_code == 200
         assert "previous_device" not in response.json()
+
+
+@pytest.mark.parametrize("error", [SmsRateLimitedError(60), SmsCountryNotSupportedError(92)])
+def test_forward_hq_invite_hides_sms_failures(authed_client, user, error):
+    data = {
+        "phone_number": str(user.phone_number),
+        "callback_url": "https://www.commcarehq.org/callback",
+        "username": "hq-user",
+        "user_domain": "domain",
+        "invite_code": "code",
+    }
+    with mock.patch("users.views.send_sms", side_effect=error) as send_sms:
+        response = authed_client.post(reverse("forward_hq_invite"), data)
+
+    send_sms.assert_called_once()
+    assert response.status_code == 200
+    assert response.json() == {"success": True}

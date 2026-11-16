@@ -3,6 +3,7 @@ from datetime import timedelta
 
 import pytest
 from django.conf import settings
+from django.core.cache import caches
 from django.utils.timezone import now
 from oauth2_provider.models import AccessToken, Application
 from rest_framework.test import APIClient
@@ -22,13 +23,19 @@ from users.factories import (
 def production_behaviour(settings, tmp_path):
     """Tests exercise the production code paths whatever the developer's .env says.
 
-    File storage is the one exception: each bucket is pointed at its own temp directory so no test
-    touches S3. Tests of the opt-outs turn them on themselves.
+    The exceptions: each file storage bucket is pointed at its own temp directory so no test touches
+    S3, and the rate limit cache is an emptied in-memory cache so no test needs Redis. Tests of the
+    opt-outs turn them on themselves.
     """
     settings.PLAYSTORE_INTEGRITY_DISABLED = False
     settings.CONNECT_DISABLED = False
     settings.SMS_DEFAULT_VENDOR = "twilio"
     settings.RICH_MESSAGING_ENABLED = False
+    settings.CACHES = {
+        **settings.CACHES,
+        "rate_limit": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "rate_limit"},
+    }
+    caches["rate_limit"].clear()
     settings.STORAGES = {
         **settings.STORAGES,
         **{
