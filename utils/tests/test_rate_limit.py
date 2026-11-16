@@ -42,9 +42,10 @@ def test_a_new_window_starts_from_zero():
 def test_allows_events_when_the_cache_is_unavailable(caplog):
     with mock.patch("utils.rate_limit.caches") as caches:
         caches.__getitem__.return_value.add.side_effect = ConnectionError("redis down")
-        assert hit("key", [Limit(0, 60)]) is None
+        assert hit("sms:number:+265991234567", [Limit(0, 60)]) is None
 
-    assert "Rate limit cache unavailable" in caplog.text
+    assert "Rate limit cache unavailable; allowing sms:number" in caplog.text
+    assert "+265991234567" not in caplog.text
 
 
 def test_a_key_that_expires_between_calls_starts_again():

@@ -45,7 +45,8 @@ def hit(key: str, limits: list[Limit]) -> Exceeded | None:
                 retry_after = int((window + 1) * limit.window_seconds - now) + 1
                 exceeded.append(Exceeded(limit, count, retry_after))
     except Exception:
-        logger.exception("Rate limit cache unavailable; allowing %s", key)
+        # The key can end in a phone number, so log only its scope.
+        logger.exception("Rate limit cache unavailable; allowing %s", key.rpartition(":")[0])
         return None
     return max(exceeded, key=lambda e: e.retry_after_seconds, default=None)
 
