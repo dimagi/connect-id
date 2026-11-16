@@ -82,14 +82,15 @@ class ConnectUser(AbstractUser):
     def initiate_deactivation(self):
         self.deactivation_token = random_hex(7)
         self.deactivation_token_valid_until = now() + timedelta(seconds=600)
-        self.save()
         message = (
             f"Your account deactivation request is pending. Please enter this token {self.deactivation_token} "
             f"to confirm account deactivation."
             f"Warning: This action is irreversible. If you didn't request deactivation, "
             f"please ignore this message."
         )
+        # Sent before saving, so a token is only stored once its SMS is out.
         send_sms(self.phone_number, message)
+        self.save()
         return message
 
     def get_photo(self):

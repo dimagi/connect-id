@@ -791,6 +791,20 @@ class TestInitiateDeactivation(BaseTestDeactivation):
             expected_status=400,
         )
 
+    def test_rate_limited_sms_saves_no_token(self, client, recovery_status, settings):
+        settings.SMS_NUMBER_HOURLY_LIMIT = 0
+        user = recovery_status.user
+        user.phone_number = "+265991234567"
+        user.save()
+        token_before = user.deactivation_token
+
+        with mock.patch("sms.get_vendor"):
+            response = client.post(self.endpoint, self.get_post_data(user, recovery_status))
+
+        assert response.status_code == 429
+        user.refresh_from_db()
+        assert user.deactivation_token == token_before
+
     def test_invalid_secret_key(self, client, recovery_status):
         response = client.post(
             self.endpoint,
