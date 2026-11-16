@@ -2145,6 +2145,18 @@ class TestSendSessionOtp:
         assert response.json()["retry_after_seconds"] > 0
         get_vendor.assert_not_called()
 
+    def test_unsupported_country_returns_403(self, authed_client_token, valid_token, settings):
+        settings.SMS_SUPPORTED_COUNTRY_CODES = ["265"]
+        valid_token.phone_number = "+963944123456"
+        valid_token.save()
+
+        with patch("sms.get_vendor") as get_vendor:
+            response = authed_client_token.post(self.url)
+
+        assert response.status_code == 403
+        assert response.json() == {"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}
+        get_vendor.assert_not_called()
+
     def test_resend_inside_cooldown_reports_the_wait_instead_of_silently_dropping_it(
         self, authed_client_token, valid_token
     ):
