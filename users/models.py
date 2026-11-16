@@ -1,4 +1,5 @@
 import base64
+import logging
 import os
 from datetime import timedelta
 from secrets import token_hex
@@ -19,11 +20,13 @@ from geopy.geocoders import MapBox
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 from phonenumber_field.modelfields import PhoneNumberField
 
-from sms import send_sms
+from sms import SmsCountryNotSupportedError, SmsRateLimitedError, send_sms
 from users.exceptions import RateLimitedError, RecoveryPinNotSetError
 from users.services import get_user_photo_base64
 
 from .const import MAX_BACKUP_CODE_ATTEMPTS, MAX_OTP_BURN_COOLDOWN_HOURS, MAX_OTP_VERIFY_ATTEMPTS
+
+logger = logging.getLogger(__name__)
 
 
 class ConnectUser(AbstractUser):
@@ -254,7 +257,10 @@ class BasePhoneDevice(BaseOTPDevice):
         return f"Your verification token from commcare connect is {self.token}"
 
     def _send_otp(self):
-        send_sms(self.phone_number, self.otp_message)
+        try:
+            send_sms(self.phone_number, self.otp_message)
+        except SmsRateLimitedError as e:
+            raise RateLimitedError(e.retry_after_seconds) from e
 
     def generate_challenge(self):
         self._attempt_send(valid_secs=1800)
@@ -360,7 +366,10 @@ class UserCredential(models.Model):
             message = (
                 f"You have been given credential '{credential.title}'. Please click the following link to accept {url}"
             )
-            send_sms(user.phone_number, message)
+            try:
+                send_sms(user.phone_number, message)
+            except (SmsRateLimitedError, SmsCountryNotSupportedError):
+                logger.warning("Credential %s granted to %s without an SMS", credential.pk, user.username)
 
 
 class ConfigurationSession(models.Model):

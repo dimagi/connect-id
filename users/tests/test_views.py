@@ -1522,6 +1522,38 @@ class TestStartConfigurationView:
         assert response.json() == {"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}
 
     @skip_app_integrity_check
+    def test_sessions_per_country_are_capped(self, client, settings):
+        settings.PHONE_COUNTRY_HOURLY_LIMIT = 1
+        responses = [
+            client.post(
+                reverse("start_device_configuration"),
+                data={"phone_number": phone_number},
+                HTTP_CC_INTEGRITY_TOKEN="token",
+                HTTP_CC_REQUEST_HASH="hash",
+            )
+            for phone_number in ["+265991234567", "+265991234568"]
+        ]
+
+        assert responses[0].status_code == 200
+        assert responses[1].status_code == 429
+        assert responses[1].json()["error_code"] == ErrorCodes.RATE_LIMITED
+        assert responses[1].json()["retry_after_seconds"] > 0
+        assert ConfigurationSession.objects.count() == 1
+
+    @skip_app_integrity_check
+    def test_demo_users_are_not_capped(self, client, settings):
+        settings.PHONE_COUNTRY_HOURLY_LIMIT = 0
+
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": TEST_NUMBER_PREFIX + "1234567"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+
+        assert response.status_code == 200
+
+    @skip_app_integrity_check
     @patch("users.models.ConfigurationSession.country_code")
     def test_session_started(self, mock_country_code, client):
         phone_number = Faker().phone_number()
@@ -2099,6 +2131,19 @@ class TestSendSessionOtp:
         response = authed_client_token.post(self.url)
         assert response.status_code == 429
         assert response.json() == {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": 120}
+
+    def test_sms_limit_returns_429(self, authed_client_token, valid_token, settings):
+        settings.SMS_NUMBER_HOURLY_LIMIT = 0
+        valid_token.phone_number = "+265991234567"
+        valid_token.save()
+
+        with patch("sms.get_vendor") as get_vendor:
+            response = authed_client_token.post(self.url)
+
+        assert response.status_code == 429
+        assert response.json()["error_code"] == ErrorCodes.RATE_LIMITED
+        assert response.json()["retry_after_seconds"] > 0
+        get_vendor.assert_not_called()
 
     def test_resend_inside_cooldown_reports_the_wait_instead_of_silently_dropping_it(
         self, authed_client_token, valid_token

@@ -336,6 +336,41 @@ SMS_VENDORS = {
 # The vendor send_sms uses. Set to "console" to run without Twilio.
 SMS_DEFAULT_VENDOR = env("SMS_DEFAULT_VENDOR", default="twilio")
 
+# Calling codes of the countries send_sms may send to. Keep in sync with the Twilio geo permissions.
+# Set the env var to an empty string to allow every country.
+SMS_SUPPORTED_COUNTRY_CODES = env.list(
+    "SMS_SUPPORTED_COUNTRY_CODES",
+    default=[
+        "1",  # Canada, USA
+        "27",  # South Africa
+        "44",  # UK
+        "91",  # India
+        "221",  # Senegal
+        "231",  # Liberia
+        "232",  # Sierra Leone
+        "233",  # Ghana
+        "234",  # Nigeria
+        "236",  # Central African Republic
+        "243",  # DR Congo
+        "251",  # Ethiopia
+        "252",  # Somalia
+        "254",  # Kenya
+        "255",  # Tanzania
+        "256",  # Uganda
+        "258",  # Mozambique
+        "260",  # Zambia
+        "265",  # Malawi
+    ],
+)
+# Caps per destination country, applied separately to SMS sends and to new configuration sessions
+# (which can trigger a Firebase SMS that never passes through send_sms). The busiest country-hour
+# from mid-October to mid-November 2026 had 26 sessions, and the busiest country-day had 111.
+PHONE_COUNTRY_HOURLY_LIMIT = env.int("PHONE_COUNTRY_HOURLY_LIMIT", default=50)
+PHONE_COUNTRY_DAILY_LIMIT = env.int("PHONE_COUNTRY_DAILY_LIMIT", default=300)
+# Caps on SMS sent to a single number.
+SMS_NUMBER_HOURLY_LIMIT = env.int("SMS_NUMBER_HOURLY_LIMIT", default=5)
+SMS_NUMBER_DAILY_LIMIT = env.int("SMS_NUMBER_DAILY_LIMIT", default=10)
+
 EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Connect <noreply@commcare-connect.org>")
 EMAIL_OTP_VALIDITY_SECONDS = env.int("EMAIL_OTP_VALIDITY_SECONDS", default=1800)

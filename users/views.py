@@ -24,6 +24,7 @@ from googleapiclient.errors import HttpError
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
+from phonenumber_field.phonenumber import to_python
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.views import APIView
 from waffle import switch_is_active
@@ -32,7 +33,8 @@ from waffle.decorators import waffle_switch
 from flags.const import EMAIL_OTP_VERIFICATION
 from flags.utils import get_user_toggles
 from services.ai.ocs import OpenChatStudio
-from sms import send_sms
+from sms import SmsCountryNotSupportedError, SmsRateLimitedError, send_sms
+from sms.limits import hit_country_limit
 from utils import get_ip
 from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
 from utils.app_integrity.decorators import require_app_integrity
@@ -120,6 +122,15 @@ def start_device_configuration(request):
         )
 
     is_demo_user = data["phone_number"].startswith(TEST_NUMBER_PREFIX)
+    if not is_demo_user:
+        # A new session can lead to an SMS from us or from Firebase, so the country limits apply here too.
+        exceeded = hit_country_limit("configuration_session", to_python(data["phone_number"]))
+        if exceeded:
+            return JsonResponse(
+                {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": exceeded.retry_after_seconds},
+                status=429,
+            )
+
     token_session = ConfigurationSession(
         phone_number=data["phone_number"],
         is_phone_validated=is_demo_user,  # demo users are always considered validated
@@ -957,7 +968,14 @@ class ForwardHQInvite(APIView):
         Thanks.
         -The ConnectID Team.
         """
-        send_sms(user.phone_number, message)
+        try:
+            send_sms(user.phone_number, message)
+        except SmsRateLimitedError as e:
+            return JsonResponse(
+                {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": e.retry_after_seconds}, status=429
+            )
+        except SmsCountryNotSupportedError:
+            return JsonResponse({"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}, status=403)
         return JsonResponse({"success": True})
 
 
@@ -1012,7 +1030,14 @@ def initiate_deactivation(request):
     status = RecoveryStatus.objects.get(user=user)
     if status.secret_key != secret_key:
         return JsonResponse({"error_code": ErrorCodes.INVALID_SECRET_KEY}, status=401)
-    user.initiate_deactivation()
+    try:
+        user.initiate_deactivation()
+    except SmsRateLimitedError as e:
+        return JsonResponse(
+            {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": e.retry_after_seconds}, status=429
+        )
+    except SmsCountryNotSupportedError:
+        return JsonResponse({"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}, status=403)
     return HttpResponse()
 
 
