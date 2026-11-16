@@ -46,6 +46,17 @@ def hit_country_limit(scope: str, number: PhoneNumber) -> Exceeded | None:
     return exceeded
 
 
+def hit_user_otp_limit(user_id: int) -> Exceeded | None:
+    """Count one OTP for the user, whichever of their numbers it goes to."""
+    return hit(
+        f"otp:user:{user_id}",
+        [
+            Limit(settings.OTP_USER_HOURLY_LIMIT, HOUR),
+            Limit(settings.OTP_USER_DAILY_LIMIT, DAY),
+        ],
+    )
+
+
 def hit_number_limit(number: PhoneNumber) -> Exceeded | None:
     return hit(
         f"sms:number:{number.as_e164}",

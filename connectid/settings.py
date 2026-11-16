@@ -369,6 +369,9 @@ PHONE_COUNTRY_DAILY_LIMIT = env.int("PHONE_COUNTRY_DAILY_LIMIT", default=300)
 # Caps on SMS sent to a single number.
 SMS_NUMBER_HOURLY_LIMIT = env.int("SMS_NUMBER_HOURLY_LIMIT", default=5)
 SMS_NUMBER_DAILY_LIMIT = env.int("SMS_NUMBER_DAILY_LIMIT", default=10)
+# Caps on OTP SMS sent for one user, across all their numbers (primary, secondary, payment).
+OTP_USER_HOURLY_LIMIT = env.int("OTP_USER_HOURLY_LIMIT", default=10)
+OTP_USER_DAILY_LIMIT = env.int("OTP_USER_DAILY_LIMIT", default=20)
 
 EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Connect <noreply@commcare-connect.org>")

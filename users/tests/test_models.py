@@ -305,3 +305,36 @@ class TestOTPDeviceConcurrentVerification:
         assert not errors, errors
         otp_device.refresh_from_db()
         assert otp_device.failed_verifications == racers
+
+
+@pytest.mark.django_db
+class TestUserOTPLimit:
+    def test_caps_otps_across_a_users_numbers(self, settings):
+        settings.OTP_USER_HOURLY_LIMIT = 2
+        user = UserFactory()
+        primary, secondary, payment = (PhoneDeviceFactory(user=user) for _ in range(3))
+        primary.generate_challenge()
+        secondary.generate_challenge()
+
+        with pytest.raises(RateLimitedError) as excinfo:
+            payment.generate_challenge(suppress_rate_limit=False)
+
+        assert excinfo.value.retry_after_seconds > 0
+        payment.refresh_from_db()
+        assert payment.otp_last_sent is None
+
+    def test_users_are_counted_separately(self, settings):
+        settings.OTP_USER_HOURLY_LIMIT = 1
+        PhoneDeviceFactory().generate_challenge()
+
+        PhoneDeviceFactory().generate_challenge(suppress_rate_limit=False)
+
+    def test_session_devices_without_a_user_are_not_capped_per_user(self, settings):
+        settings.OTP_USER_HOURLY_LIMIT = 0
+        device = SessionPhoneDeviceFactory()
+        assert device.user_id is None
+
+        device.generate_challenge()
+
+        device.refresh_from_db()
+        assert device.otp_last_sent is not None
