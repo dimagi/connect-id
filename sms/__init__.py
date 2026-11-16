@@ -29,7 +29,7 @@ def send_sms(to: PhoneNumber, body: str) -> SendResult:
         raise SmsCountryNotSupportedError(to.country_code)
 
     exceeded = hit_number_limit(to) or hit_country_limit("sms", to)
-    if exceeded:  # hit() logs the block
+    if exceeded:
         raise SmsRateLimitedError(exceeded.retry_after_seconds)
 
     # in future work the vendor will be determined based on the country code

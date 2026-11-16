@@ -275,7 +275,7 @@ class BasePhoneDevice(BaseOTPDevice):
         # Session devices have no user until the account is known; their number and country caps still apply.
         if self.user_id:
             exceeded = hit_user_otp_limit(self.user_id)
-            if exceeded:  # hit() logs the block
+            if exceeded:
                 raise RateLimitedError(exceeded.retry_after_seconds)
         try:
             send_sms(self.phone_number, self.otp_message)
