@@ -254,6 +254,17 @@ def traces_sampler(sampling_context):
     return SENTRY_TRACES_SAMPLE_RATE
 
 
+CACHES = {
+    "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+    # Shared by all workers and hosts, so rate limits (utils.rate_limit) count every request.
+    "rate_limit": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env("RATE_LIMIT_REDIS_URL", default=CELERY_BROKER_URL),
+        "KEY_PREFIX": "rate_limit",
+        "OPTIONS": {"socket_connect_timeout": 1, "socket_timeout": 1},
+    },
+}
+
 if SENTRY_DSN:
     ignore_logger("django.security.DisallowedHost")
     sentry_logging = LoggingIntegration(
