@@ -5,6 +5,7 @@ from phonenumber_field.phonenumber import to_python
 
 from sms import SmsCountryNotSupportedError, SmsRateLimitedError, send_sms
 from sms.base import SendResult, SmsMessage
+from sms.limits import mask
 from users.const import TEST_NUMBER_PREFIX
 
 
@@ -111,3 +112,8 @@ def test_test_numbers_are_not_limited(get_vendor, settings):
     result = send_sms(to_python(TEST_NUMBER_PREFIX + "1234567"), "hi")
 
     assert result.skipped
+
+
+def test_mask_keeps_the_country_and_last_three_digits():
+    assert mask(to_python("+265991234567")) == "+265 …567"
+    assert mask(to_python("garbage")) == "an unparseable number"

@@ -14,8 +14,9 @@ DAY = 24 * HOUR
 
 
 def mask(number: PhoneNumber) -> str:
-    e164 = number.as_e164 or ""
-    return f"+{number.country_code} …{e164[-3:]}"
+    if number.country_code is None:
+        return "an unparseable number"
+    return f"+{number.country_code} …{number.as_e164[-3:]}"
 
 
 def is_country_supported(number: PhoneNumber) -> bool:
