@@ -7,6 +7,7 @@ from django.contrib.auth.hashers import check_password
 from django.db import IntegrityError, connection
 from django.utils.timezone import now
 
+from sms import SmsCountryNotSupportedError, SmsRateLimitedError, SmsSendError
 from users.const import MAX_OTP_BURN_COOLDOWN_HOURS, MAX_OTP_VERIFY_ATTEMPTS
 from users.exceptions import RateLimitedError
 from users.factories import (
@@ -354,3 +355,15 @@ class TestUserOTPLimitWindows:
 
         with mock.patch("utils.rate_limit.time.time", return_value=1000.0 + 60 * 60):
             PhoneDeviceFactory(user=user).generate_challenge(suppress_rate_limit=False)
+
+    @pytest.mark.parametrize(
+        "error",
+        [SmsRateLimitedError(60), SmsCountryNotSupportedError(92), SmsSendError("twilio", "account suspended")],
+    )
+    def test_otps_that_are_not_sent_do_not_count(self, settings, error):
+        settings.OTP_USER_HOURLY_LIMIT = 1
+        user = UserFactory()
+        with mock.patch("users.models.send_sms", side_effect=error), pytest.raises(Exception):
+            PhoneDeviceFactory(user=user).generate_challenge(suppress_rate_limit=False)
+
+        PhoneDeviceFactory(user=user).generate_challenge(suppress_rate_limit=False)

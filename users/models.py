@@ -21,7 +21,7 @@ from oauth2_provider.generators import generate_client_id, generate_client_secre
 from phonenumber_field.modelfields import PhoneNumberField
 
 from sms import SmsCountryNotSupportedError, SmsRateLimitedError, send_sms
-from sms.limits import hit_user_otp_limit
+from sms.limits import hit_user_otp_limit, release_user_otp_limit
 from users.exceptions import RateLimitedError, RecoveryPinNotSetError, UnsupportedCountryError
 from users.services import get_user_photo_base64
 
@@ -269,10 +269,15 @@ class BasePhoneDevice(BaseOTPDevice):
                 raise RateLimitedError(exceeded.retry_after_seconds)
         try:
             send_sms(self.phone_number, self.otp_message)
-        except SmsRateLimitedError as e:
-            raise RateLimitedError(e.retry_after_seconds) from e
-        except SmsCountryNotSupportedError as e:
-            raise UnsupportedCountryError() from e
+        except Exception as e:
+            if self.user_id:
+                # Nothing was sent, so it shouldn't count against the user.
+                release_user_otp_limit(self.user_id)
+            if isinstance(e, SmsRateLimitedError):
+                raise RateLimitedError(e.retry_after_seconds) from e
+            if isinstance(e, SmsCountryNotSupportedError):
+                raise UnsupportedCountryError() from e
+            raise
 
     def generate_challenge(self):
         self._attempt_send(valid_secs=1800)
