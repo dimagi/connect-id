@@ -1,13 +1,9 @@
 """Which destination countries may receive SMS, and how many."""
 
-import logging
-
 from django.conf import settings
 from phonenumber_field.phonenumber import PhoneNumber
 
 from utils.rate_limit import Exceeded, Limit, hit, release
-
-logger = logging.getLogger(__name__)
 
 HOUR = 60 * 60
 DAY = 24 * HOUR
@@ -26,29 +22,32 @@ def is_country_supported(number: PhoneNumber) -> bool:
 
 
 def hit_country_limit(scope: str, number: PhoneNumber) -> Exceeded | None:
-    """Count one `scope` event (e.g. "sms") for the number's country, and report the limit once when it is hit."""
-    exceeded = hit(
+    """Count one `scope` event (e.g. "sms") for the number's country.
+
+    Real users in the country are blocked until the window ends, so nearing and reaching the limit are
+    reported to Sentry, once per window each.
+    """
+    return hit(
         f"{scope}:country:{number.country_code}",
         [
-            Limit(settings.PHONE_COUNTRY_HOURLY_LIMIT, HOUR),
-            Limit(settings.PHONE_COUNTRY_DAILY_LIMIT, DAY),
+            _warned_limit(settings.PHONE_COUNTRY_HOURLY_LIMIT, HOUR),
+            _warned_limit(settings.PHONE_COUNTRY_DAILY_LIMIT, DAY),
         ],
+        log_fields={"scope": scope, "kind": "country", "country_code": number.country_code},
+        report=True,
     )
-    if exceeded and exceeded.is_first:
-        # Error level so it reaches Sentry: real users in this country are blocked until the window ends.
-        logger.error(
-            "%s limit of %s per %ss reached for country code %s",
-            scope,
-            exceeded.limit.max_count,
-            exceeded.limit.window_seconds,
-            number.country_code,
-        )
-    return exceeded
+
+
+def _warned_limit(max_count: int, window_seconds: int) -> Limit:
+    """A limit that warns once its count reaches RATE_LIMIT_WARN_FRACTION of the maximum."""
+    warn_at = int(max_count * settings.RATE_LIMIT_WARN_FRACTION)
+    return Limit(max_count, window_seconds, warn_at=warn_at if 0 < warn_at < max_count else None)
 
 
 def hit_user_otp_limit(user_id: int) -> Exceeded | None:
     """Count one OTP for the user, whichever of their numbers it goes to. A rejected OTP isn't counted."""
-    exceeded = hit(f"otp:user:{user_id}", _user_otp_limits())
+    log_fields = {"scope": "otp", "kind": "user", "user_id": user_id}
+    exceeded = hit(f"otp:user:{user_id}", _user_otp_limits(), log_fields=log_fields)
     if exceeded:
         # A blocked OTP leaves the device's resend cooldown unchanged, so retries come straight back.
         # Counting them would let hourly rejections use up the daily limit.
@@ -75,4 +74,10 @@ def hit_number_limit(number: PhoneNumber) -> Exceeded | None:
             Limit(settings.SMS_NUMBER_HOURLY_LIMIT, HOUR),
             Limit(settings.SMS_NUMBER_DAILY_LIMIT, DAY),
         ],
+        log_fields={
+            "scope": "sms",
+            "kind": "number",
+            "country_code": number.country_code,
+            "number_ending": number.as_e164[-3:],
+        },
     )

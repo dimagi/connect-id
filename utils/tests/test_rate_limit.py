@@ -2,7 +2,7 @@ from unittest import mock
 
 import pytest
 
-from utils.rate_limit import Limit, hit, release
+from utils.rate_limit import Limit, hit, log_event, release
 
 
 @pytest.fixture
@@ -83,3 +83,76 @@ def test_release_without_a_hit_does_nothing():
     release("key", [Limit(1, 60)])
 
     assert hit("key", [Limit(1, 60)]) is None
+
+
+def _events(caplog):
+    return [(r.levelname, r.getMessage()) for r in caplog.records if r.name == "utils.rate_limit"]
+
+
+@pytest.mark.usefixtures("frozen_time")
+def test_each_rejection_is_logged_with_its_fields(caplog):
+    limits = [Limit(1, 60)]
+    fields = {"scope": "sms", "kind": "country", "country_code": 265}
+    hit("key", limits, log_fields=fields)
+    assert _events(caplog) == []
+
+    hit("key", limits, log_fields=fields)
+    hit("key", limits, log_fields=fields)
+
+    message = "rate_limit_blocked scope=sms kind=country country_code=265 window_seconds=60 max_count=1"
+    assert _events(caplog) == [
+        ("WARNING", f"{message} count=2 retry_after_seconds=21"),
+        ("WARNING", f"{message} count=3 retry_after_seconds=21"),
+    ]
+    assert caplog.records[0].rate_limit == {
+        "event": "rate_limit_blocked",
+        **fields,
+        "window_seconds": 60,
+        "max_count": 1,
+        "count": 2,
+        "retry_after_seconds": 21,
+    }
+
+
+def test_without_log_fields_only_the_scope_of_the_key_is_logged(caplog):
+    hit("sms:number:+265991234567", [Limit(0, 60)])
+
+    assert "rate_limit_blocked key=sms:number " in caplog.text
+    assert "+265991234567" not in caplog.text
+
+
+@pytest.mark.usefixtures("frozen_time")
+def test_reaching_warn_at_is_logged_once(caplog):
+    limits = [Limit(3, 60, warn_at=2)]
+    for _ in range(3):
+        hit("otp:user:1", limits)
+
+    message = "rate_limit_approaching key=otp:user window_seconds=60 max_count=3 count=2"
+    assert _events(caplog) == [("WARNING", message)]
+
+
+@pytest.mark.usefixtures("frozen_time")
+def test_reported_limits_raise_errors_once_per_window(caplog):
+    limits = [Limit(2, 60, warn_at=1)]
+    for _ in range(4):
+        hit("key", limits, log_fields={"scope": "test"}, report=True)
+
+    errors = [message for level, message in _events(caplog) if level == "ERROR"]
+    assert errors == [
+        "rate_limit_approaching scope=test window_seconds=60 max_count=2 count=1",
+        "rate_limit_reached scope=test window_seconds=60 max_count=2",
+    ]
+
+
+def test_log_event_tags_the_sentry_event():
+    with mock.patch("utils.rate_limit.sentry_sdk.new_scope") as new_scope:
+        log_event("rate_limit_blocked", {"scope": "otp", "user_id": 7})
+
+    scope = new_scope.return_value.__enter__.return_value
+    scope.set_tag.assert_has_calls(
+        [
+            mock.call("rate_limit.event", "rate_limit_blocked"),
+            mock.call("rate_limit.scope", "otp"),
+            mock.call("rate_limit.user_id", 7),
+        ]
+    )

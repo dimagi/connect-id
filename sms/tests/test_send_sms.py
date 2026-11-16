@@ -101,8 +101,40 @@ def test_sends_to_one_country_are_capped_and_reported_once(get_vendor, settings,
     send_sms(to_python("+258821234567"), "hi")
 
     assert get_vendor.return_value.send.call_count == 2
-    reports = [r for r in caplog.records if r.levelname == "ERROR" and "country code 265" in r.getMessage()]
-    assert len(reports) == 1
+    reports = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert [r.getMessage() for r in reports] == [
+        "rate_limit_reached scope=sms kind=country country_code=265 window_seconds=3600 max_count=1"
+    ]
+    blocks = [r for r in caplog.records if r.getMessage().startswith("rate_limit_blocked scope=sms kind=country")]
+    assert len(blocks) == 2
+
+
+def test_nearing_a_country_limit_is_reported_once(get_vendor, settings, caplog):
+    settings.PHONE_COUNTRY_HOURLY_LIMIT = 5
+    settings.RATE_LIMIT_WARN_FRACTION = 0.6
+    for number in ["+265991234561", "+265991234562", "+265991234563", "+265991234564"]:
+        send_sms(to_python(number), "hi")
+
+    reports = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert reports == [
+        "rate_limit_approaching scope=sms kind=country country_code=265 window_seconds=3600 max_count=5 count=3"
+    ]
+
+
+def test_blocks_on_one_number_are_logged_without_the_number(get_vendor, settings, caplog):
+    settings.SMS_NUMBER_HOURLY_LIMIT = 1
+    to = to_python("+265991234567")
+    send_sms(to, "hi")
+
+    with pytest.raises(SmsRateLimitedError):
+        send_sms(to, "hi")
+
+    (block,) = (r for r in caplog.records if r.getMessage().startswith("rate_limit_blocked"))
+    assert block.levelname == "WARNING"
+    assert (
+        "kind=number country_code=265 number_ending=567 window_seconds=3600 max_count=1 count=2" in block.getMessage()
+    )
+    assert "991234567" not in caplog.text
 
 
 def test_test_numbers_are_not_limited(get_vendor, settings):

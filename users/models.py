@@ -24,6 +24,7 @@ from sms import SmsCountryNotSupportedError, SmsRateLimitedError, send_sms
 from sms.limits import hit_user_otp_limit, release_user_otp_limit
 from users.exceptions import RateLimitedError, RecoveryPinNotSetError, UnsupportedCountryError
 from users.services import get_user_photo_base64
+from utils.rate_limit import BLOCKED, SUPPRESSED, log_event
 
 from .const import MAX_BACKUP_CODE_ATTEMPTS, MAX_OTP_BURN_COOLDOWN_HOURS, MAX_OTP_VERIFY_ATTEMPTS
 
@@ -236,7 +237,19 @@ class BaseOTPDevice(SideChannelDevice):
                 self.attempts += 1
                 self.save()
             else:
-                raise RateLimitedError(self._seconds_left_in_cooldown(cooldown))
+                retry_after = self._seconds_left_in_cooldown(cooldown)
+                log_event(
+                    BLOCKED,
+                    {
+                        "scope": "otp",
+                        "kind": "resend_cooldown",
+                        "device": type(self).__name__,
+                        "user_id": getattr(self, "user_id", None),
+                        "attempts": self.attempts,
+                        "retry_after_seconds": retry_after,
+                    },
+                )
+                raise RateLimitedError(retry_after)
 
     def _resend_cooldown(self, was_burned):
         """How long to wait before the next code goes out.
@@ -262,10 +275,7 @@ class BasePhoneDevice(BaseOTPDevice):
         # Session devices have no user until the account is known; their number and country caps still apply.
         if self.user_id:
             exceeded = hit_user_otp_limit(self.user_id)
-            if exceeded:
-                logger.warning(
-                    "OTP for user %s blocked: rate limited for %ss", self.user_id, exceeded.retry_after_seconds
-                )
+            if exceeded:  # hit() logs the block
                 raise RateLimitedError(exceeded.retry_after_seconds)
         try:
             send_sms(self.phone_number, self.otp_message)
@@ -294,9 +304,14 @@ class PhoneDevice(BasePhoneDevice):
         """Callers that cannot report a wait leave suppress_rate_limit on, making a rate limit a no-op."""
         try:
             return super().generate_challenge()
-        except RateLimitedError:
+        except RateLimitedError as e:
             if not suppress_rate_limit:
                 raise
+            # The caller reports success, so the user waits for a code that isn't coming.
+            log_event(
+                SUPPRESSED,
+                {"scope": "otp", "user_id": self.user_id, "retry_after_seconds": e.retry_after_seconds},
+            )
             return self.otp_message
 
 
