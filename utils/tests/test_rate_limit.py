@@ -2,7 +2,7 @@ from unittest import mock
 
 import pytest
 
-from utils.rate_limit import Limit, hit
+from utils.rate_limit import Limit, hit, release
 
 
 @pytest.fixture
@@ -68,3 +68,18 @@ def test_a_key_that_expires_between_calls_starts_again():
         assert hit("key", [Limit(1, 60)]) is None
 
     assert cache.add.call_count == 2
+
+
+@pytest.mark.usefixtures("frozen_time")
+def test_release_takes_back_a_hit():
+    limits = [Limit(1, 60), Limit(1, 60 * 60)]
+    hit("key", limits)
+    release("key", limits)
+
+    assert hit("key", limits) is None
+
+
+def test_release_without_a_hit_does_nothing():
+    release("key", [Limit(1, 60)])
+
+    assert hit("key", [Limit(1, 60)]) is None

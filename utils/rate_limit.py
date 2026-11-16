@@ -51,6 +51,28 @@ def hit(key: str, limits: list[Limit]) -> Exceeded | None:
     return max(exceeded, key=lambda e: e.retry_after_seconds, default=None)
 
 
+def release(key: str, limits: list[Limit]):
+    """Take back one hit(), for an event that was rejected or then didn't happen.
+
+    If a window has ended in between, the count in the new window is reduced instead. That is at most
+    one event, once per window, and it errs on the side of allowing.
+    """
+    now = time.time()
+    try:
+        _decrement([f"{key}:{limit.window_seconds}:{int(now // limit.window_seconds)}" for limit in limits])
+    except Exception:
+        logger.exception("Rate limit cache unavailable; could not release %s", key.rpartition(":")[0])
+
+
+def _decrement(cache_keys):
+    cache = caches[CACHE_ALIAS]
+    for cache_key in cache_keys:
+        try:
+            cache.decr(cache_key)
+        except ValueError:
+            pass  # The window has ended, so there is nothing to take off.
+
+
 def _increment(cache_key, timeout):
     """Add 1 to the key's count. add() and incr() are each atomic, so concurrent callers never share a count."""
     cache = caches[CACHE_ALIAS]

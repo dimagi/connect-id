@@ -239,6 +239,18 @@ class TestValidatePhone:
         assert response.status_code == 200
         assert mock_send_sms.call_count == 2
 
+    @pytest.mark.django_db
+    def test_user_otp_limit_returns_429(self, auth_device, user, settings):
+        settings.OTP_USER_HOURLY_LIMIT = 1
+        with mock.patch("users.models.send_sms") as mock_send_sms:
+            PhoneDeviceFactory(user=user).generate_challenge()
+            response = auth_device.post(reverse("validate_phone"))
+
+        assert response.status_code == 429
+        assert response.json()["error_code"] == ErrorCodes.RATE_LIMITED
+        assert response.json()["retry_after_seconds"] > 0
+        assert mock_send_sms.call_count == 1
+
 
 class TestValidateSecondaryPhone:
     def test_no_recovery_phone(self, auth_device):

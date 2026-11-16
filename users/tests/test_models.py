@@ -7,8 +7,9 @@ from django.contrib.auth.hashers import check_password
 from django.db import IntegrityError, connection
 from django.utils.timezone import now
 
+from sms import SmsCountryNotSupportedError, SmsRateLimitedError, SmsSendError
 from users.const import MAX_OTP_BURN_COOLDOWN_HOURS, MAX_OTP_VERIFY_ATTEMPTS
-from users.exceptions import RateLimitedError
+from users.exceptions import RateLimitedError, UnsupportedCountryError
 from users.factories import (
     ConfigurationSessionFactory,
     PhoneDeviceFactory,
@@ -305,3 +306,68 @@ class TestOTPDeviceConcurrentVerification:
         assert not errors, errors
         otp_device.refresh_from_db()
         assert otp_device.failed_verifications == racers
+
+
+@pytest.mark.django_db
+class TestUserOTPLimit:
+    def test_caps_otps_across_a_users_numbers(self, settings):
+        settings.OTP_USER_HOURLY_LIMIT = 2
+        user = UserFactory()
+        primary, secondary, payment = (PhoneDeviceFactory(user=user) for _ in range(3))
+        primary.generate_challenge()
+        secondary.generate_challenge()
+
+        with pytest.raises(RateLimitedError) as excinfo:
+            payment.generate_challenge(suppress_rate_limit=False)
+
+        assert excinfo.value.retry_after_seconds > 0
+        payment.refresh_from_db()
+        assert payment.otp_last_sent is None
+
+    def test_users_are_counted_separately(self, settings):
+        settings.OTP_USER_HOURLY_LIMIT = 1
+        PhoneDeviceFactory().generate_challenge()
+
+        PhoneDeviceFactory().generate_challenge(suppress_rate_limit=False)
+
+    def test_session_devices_without_a_user_are_not_capped_per_user(self, settings):
+        settings.OTP_USER_HOURLY_LIMIT = 0
+        device = SessionPhoneDeviceFactory()
+        assert device.user_id is None
+
+        device.generate_challenge()
+
+        device.refresh_from_db()
+        assert device.otp_last_sent is not None
+
+
+@pytest.mark.django_db
+class TestUserOTPLimitWindows:
+    def test_hourly_rejections_do_not_use_up_the_daily_limit(self, settings):
+        settings.OTP_USER_HOURLY_LIMIT = 1
+        settings.OTP_USER_DAILY_LIMIT = 2
+        user = UserFactory()
+        with mock.patch("utils.rate_limit.time.time", return_value=1000.0):
+            PhoneDeviceFactory(user=user).generate_challenge()
+            for _ in range(3):
+                with pytest.raises(RateLimitedError):
+                    PhoneDeviceFactory(user=user).generate_challenge(suppress_rate_limit=False)
+
+        with mock.patch("utils.rate_limit.time.time", return_value=1000.0 + 60 * 60):
+            PhoneDeviceFactory(user=user).generate_challenge(suppress_rate_limit=False)
+
+    @pytest.mark.parametrize(
+        "error, expected",
+        [
+            (SmsRateLimitedError(60), RateLimitedError),
+            (SmsCountryNotSupportedError(92), UnsupportedCountryError),
+            (SmsSendError("twilio", "account suspended"), SmsSendError),
+        ],
+    )
+    def test_otps_that_are_not_sent_do_not_count(self, settings, error, expected):
+        settings.OTP_USER_HOURLY_LIMIT = 1
+        user = UserFactory()
+        with mock.patch("users.models.send_sms", side_effect=error), pytest.raises(expected):
+            PhoneDeviceFactory(user=user).generate_challenge(suppress_rate_limit=False)
+
+        PhoneDeviceFactory(user=user).generate_challenge(suppress_rate_limit=False)
