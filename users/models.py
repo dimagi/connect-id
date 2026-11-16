@@ -22,6 +22,7 @@ from phonenumber_field.modelfields import PhoneNumberField
 
 from sms import SmsCountryNotSupportedError, SmsRateLimitedError, send_sms
 from users.exceptions import RateLimitedError, RecoveryPinNotSetError, UnsupportedCountryError
+from users.hashers import check_secret_password, make_secret_password
 from users.services import get_user_photo_base64
 
 from .const import MAX_BACKUP_CODE_ATTEMPTS, MAX_OTP_BURN_COOLDOWN_HOURS, MAX_OTP_VERIFY_ATTEMPTS
@@ -78,6 +79,18 @@ class ConnectUser(AbstractUser):
         if not self.recovery_pin:
             raise RecoveryPinNotSetError("Recovery pin is not set")
         return check_password(pin, self.recovery_pin)
+
+    def set_password(self, raw_password):
+        self.password = make_secret_password(raw_password)
+        self._password = raw_password
+
+    def check_password(self, raw_password):
+        def setter(raw_password):
+            self.set_password(raw_password)
+            self._password = None
+            self.save(update_fields=["password"])
+
+        return check_secret_password(raw_password, self.password, setter)
 
     def initiate_deactivation(self):
         self.deactivation_token = random_hex(7)
@@ -513,10 +526,14 @@ class UserDeviceInfo(models.Model):
         ordering = ["-last_accessed"]
 
     def set_password(self, raw_password):
-        self.password = make_password(raw_password)
+        self.password = make_secret_password(raw_password)
 
     def check_password(self, raw_password):
-        return check_password(raw_password, self.password)
+        def setter(raw_password):
+            self.set_password(raw_password)
+            self.save(update_fields=["password"])
+
+        return check_secret_password(raw_password, self.password, setter)
 
 
 class SessionUser(AnonymousUser):
