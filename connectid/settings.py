@@ -363,8 +363,7 @@ SMS_SUPPORTED_COUNTRY_CODES = env.list(
     ],
 )
 # Caps per destination country, applied separately to SMS sends and to new configuration sessions
-# (which can trigger a Firebase SMS that never passes through send_sms). The busiest country-hour
-# from mid-October to mid-November 2026 had 26 sessions, and the busiest country-day had 111.
+# (which can trigger a Firebase SMS that never passes through send_sms).
 PHONE_COUNTRY_HOURLY_LIMIT = env.int("PHONE_COUNTRY_HOURLY_LIMIT", default=50)
 PHONE_COUNTRY_DAILY_LIMIT = env.int("PHONE_COUNTRY_DAILY_LIMIT", default=300)
 # Caps on SMS sent to a single number.
