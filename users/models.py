@@ -2,6 +2,7 @@ import base64
 import logging
 import os
 from datetime import timedelta
+from functools import partial
 from secrets import token_hex
 from uuid import uuid4
 
@@ -23,6 +24,7 @@ from phonenumber_field.modelfields import PhoneNumberField
 from sms import SmsCountryNotSupportedError, SmsRateLimitedError, send_sms
 from sms.limits import hit_user_otp_limit, release_user_otp_limit
 from users.exceptions import RateLimitedError, RecoveryPinNotSetError, UnsupportedCountryError
+from users.hashers import check_secret_password, make_secret_password
 from users.services import get_user_photo_base64
 from utils.rate_limit import BLOCKED, SUPPRESSED, log_event
 
@@ -80,6 +82,13 @@ class ConnectUser(AbstractUser):
         if not self.recovery_pin:
             raise RecoveryPinNotSetError("Recovery pin is not set")
         return check_password(pin, self.recovery_pin)
+
+    def set_password(self, raw_password):
+        self.password = make_secret_password(raw_password)
+        self._password = raw_password
+
+    def check_password(self, raw_password):
+        return check_secret_password(raw_password, self.password, partial(rehash_password, self))
 
     def initiate_deactivation(self):
         self.deactivation_token = random_hex(7)
@@ -542,13 +551,20 @@ class UserDeviceInfo(models.Model):
         ordering = ["-last_accessed"]
 
     def set_password(self, raw_password):
-        self.password = make_password(raw_password)
+        self.password = make_secret_password(raw_password)
 
     def check_password(self, raw_password):
-        return check_password(raw_password, self.password)
+        return check_secret_password(raw_password, self.password, partial(rehash_password, self))
 
 
 class SessionUser(AnonymousUser):
     @property
     def is_authenticated(self):
         return True
+
+
+def rehash_password(obj, raw_password):
+    """Replace obj's stored hash with a new one, unless the password changed since it was checked."""
+    new_hash = make_secret_password(raw_password)
+    if type(obj).objects.filter(pk=obj.pk, password=obj.password).update(password=new_hash):
+        obj.password = new_hash

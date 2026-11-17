@@ -112,8 +112,20 @@ TRUSTED_COMMCAREHQ_HOSTS = [
 # Password validation
 # https://docs.djangoproject.com/en/4.1/ref/settings/#auth-password-validators
 
+PASSWORD_HASHERS = [
+    # Django's defaults, so PBKDF2 stays the default hasher.
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+    "django.contrib.auth.hashers.ScryptPasswordHasher",
+    # Only used for server-generated secrets, see users/hashers.py.
+    "users.hashers.GeneratedSecretHasher",
+]
+
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "users.validators.EntropyPasswordValidator", "OPTIONS": {"min_strength": 2}},
+    {"NAME": "users.validators.NotGeneratedSecretValidator"},
 ]
 
 # Internationalization
