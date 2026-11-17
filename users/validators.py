@@ -1,6 +1,8 @@
 from django.core.exceptions import ValidationError
 from zxcvbn import zxcvbn
 
+from users.hashers import is_generated_secret
+
 
 class EntropyPasswordValidator:
     def __init__(self, min_strength=2):
@@ -13,3 +15,17 @@ class EntropyPasswordValidator:
 
     def get_help_text(self):
         return "password is not complex enough"
+
+
+class NotGeneratedSecretValidator:
+    """Reject chosen passwords that look like server-generated secrets.
+
+    Those get the fast GeneratedSecretHasher, which is only safe for random secrets.
+    """
+
+    def validate(self, password, user=None):
+        if is_generated_secret(password):
+            raise ValidationError("password must not be only lowercase hex characters")
+
+    def get_help_text(self):
+        return "password must not be only lowercase hex characters"

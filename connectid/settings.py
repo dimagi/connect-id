@@ -125,6 +125,7 @@ PASSWORD_HASHERS = [
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "users.validators.EntropyPasswordValidator", "OPTIONS": {"min_strength": 2}},
+    {"NAME": "users.validators.NotGeneratedSecretValidator"},
 ]
 
 # Internationalization
