@@ -2,6 +2,7 @@ import base64
 import logging
 import os
 from datetime import timedelta
+from functools import partial
 from secrets import token_hex
 from uuid import uuid4
 
@@ -85,12 +86,7 @@ class ConnectUser(AbstractUser):
         self._password = raw_password
 
     def check_password(self, raw_password):
-        def setter(raw_password):
-            self.set_password(raw_password)
-            self._password = None
-            self.save(update_fields=["password"])
-
-        return check_secret_password(raw_password, self.password, setter)
+        return check_secret_password(raw_password, self.password, partial(rehash_password, self))
 
     def initiate_deactivation(self):
         self.deactivation_token = random_hex(7)
@@ -529,14 +525,17 @@ class UserDeviceInfo(models.Model):
         self.password = make_secret_password(raw_password)
 
     def check_password(self, raw_password):
-        def setter(raw_password):
-            self.set_password(raw_password)
-            self.save(update_fields=["password"])
-
-        return check_secret_password(raw_password, self.password, setter)
+        return check_secret_password(raw_password, self.password, partial(rehash_password, self))
 
 
 class SessionUser(AnonymousUser):
     @property
     def is_authenticated(self):
         return True
+
+
+def rehash_password(obj, raw_password):
+    """Replace obj's stored hash with a new one, unless the password changed since it was checked."""
+    new_hash = make_secret_password(raw_password)
+    if type(obj).objects.filter(pk=obj.pk, password=obj.password).update(password=new_hash):
+        obj.password = new_hash

@@ -2,6 +2,8 @@ from secrets import token_hex
 
 import pytest
 from django.contrib.auth.hashers import identify_hasher, make_password
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 
 from users.factories import UserDeviceInfoFactory, UserFactory
 from users.hashers import GeneratedSecretHasher, check_secret_password, is_generated_secret, make_secret_password
@@ -76,6 +78,17 @@ class TestPasswordUpgrade:
         obj.refresh_from_db()
         assert obj.password == stored
 
+    @pytest.mark.parametrize("model", [ConnectUser, UserDeviceInfo])
+    def test_rehash_keeps_concurrent_password_change(self, model):
+        obj = _make(model, make_password(GENERATED))
+        changed = make_secret_password(token_hex())
+        model.objects.filter(pk=obj.pk).update(password=changed)
+
+        assert obj.check_password(GENERATED)
+
+        obj.refresh_from_db()
+        assert obj.password == changed
+
     def test_chosen_user_password_stays_on_pbkdf2(self):
         user = UserFactory()
         user.set_password("correct horse battery staple")
@@ -85,6 +98,11 @@ class TestPasswordUpgrade:
 
         user.refresh_from_db()
         assert identify_hasher(user.password).algorithm == "pbkdf2_sha256"
+
+
+def test_chosen_password_cannot_look_generated():
+    with pytest.raises(ValidationError, match="lowercase hex"):
+        validate_password(token_hex(16))
 
 
 def _make(model, encoded):
