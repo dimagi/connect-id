@@ -54,6 +54,7 @@ deploy/             # Kamal deployment config
 - `users/models.py` - ConnectUser (custom user model), UserKey, PhoneDevice, Credential models
 - `users/views.py` - Main API endpoints (~1000 lines)
 - `conftest.py` - Shared pytest fixtures (user, authed_client, oauth_app, etc.)
+- `docs/otp-flows.md` - Every OTP send/confirm endpoint, the device model behind it, auth per caller, and rate-limit/attempt rules
 
 ## Tech Stack
 
