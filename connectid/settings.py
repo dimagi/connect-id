@@ -73,7 +73,6 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "axes.middleware.AxesMiddleware",
     "utils.middleware.CurrentVersionMiddleware",
-    "utils.middleware.Log401ErrorsMiddleware",
     "waffle.middleware.WaffleMiddleware",
 ]
 
