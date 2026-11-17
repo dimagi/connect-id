@@ -1,4 +1,9 @@
+import base64
+import hashlib
+import json
 import logging
+import time
+from collections.abc import Mapping
 
 from django.conf import settings
 from google.oauth2 import service_account
@@ -20,17 +25,53 @@ logger = logging.getLogger(__name__)
 APP_PACKAGE_NAME = "org.commcare.dalvik"
 GOOGLE_SERVICE_NAME = "playintegrity"
 
+# How old a token's verdict may be. The app fetches a token right before the request it is for.
+MAX_TOKEN_AGE_SECONDS = 10 * 60
+
+
+def compute_request_hashes(raw_body: bytes | None, data: Mapping) -> set[str]:
+    """The hashes the Android app could have put in the integrity token for this request.
+
+    The app hashes `JSONObject(body).toString()` and posts the same map through Gson. The two agree byte for
+    byte unless a value has characters only one of them escapes ("/" by JSONObject; <, >, &, = and ' by
+    Gson), so the raw body almost always gives the hash. For the rest, rebuild what JSONObject writes from
+    the parsed body: compact JSON in the order the keys arrived, "/" escaped as "\\/".
+    """
+    serialized = json.dumps(dict(data.items()), ensure_ascii=False, separators=(",", ":")).replace("/", "\\/")
+    hashes = {_sha256_base64(serialized.encode())}
+    if raw_body is not None:
+        hashes.add(_sha256_base64(raw_body))
+    return hashes
+
+
+def _sha256_base64(data: bytes) -> str:
+    return base64.b64encode(hashlib.sha256(data).digest()).decode()
+
 
 class AppIntegrityService:
     """
     Verifies the application integrity of the app using Google Play Integrity API.
     """
 
-    def __init__(self, token: str, request_hash: str, app_package: str | None = None, is_demo_user: bool = False):
+    def __init__(
+        self,
+        token: str,
+        request_hash: str,
+        app_package: str | None = None,
+        is_demo_user: bool = False,
+        expected_request_hashes: set[str] | None = None,
+        enforce_request_binding: bool = False,
+    ):
+        """`expected_request_hashes` are the hashes of the request the token arrived with (see
+        compute_request_hashes). Given, the token must have been made for that request, recently; unless
+        `enforce_request_binding`, a token that wasn't is only logged.
+        """
         self.token = token
         self.request_hash = request_hash
         self.package_name = app_package or APP_PACKAGE_NAME
         self.is_demo_user = is_demo_user
+        self.expected_request_hashes = expected_request_hashes
+        self.enforce_request_binding = enforce_request_binding
 
     @property
     def evaluators(self):
@@ -40,6 +81,7 @@ class AppIntegrityService:
         """
         return [
             lambda x: self.check_request_details(x.requestDetails),
+            lambda x: self.check_request_binding(x.requestDetails),
             lambda x: self.check_app_integrity(x.appIntegrity),
             lambda x: self.check_device_integrity(x.deviceIntegrity),
             lambda x: self.check_account_details(x.accountDetails),
@@ -94,6 +136,38 @@ class AppIntegrityService:
             raise IntegrityRequestError("Request hash mismatch")
         if request_details.requestPackageName != self.package_name:
             raise IntegrityRequestError("Request package name mismatch")
+
+    def check_request_binding(self, request_details: RequestDetails):
+        """Check the token was made for this request, and recently.
+
+        check_request_details compares the token with the hash header, which the client also chooses, so
+        on its own one genuine token can be replayed with any phone number for as long as Google decodes it.
+        """
+        if self.expected_request_hashes is None:
+            return
+
+        problems = []
+        if request_details.requestHash not in self.expected_request_hashes:
+            problems.append("hash_mismatch")
+        age_seconds = _age_seconds(request_details.timestampMillis)
+        if age_seconds is None or abs(age_seconds) > MAX_TOKEN_AGE_SECONDS:
+            problems.append("stale")
+        if not problems:
+            return
+
+        fields = {
+            "problems": ",".join(problems),
+            "enforced": self.enforce_request_binding,
+            "age_seconds": age_seconds,
+            # Not secret, and the same value across requests is what a replayed token looks like.
+            "token_request_hash": request_details.requestHash,
+        }
+        logger.warning(
+            " ".join(["integrity_request_binding_failed", *(f"{name}={value}" for name, value in fields.items())]),
+            extra={"app_integrity": fields},
+        )
+        if self.enforce_request_binding:
+            raise IntegrityRequestError("Token not made for this request")
 
     def check_app_integrity(self, app_integrity: AppIntegrity):
         if app_integrity.packageName != self.package_name:
@@ -161,3 +235,10 @@ class AppIntegrityService:
             passed_device_integrity_check=passed_device_integrity_check,
             passed_account_details_check=passed_account_details_check,
         )
+
+
+def _age_seconds(timestamp_millis: str) -> int | None:
+    try:
+        return int(time.time() - int(timestamp_millis) / 1000)
+    except (TypeError, ValueError):
+        return None
