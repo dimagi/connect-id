@@ -20,6 +20,7 @@ from utils.app_integrity.exceptions import (
     IntegrityRequestError,
 )
 from utils.app_integrity.schemas import AccountDetails, AppIntegrity, DeviceIntegrity, RequestDetails, VerdictResponse
+from utils.rate_limit import CACHE_ALIAS as USED_TOKEN_CACHE_ALIAS
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +29,8 @@ GOOGLE_SERVICE_NAME = "playintegrity"
 
 # How old a token's verdict may be. The app fetches a token right before the request it is for.
 MAX_TOKEN_AGE_SECONDS = 10 * 60
-# Tokens already used, in the cache every worker shares. A token is accepted up to MAX_TOKEN_AGE_SECONDS
-# either side of now, so it is remembered for the whole of that window.
-USED_TOKEN_CACHE_ALIAS = "rate_limit"
+# Tokens already used are kept in the rate limit cache, which every worker shares. A token is accepted up to
+# MAX_TOKEN_AGE_SECONDS either side of now, so it is remembered for the whole of that window.
 USED_TOKEN_TTL_SECONDS = 2 * MAX_TOKEN_AGE_SECONDS
 
 

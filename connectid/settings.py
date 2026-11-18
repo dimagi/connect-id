@@ -267,7 +267,8 @@ def traces_sampler(sampling_context):
 
 CACHES = {
     "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
-    # Shared by all workers and hosts, so rate limits (utils.rate_limit) count every request.
+    # Shared by all workers and hosts, so rate limits (utils.rate_limit) count every request and a used
+    # Play Integrity token (utils.app_integrity.google_play_integrity) is seen by every worker.
     "rate_limit": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
         "LOCATION": env("RATE_LIMIT_REDIS_URL", default=CELERY_BROKER_URL),
