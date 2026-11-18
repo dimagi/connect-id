@@ -77,7 +77,6 @@ class AppIntegrityService:
         self.is_demo_user = is_demo_user
         self.expected_request_hashes = expected_request_hashes
         self.enforce_request_binding = enforce_request_binding
-        self.replayed = False
 
     @property
     def evaluators(self):
@@ -97,12 +96,20 @@ class AppIntegrityService:
         """
         Raises an exception if the app integrity is compromised, otherwise does nothing.
         """
+        claimed = False
         if self.expected_request_hashes is not None:
-            self.replayed = not self._claim_token()
-            if self.replayed and self.enforce_request_binding:
-                # Rejected before Google, so replays don't use up the decode quota.
-                self._binding_failed(["replayed"], token_request_hash=self.request_hash)
-        raw_verdict = self.obtain_verdict()
+            claimed = self._claim_token()
+            if not claimed:
+                # Logged (and, if enforcing, rejected) before Google: replays don't use up the decode quota,
+                # and one is logged even if the decode then fails.
+                self._binding_failed(["replayed"])
+        try:
+            raw_verdict = self.obtain_verdict()
+        except Exception:
+            if claimed:
+                # The token was never checked, so sending it again is a retry rather than a replay.
+                self._release_token()
+            raise
         self.analyze_verdict(self.parse_raw_verdict(raw_verdict))
 
     def obtain_verdict(self) -> dict:
@@ -157,7 +164,7 @@ class AppIntegrityService:
         if self.expected_request_hashes is None:
             return
 
-        problems = ["replayed"] if self.replayed else []
+        problems = []
         if request_details.requestHash not in self.expected_request_hashes:
             problems.append("hash_mismatch")
         age_seconds = _age_seconds(request_details.timestampMillis)
@@ -172,13 +179,26 @@ class AppIntegrityService:
         Without this, a token passes binding as often as it is sent with the same body for as long as it is
         fresh, and each pass counts towards the country's configuration session limit.
         """
-        key = f"integrity_token:{hashlib.sha256(self.token.encode()).hexdigest()}"
         try:
-            return caches[USED_TOKEN_CACHE_ALIAS].add(key, 1, USED_TOKEN_TTL_SECONDS)
+            return caches[USED_TOKEN_CACHE_ALIAS].add(self._used_token_key, 1, USED_TOKEN_TTL_SECONDS)
         except Exception:
             # Failing closed would stop every registration while the cache is down.
             logger.exception("Used integrity token cache unavailable; not checking for a replay")
             return True
+
+    def _release_token(self):
+        try:
+            caches[USED_TOKEN_CACHE_ALIAS].delete(self._used_token_key)
+        except Exception:
+            logger.exception("Used integrity token cache unavailable; could not release the token")
+
+    @property
+    def _token_fingerprint(self) -> str:
+        return hashlib.sha256(self.token.encode()).hexdigest()
+
+    @property
+    def _used_token_key(self) -> str:
+        return f"integrity_token:{self._token_fingerprint}"
 
     def _binding_failed(self, problems: list[str], age_seconds: int | None = None, token_request_hash=None):
         """Log a token that isn't bound to this request, and reject it if enforcing."""
@@ -186,12 +206,13 @@ class AppIntegrityService:
             "problems": ",".join(problems),
             "enforced": self.enforce_request_binding,
             "age_seconds": age_seconds,
-            # Not secret, and the same value across requests is what a replayed token looks like.
-            "token_request_hash": token_request_hash,
+            # Identifies the token without revealing it: the same value on several requests is a replay.
+            "token_fingerprint": self._token_fingerprint[:16],
         }
         logger.warning(
             " ".join(["integrity_request_binding_failed", *(f"{name}={value}" for name, value in fields.items())]),
-            extra={"app_integrity": fields},
+            # The client chooses the hash, so it stays out of the space-separated message.
+            extra={"app_integrity": {**fields, "token_request_hash": token_request_hash}},
         )
         if self.enforce_request_binding:
             raise IntegrityRequestError("Token not made for this request")

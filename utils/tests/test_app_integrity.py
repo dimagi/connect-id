@@ -282,6 +282,41 @@ class TestRequestBinding:
         assert caplog.text.count("integrity_request_binding_failed") == 1
         assert "problems=replayed enforced=False" in caplog.text
 
+    def service(self, enforce=True):
+        return AppIntegrityService(
+            token="test_token",
+            request_hash=self.request_hash,
+            expected_request_hashes={self.request_hash},
+            enforce_request_binding=enforce,
+        )
+
+    def test_token_is_released_when_google_fails(self, caplog):
+        with patch.object(AppIntegrityService, "obtain_verdict", side_effect=ConnectionError("google down")):
+            with pytest.raises(ConnectionError):
+                self.service().verify_integrity()
+
+        # Sending the token again is a retry of a check that never happened.
+        self.verify(verdict_for(self.request_hash), enforce=True)
+        assert "integrity_request_binding_failed" not in caplog.text
+
+    def test_replay_is_logged_when_google_then_fails(self, caplog):
+        self.verify(verdict_for(self.request_hash), enforce=False)
+
+        with patch.object(AppIntegrityService, "obtain_verdict", side_effect=ConnectionError("google down")):
+            with pytest.raises(ConnectionError):
+                self.service(enforce=False).verify_integrity()
+
+        assert "problems=replayed enforced=False" in caplog.text
+
+    def test_log_identifies_the_token_not_the_client_hash(self, caplog):
+        self.verify(verdict_for("b3RoZXIgcmVxdWVzdA=="), enforce=False)
+
+        record = next(r for r in caplog.records if "integrity_request_binding_failed" in r.getMessage())
+        fingerprint = hashlib.sha256(b"test_token").hexdigest()[:16]
+        assert f"token_fingerprint={fingerprint}" in record.getMessage()
+        assert "b3RoZXIgcmVxdWVzdA==" not in record.getMessage()
+        assert record.app_integrity["token_request_hash"] == "b3RoZXIgcmVxdWVzdA=="
+
     def test_another_token_is_not_a_replay(self, caplog):
         self.verify(verdict_for(self.request_hash), enforce=True)
         service = AppIntegrityService(
