@@ -101,7 +101,7 @@ class AppIntegrityService:
             self.replayed = not self._claim_token()
             if self.replayed and self.enforce_request_binding:
                 # Rejected before Google, so replays don't use up the decode quota.
-                self._binding_failed(["replayed"])
+                self._binding_failed(["replayed"], token_request_hash=self.request_hash)
         raw_verdict = self.obtain_verdict()
         self.analyze_verdict(self.parse_raw_verdict(raw_verdict))
 
