@@ -261,6 +261,57 @@ class TestRequestBinding:
 
         assert "integrity_request_binding_failed" not in caplog.text
 
+    def test_replayed_token_is_rejected_before_google_when_enforced(self, caplog):
+        self.verify(verdict_for(self.request_hash), enforce=True)
+
+        with pytest.raises(IntegrityRequestError), patch.object(AppIntegrityService, "obtain_verdict") as obtain:
+            AppIntegrityService(
+                token="test_token",
+                request_hash=self.request_hash,
+                expected_request_hashes={self.request_hash},
+                enforce_request_binding=True,
+            ).verify_integrity()
+
+        obtain.assert_not_called()
+        assert "problems=replayed enforced=True" in caplog.text
+
+    def test_replayed_token_is_only_logged_when_not_enforced(self, caplog):
+        self.verify(verdict_for(self.request_hash), enforce=False)
+        self.verify(verdict_for(self.request_hash), enforce=False)
+
+        assert caplog.text.count("integrity_request_binding_failed") == 1
+        assert "problems=replayed enforced=False" in caplog.text
+
+    def test_another_token_is_not_a_replay(self, caplog):
+        self.verify(verdict_for(self.request_hash), enforce=True)
+        service = AppIntegrityService(
+            token="another_token",
+            request_hash=self.request_hash,
+            expected_request_hashes={self.request_hash},
+            enforce_request_binding=True,
+        )
+        with patch.object(AppIntegrityService, "obtain_verdict", return_value=verdict_for(self.request_hash)):
+            service.verify_integrity()
+
+        assert "integrity_request_binding_failed" not in caplog.text
+
+    def test_token_is_not_claimed_without_expected_hashes(self):
+        for _ in range(2):
+            service = AppIntegrityService(token="test_token", request_hash=self.request_hash)
+            with patch.object(AppIntegrityService, "obtain_verdict", return_value=verdict_for(self.request_hash)):
+                service.verify_integrity()
+
+        # Sampling (report_integrity) doesn't use up the token for start_configuration.
+        self.verify(verdict_for(self.request_hash), enforce=True)
+
+    def test_cache_outage_allows_the_token(self, caplog):
+        with patch("utils.app_integrity.google_play_integrity.caches") as caches_mock:
+            caches_mock.__getitem__.return_value.add.side_effect = ConnectionError("redis down")
+            self.verify(verdict_for(self.request_hash), enforce=True)
+            self.verify(verdict_for(self.request_hash), enforce=True)
+
+        assert "Used integrity token cache unavailable" in caplog.text
+
 
 @pytest.mark.django_db
 @patch("users.views.get_user_toggles", new=lambda **kwargs: {})
@@ -304,3 +355,12 @@ class TestStartConfigurationRequestBinding:
             "error_code": ErrorCodes.INTEGRITY_ERROR,
             "error_sub_code": IntegrityRequestError.code,
         }
+
+    def test_same_token_sent_again(self, api_client):
+        token_hash = sha256_base64(json.dumps(self.body))
+        assert self.post(api_client, token_hash).status_code == 200
+
+        response = self.post(api_client, token_hash)
+
+        assert response.status_code == 403
+        assert response.json()["error_sub_code"] == IntegrityRequestError.code

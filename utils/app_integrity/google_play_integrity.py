@@ -6,6 +6,7 @@ import time
 from collections.abc import Mapping
 
 from django.conf import settings
+from django.core.cache import caches
 from google.oauth2 import service_account
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
@@ -27,6 +28,10 @@ GOOGLE_SERVICE_NAME = "playintegrity"
 
 # How old a token's verdict may be. The app fetches a token right before the request it is for.
 MAX_TOKEN_AGE_SECONDS = 10 * 60
+# Tokens already used, in the cache every worker shares. A token is accepted up to MAX_TOKEN_AGE_SECONDS
+# either side of now, so it is remembered for the whole of that window.
+USED_TOKEN_CACHE_ALIAS = "rate_limit"
+USED_TOKEN_TTL_SECONDS = 2 * MAX_TOKEN_AGE_SECONDS
 
 
 def compute_request_hashes(raw_body: bytes | None, data: Mapping) -> set[str]:
@@ -72,6 +77,7 @@ class AppIntegrityService:
         self.is_demo_user = is_demo_user
         self.expected_request_hashes = expected_request_hashes
         self.enforce_request_binding = enforce_request_binding
+        self.replayed = False
 
     @property
     def evaluators(self):
@@ -91,6 +97,11 @@ class AppIntegrityService:
         """
         Raises an exception if the app integrity is compromised, otherwise does nothing.
         """
+        if self.expected_request_hashes is not None:
+            self.replayed = not self._claim_token()
+            if self.replayed and self.enforce_request_binding:
+                # Rejected before Google, so replays don't use up the decode quota.
+                self._binding_failed(["replayed"])
         raw_verdict = self.obtain_verdict()
         self.analyze_verdict(self.parse_raw_verdict(raw_verdict))
 
@@ -138,7 +149,7 @@ class AppIntegrityService:
             raise IntegrityRequestError("Request package name mismatch")
 
     def check_request_binding(self, request_details: RequestDetails):
-        """Check the token was made for this request, and recently.
+        """Check the token was made for this request, recently, and hasn't been used before.
 
         check_request_details compares the token with the hash header, which the client also chooses, so
         on its own one genuine token can be replayed with any phone number for as long as Google decodes it.
@@ -146,21 +157,37 @@ class AppIntegrityService:
         if self.expected_request_hashes is None:
             return
 
-        problems = []
+        problems = ["replayed"] if self.replayed else []
         if request_details.requestHash not in self.expected_request_hashes:
             problems.append("hash_mismatch")
         age_seconds = _age_seconds(request_details.timestampMillis)
         if age_seconds is None or abs(age_seconds) > MAX_TOKEN_AGE_SECONDS:
             problems.append("stale")
-        if not problems:
-            return
+        if problems:
+            self._binding_failed(problems, age_seconds, request_details.requestHash)
 
+    def _claim_token(self) -> bool:
+        """Record the token as used. False if it already was: the same token, sent again.
+
+        Without this, a token passes binding as often as it is sent with the same body for as long as it is
+        fresh, and each pass counts towards the country's configuration session limit.
+        """
+        key = f"integrity_token:{hashlib.sha256(self.token.encode()).hexdigest()}"
+        try:
+            return caches[USED_TOKEN_CACHE_ALIAS].add(key, 1, USED_TOKEN_TTL_SECONDS)
+        except Exception:
+            # Failing closed would stop every registration while the cache is down.
+            logger.exception("Used integrity token cache unavailable; not checking for a replay")
+            return True
+
+    def _binding_failed(self, problems: list[str], age_seconds: int | None = None, token_request_hash=None):
+        """Log a token that isn't bound to this request, and reject it if enforcing."""
         fields = {
             "problems": ",".join(problems),
             "enforced": self.enforce_request_binding,
             "age_seconds": age_seconds,
             # Not secret, and the same value across requests is what a replayed token looks like.
-            "token_request_hash": request_details.requestHash,
+            "token_request_hash": token_request_hash,
         }
         logger.warning(
             " ".join(["integrity_request_binding_failed", *(f"{name}={value}" for name, value in fields.items())]),
