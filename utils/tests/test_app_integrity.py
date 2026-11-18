@@ -1,9 +1,16 @@
+import base64
+import copy
+import hashlib
 import json
+import time
 from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
+from django.urls import reverse
+from waffle.testutils import override_switch
 
+from flags.const import INTEGRITY_REQUEST_BINDING
 from utils.app_integrity.const import ErrorCodes
 from utils.app_integrity.decorators import validate_app_integrity
 from utils.app_integrity.exceptions import (
@@ -12,7 +19,11 @@ from utils.app_integrity.exceptions import (
     DeviceIntegrityError,
     IntegrityRequestError,
 )
-from utils.app_integrity.google_play_integrity import AppIntegrityService
+from utils.app_integrity.google_play_integrity import (
+    MAX_TOKEN_AGE_SECONDS,
+    AppIntegrityService,
+    compute_request_hashes,
+)
 
 
 def get_verdict(response_filepath):
@@ -171,3 +182,125 @@ class TestValidateAppIntegrity:
 
             assert response_data["error_code"] == error_code
             assert response_data["error_sub_code"] == error_sub_code
+
+
+def sha256_base64(text):
+    return base64.b64encode(hashlib.sha256(text.encode()).digest()).decode()
+
+
+def verdict_for(request_hash, age_seconds=0):
+    """A passing verdict for a token made for `request_hash`, `age_seconds` ago."""
+    payload = copy.deepcopy(
+        get_verdict(response_filepath="utils/tests/data/success_integrity_response.json")["tokenPayloadExternal"]
+    )
+    payload["requestDetails"]["requestHash"] = request_hash
+    payload["requestDetails"]["timestampMillis"] = str(int((time.time() - age_seconds) * 1000))
+    return payload
+
+
+class TestComputeRequestHashes:
+    def test_matches_android_jsonobject(self):
+        # What Android's JSONObject(body).toString() writes: compact, keys in order, "/" escaped.
+        body = {"phone_number": "+258860005049", "application_id": "org.commcare.dalvik", "device": "SM-A/105é"}
+        android_json = '{"phone_number":"+258860005049","application_id":"org.commcare.dalvik","device":"SM-A\\/105é"}'
+
+        assert sha256_base64(android_json) in compute_request_hashes(None, body)
+
+    def test_includes_hash_of_raw_body(self):
+        raw_body = b'{"device":"a\\u003db","phone_number":"+258860005049"}'
+
+        hashes = compute_request_hashes(raw_body, {"device": "a=b", "phone_number": "+258860005049"})
+
+        assert base64.b64encode(hashlib.sha256(raw_body).digest()).decode() in hashes
+
+
+class TestRequestBinding:
+    request_hash = "aGVsbG8gd29scmQgdGhlcmU"
+
+    def verify(self, verdict, enforce, expected_hashes=None):
+        service = AppIntegrityService(
+            token="test_token",
+            request_hash=verdict["requestDetails"]["requestHash"],
+            expected_request_hashes={self.request_hash} if expected_hashes is None else expected_hashes,
+            enforce_request_binding=enforce,
+        )
+        with patch.object(AppIntegrityService, "obtain_verdict", return_value=verdict):
+            service.verify_integrity()
+
+    @pytest.mark.parametrize("enforce", [True, False])
+    def test_fresh_token_for_this_request_passes(self, enforce, caplog):
+        self.verify(verdict_for(self.request_hash), enforce)
+
+        assert "integrity_request_binding_failed" not in caplog.text
+
+    @pytest.mark.parametrize(
+        "token_hash, age_seconds, problems",
+        [
+            ("b3RoZXIgcmVxdWVzdA==", 0, "hash_mismatch"),
+            (request_hash, MAX_TOKEN_AGE_SECONDS + 60, "stale"),
+            (request_hash, -(MAX_TOKEN_AGE_SECONDS + 60), "stale"),
+        ],
+    )
+    def test_unbound_token_is_rejected_when_enforced(self, token_hash, age_seconds, problems, caplog):
+        with pytest.raises(IntegrityRequestError):
+            self.verify(verdict_for(token_hash, age_seconds), enforce=True)
+
+        assert f"problems={problems} enforced=True" in caplog.text
+
+    def test_unbound_token_is_only_logged_when_not_enforced(self, caplog):
+        self.verify(verdict_for("b3RoZXIgcmVxdWVzdA==", age_seconds=MAX_TOKEN_AGE_SECONDS + 60), enforce=False)
+
+        assert "problems=hash_mismatch,stale enforced=False" in caplog.text
+
+    def test_skipped_without_expected_hashes(self, caplog):
+        service = AppIntegrityService(token="test_token", request_hash="b3RoZXIgcmVxdWVzdA==")
+        with patch.object(
+            AppIntegrityService, "obtain_verdict", return_value=verdict_for("b3RoZXIgcmVxdWVzdA==", 9999)
+        ):
+            service.verify_integrity()
+
+        assert "integrity_request_binding_failed" not in caplog.text
+
+
+@pytest.mark.django_db
+@patch("users.views.get_user_toggles", new=lambda **kwargs: {})
+@patch("utils.app_integrity.decorators.check_number_for_existing_invites", new=lambda phone_number: False)
+class TestStartConfigurationRequestBinding:
+    @pytest.fixture(autouse=True)
+    def enforce_request_binding(self):
+        with override_switch(INTEGRITY_REQUEST_BINDING, active=True):
+            yield
+
+    body = {
+        "phone_number": "+27731234567",
+        "application_id": "org.commcare.dalvik",
+        "gps_location": "1.0 2.0 0.0 5.0",
+        "cc_device_id": "device-1",
+    }
+
+    def post(self, api_client, token_hash):
+        raw_body = json.dumps(self.body)
+        with patch.object(AppIntegrityService, "obtain_verdict", return_value=verdict_for(token_hash)):
+            return api_client.post(
+                reverse("start_device_configuration"),
+                data=raw_body,
+                content_type="application/json",
+                HTTP_CC_INTEGRITY_TOKEN="token",
+                HTTP_CC_REQUEST_HASH=token_hash,
+            )
+
+    def test_token_made_for_this_request(self, api_client):
+        response = self.post(api_client, sha256_base64(json.dumps(self.body)))
+
+        assert response.status_code == 200
+
+    def test_token_made_for_another_number(self, api_client):
+        other_body = {**self.body, "phone_number": "+27731234568"}
+
+        response = self.post(api_client, sha256_base64(json.dumps(other_body)))
+
+        assert response.status_code == 403
+        assert response.json() == {
+            "error_code": ErrorCodes.INTEGRITY_ERROR,
+            "error_sub_code": IntegrityRequestError.code,
+        }

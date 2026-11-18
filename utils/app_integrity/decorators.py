@@ -3,9 +3,12 @@ import logging
 import requests
 from django.conf import settings
 from django.http import HttpResponseBadRequest, HttpResponseForbidden, HttpResponseServerError, JsonResponse
+from django.http.request import RawPostDataException
 from googleapiclient.errors import HttpError
 from phonenumbers.phonenumberutil import NumberParseException
+from waffle import switch_is_active
 
+from flags.const import INTEGRITY_REQUEST_BINDING
 from users.const import TEST_NUMBER_PREFIX
 from utils.app_integrity.const import INTEGRITY_REQUEST_HASH_KEY, INTEGRITY_TOKEN_HEADER_KEY, ErrorCodes
 from utils.app_integrity.exceptions import (
@@ -14,13 +17,15 @@ from utils.app_integrity.exceptions import (
     DeviceIntegrityError,
     IntegrityRequestError,
 )
-from utils.app_integrity.google_play_integrity import AppIntegrityService
+from utils.app_integrity.google_play_integrity import AppIntegrityService, compute_request_hashes
 from utils.connect import check_number_for_existing_invites
 
 logger = logging.getLogger(__name__)
 
 
-def validate_app_integrity(integrity_token, request_hash, app_package, phone_number):
+def validate_app_integrity(integrity_token, request_hash, app_package, phone_number, expected_request_hashes=None):
+    """`expected_request_hashes`, if given, are those of the request the token came with (see
+    compute_request_hashes): the token must have been made for it."""
     logging_prefix = f"App integrity error for ...{phone_number[-6:]}"
 
     if not (integrity_token and request_hash):
@@ -37,6 +42,8 @@ def validate_app_integrity(integrity_token, request_hash, app_package, phone_num
         request_hash=request_hash,
         app_package=app_package,
         is_demo_user=is_demo_user,
+        expected_request_hashes=expected_request_hashes,
+        enforce_request_binding=expected_request_hashes is not None and switch_is_active(INTEGRITY_REQUEST_BINDING),
     )
     try:
         service.verify_integrity()
@@ -60,6 +67,11 @@ def require_app_integrity(view):
     """
 
     def wrapper(request, *args, **kwargs):
+        # Read before request.data, which consumes the stream; DRF then parses from this copy.
+        try:
+            raw_body = request.body
+        except RawPostDataException:
+            raw_body = None
         integrity_token = request.headers.get(INTEGRITY_TOKEN_HEADER_KEY)
         request_hash = request.headers.get(INTEGRITY_REQUEST_HASH_KEY)
         phone_number = request.data.get("phone_number", "")
@@ -86,7 +98,13 @@ def require_app_integrity(view):
             return view(request, *args, **kwargs)
 
         app_package = request.data.get("application_id")
-        error_response = validate_app_integrity(integrity_token, request_hash, app_package, phone_number)
+        error_response = validate_app_integrity(
+            integrity_token,
+            request_hash,
+            app_package,
+            phone_number,
+            expected_request_hashes=compute_request_hashes(raw_body, request.data),
+        )
         if error_response is not None and not invited:
             return error_response
 

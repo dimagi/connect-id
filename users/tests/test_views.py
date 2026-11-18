@@ -2,7 +2,7 @@ import json
 import uuid
 from datetime import datetime, timedelta
 from unittest import mock
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import factory
 import pytest
@@ -1703,7 +1703,12 @@ class TestStartConfigurationView:
             HTTP_CC_REQUEST_HASH="hash",
         )
         integrity_service_mock.assert_called_once_with(
-            token="token", request_hash="hash", app_package="my.fancy.app", is_demo_user=False
+            token="token",
+            request_hash="hash",
+            app_package="my.fancy.app",
+            is_demo_user=False,
+            expected_request_hashes=ANY,
+            enforce_request_binding=False,
         )
 
     @patch("users.models.ConfigurationSession.country_code")
@@ -1723,7 +1728,12 @@ class TestStartConfigurationView:
             HTTP_CC_REQUEST_HASH="hash",
         )
         integrity_service_mock.assert_called_once_with(
-            token="token", request_hash="hash", app_package="my.fancy.app", is_demo_user=True
+            token="token",
+            request_hash="hash",
+            app_package="my.fancy.app",
+            is_demo_user=True,
+            expected_request_hashes=ANY,
+            enforce_request_binding=False,
         )
 
     @skip_app_integrity_check
