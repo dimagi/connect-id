@@ -1,0 +1,4 @@
+source "https://rubygems.org"
+
+# Deploy tooling only. Run from this directory: `bundle exec kamal ...`
+gem "kamal", "2.12.0"

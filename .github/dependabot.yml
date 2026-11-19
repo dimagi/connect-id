@@ -21,6 +21,15 @@ updates:
           - minor
           - patch
 
+  # Kamal (deploy tooling), pinned in deploy/Gemfile.lock
+  - package-ecosystem: bundler
+    directory: '/deploy'
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+
   # GitHub Actions used in workflows
   - package-ecosystem: github-actions
     directory: '/'

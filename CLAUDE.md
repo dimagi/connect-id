@@ -44,7 +44,7 @@ utils/              # Shared helpers: SMS, notifications, middleware, app integr
   app_integrity/    # Google Play Integrity verification
 test_utils/         # Test decorators and helpers
 docker/             # Entrypoint scripts (start, start_migrate, start_celery)
-deploy/             # Kamal deployment config
+deploy/             # Kamal 2 deployment config (deploys run from CI only, see README)
 ```
 
 ## Key Files
