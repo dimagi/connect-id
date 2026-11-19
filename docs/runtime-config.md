@@ -8,7 +8,7 @@ change them.
 
 | Setting | What it does |
 |---|---|
-| `SMS_SUPPORTED_COUNTRY_CODES` | Calling codes (`265, 258`) `send_sms` may send to. **Empty allows every country.** Keep in sync with the Twilio geo permissions. It doesn't stop the Firebase SMS sent at registration |
+| `SMS_SUPPORTED_COUNTRY_CODES` | Calling codes (`265, 258`) of the phone numbers `send_sms` may send to and that may start a configuration session (`start_device_configuration` returns 403 `UNSUPPORTED_COUNTRY`, which also blocks the Firebase SMS that follows). A number that can't be parsed has no country, so it is refused too. **Empty allows every country.** Keep in sync with the Twilio geo permissions |
 | `BLACKLISTED_COUNTRY_CODES` | Two-letter codes (`ke, ng`, any case) refused by `start_device_configuration`, judged by the device's GPS location through Mapbox. No effect without `MAPBOX_ACCESS_TOKEN` or when the device sends no location |
 | `PHONE_COUNTRY_*`, `SMS_NUMBER_*`, `OTP_USER_*`, `RATE_LIMIT_WARN_FRACTION` | The SMS and OTP caps. See [rate-limits.md](rate-limits.md) |
 
@@ -18,8 +18,10 @@ which drops spaces and blanks and returns lowercase codes.
 ## Blocking a country during an SMS pumping attack
 
 1. In admin, open Config and take the country's calling code out of `SMS_SUPPORTED_COUNTRY_CODES`. This stops
-   every SMS we send there through Twilio.
-2. To also stop new registrations from devices located there, add its two-letter code to
+   every SMS we send to numbers there through Twilio, and new configuration sessions for those numbers, so the
+   app never gets as far as a Firebase SMS. Existing users with such a number can't sign in on a new device
+   until it's added back.
+2. To also refuse devices physically located in a country, whatever their number, add its two-letter code to
    `BLACKLISTED_COUNTRY_CODES`.
 3. Optionally lower `PHONE_COUNTRY_HOURLY_LIMIT` / `PHONE_COUNTRY_DAILY_LIMIT` to cap all countries harder.
 

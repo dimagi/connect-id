@@ -34,7 +34,7 @@ from flags.const import EMAIL_OTP_VERIFICATION
 from flags.utils import get_user_toggles
 from services.ai.ocs import OpenChatStudio
 from sms import SmsCountryNotSupportedError, SmsRateLimitedError, send_sms
-from sms.limits import hit_country_limit
+from sms.limits import hit_country_limit, is_country_supported, mask
 from utils import get_ip
 from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
 from utils.app_integrity.decorators import require_app_integrity
@@ -124,8 +124,13 @@ def start_device_configuration(request):
 
     is_demo_user = data["phone_number"].startswith(TEST_NUMBER_PREFIX)
     if not is_demo_user:
-        # A new session can lead to an SMS from us or from Firebase, so the country limits apply here too.
-        exceeded = hit_country_limit("configuration_session", to_python(data["phone_number"]))
+        # A new session can lead to an SMS from us or from Firebase, so the SMS country rules apply here too.
+        # Checked before the limit, so attempts from unsupported countries don't use up anyone's quota.
+        phone_number = to_python(data["phone_number"])
+        if not is_country_supported(phone_number):
+            logger.warning("Configuration session for %s refused: country not supported", mask(phone_number))
+            return JsonResponse({"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}, status=403)
+        exceeded = hit_country_limit("configuration_session", phone_number)
         if exceeded:
             return JsonResponse(
                 {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": exceeded.retry_after_seconds},

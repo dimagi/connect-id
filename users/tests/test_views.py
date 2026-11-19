@@ -77,6 +77,11 @@ class TestRegistration:
         assert user.phone_number == "+27734567657"
 
 
+def supported_number():
+    """A random Malawi mobile number. Malawi (265) is in the default SMS_SUPPORTED_COUNTRY_CODES."""
+    return "+26599" + Faker().numerify("#######")
+
+
 @pytest.mark.django_db
 def test_registration_with_fcm_token(client):
     response = client.post(
@@ -1507,7 +1512,7 @@ class TestStartConfigurationView:
 
         response = client.post(
             reverse("start_device_configuration"),
-            data={"phone_number": Faker().phone_number()},
+            data={"phone_number": supported_number()},
             HTTP_CC_INTEGRITY_TOKEN="token",
             HTTP_CC_REQUEST_HASH="hash",
         )
@@ -1525,7 +1530,7 @@ class TestStartConfigurationView:
 
         response = client.post(
             reverse("start_device_configuration"),
-            data={"phone_number": Faker().phone_number(), "gps_location": "1.23.4"},
+            data={"phone_number": supported_number(), "gps_location": "1.23.4"},
             HTTP_CC_INTEGRITY_TOKEN="token",
             HTTP_CC_REQUEST_HASH="hash",
         )
@@ -1537,7 +1542,7 @@ class TestStartConfigurationView:
         # Entered in admin as upper case; country_code() is always lower case.
         config.BLACKLISTED_COUNTRY_CODES = "ke, XX"
         mock_country_code.return_value = "xx"
-        phone_number = Faker().phone_number()
+        phone_number = supported_number()
         gps_location = "1.2 3.4"
 
         response = client.post(
@@ -1569,6 +1574,54 @@ class TestStartConfigurationView:
         assert ConfigurationSession.objects.count() == 1
 
     @skip_app_integrity_check
+    @pytest.mark.parametrize("phone_number", ["+963944123456", "620-481-9765"])
+    def test_numbers_outside_supported_countries_are_refused(self, client, config, phone_number):
+        config.SMS_SUPPORTED_COUNTRY_CODES = "265"
+
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": phone_number},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+
+        assert response.status_code == 403
+        assert response.json() == {"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}
+        assert not ConfigurationSession.objects.exists()
+
+    @skip_app_integrity_check
+    def test_refused_numbers_do_not_use_up_the_country_limit(self, client, config):
+        config.SMS_SUPPORTED_COUNTRY_CODES = "265"
+        config.PHONE_COUNTRY_HOURLY_LIMIT = 1
+
+        def start(phone_number):
+            return client.post(
+                reverse("start_device_configuration"),
+                data={"phone_number": phone_number},
+                HTTP_CC_INTEGRITY_TOKEN="token",
+                HTTP_CC_REQUEST_HASH="hash",
+            )
+
+        assert start("+963944123456").status_code == 403
+        assert start("+963944123457").status_code == 403
+
+        config.SMS_SUPPORTED_COUNTRY_CODES = "265, 963"
+        assert start("+963944123458").status_code == 200
+
+    @skip_app_integrity_check
+    def test_an_empty_supported_list_allows_every_country(self, client, config):
+        config.SMS_SUPPORTED_COUNTRY_CODES = ""
+
+        response = client.post(
+            reverse("start_device_configuration"),
+            data={"phone_number": "+963944123456"},
+            HTTP_CC_INTEGRITY_TOKEN="token",
+            HTTP_CC_REQUEST_HASH="hash",
+        )
+
+        assert response.status_code == 200
+
+    @skip_app_integrity_check
     def test_demo_users_are_not_capped(self, client, config):
         config.PHONE_COUNTRY_HOURLY_LIMIT = 0
 
@@ -1584,7 +1637,7 @@ class TestStartConfigurationView:
     @skip_app_integrity_check
     @patch("users.models.ConfigurationSession.country_code")
     def test_session_started(self, mock_country_code, client):
-        phone_number = Faker().phone_number()
+        phone_number = supported_number()
         gps_location = "1.2 3.4"
 
         response = client.post(
@@ -1606,7 +1659,7 @@ class TestStartConfigurationView:
     @skip_app_integrity_check
     @patch("users.models.ConfigurationSession.country_code")
     def test_can_start_multiple_sessions(self, mock_country_code, client):
-        phone_number = Faker().phone_number()
+        phone_number = supported_number()
 
         response = client.post(
             reverse("start_device_configuration"),
@@ -1653,7 +1706,7 @@ class TestStartConfigurationView:
     def test_device_lock_required(self, mock_country_code, client):
         response = client.post(
             reverse("start_device_configuration"),
-            data={"phone_number": Faker().phone_number(), "gps_location": "0 0"},
+            data={"phone_number": supported_number(), "gps_location": "0 0"},
             HTTP_CC_INTEGRITY_TOKEN="token",
             HTTP_CC_REQUEST_HASH="hash",
         )
@@ -1662,7 +1715,7 @@ class TestStartConfigurationView:
     @skip_app_integrity_check
     @patch("users.models.ConfigurationSession.country_code")
     def test_biometric_lock_required(self, mock_country_code, client):
-        pin_user = UserFactory()
+        pin_user = UserFactory(phone_number=supported_number())
         pin_user.device_security = ConnectUser.DeviceSecurity.PIN
         pin_user.save()
 
@@ -1679,7 +1732,7 @@ class TestStartConfigurationView:
     @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
     def test_invited_user_gets_pin_lock_over_stored_biometric(self, check_number_mock, mock_country_code, client):
         check_number_mock.return_value = True
-        biometric_user = UserFactory()
+        biometric_user = UserFactory(phone_number=supported_number())
         biometric_user.device_security = ConnectUser.DeviceSecurity.BIOMETRIC
         biometric_user.save()
 
@@ -1741,7 +1794,7 @@ class TestStartConfigurationView:
     @patch("users.models.ConfigurationSession.country_code")
     @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
     def test_invited_user_starts_session_on_api_v1(self, check_number_mock, mock_country_code, client):
-        phone_number = Faker().phone_number()
+        phone_number = supported_number()
         gps_location = "1.2 3.4"
         check_number_mock.return_value = True
 
@@ -1762,7 +1815,7 @@ class TestStartConfigurationView:
     @patch("users.models.ConfigurationSession.country_code")
     @patch("utils.app_integrity.decorators.check_number_for_existing_invites")
     def test_invited_user_starts_session_on_api_v2(self, check_number_mock, mock_country_code, client):
-        phone_number = Faker().phone_number()
+        phone_number = supported_number()
         gps_location = "1.2 3.4"
         check_number_mock.return_value = True
 
@@ -1783,7 +1836,7 @@ class TestStartConfigurationView:
     @patch("users.models.ConfigurationSession.country_code")
     def test_device_stored_on_session(self, mock_country_code, client):
         mock_country_code.return_value = None
-        phone_number = Faker().phone_number()
+        phone_number = supported_number()
 
         response = client.post(
             reverse("start_device_configuration"),
@@ -1808,7 +1861,7 @@ class TestStartConfigurationView:
         check_number_mock.side_effect = exc
         response = client.post(
             reverse("start_device_configuration"),
-            data={"phone_number": Faker().phone_number(), "gps_location": "1.2 3.4"},
+            data={"phone_number": supported_number(), "gps_location": "1.2 3.4"},
             HTTP_CC_INTEGRITY_TOKEN="token",
             HTTP_CC_REQUEST_HASH="hash",
         )
@@ -1839,7 +1892,7 @@ class TestStartConfigurationView:
         mock_get_toggles.side_effect = requests.exceptions.ConnectionError("upstream unreachable")
         response = client.post(
             reverse("start_device_configuration"),
-            data={"phone_number": Faker().phone_number(), "gps_location": "1.2 3.4"},
+            data={"phone_number": supported_number(), "gps_location": "1.2 3.4"},
             HTTP_CC_INTEGRITY_TOKEN="token",
             HTTP_CC_REQUEST_HASH="hash",
         )

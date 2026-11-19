@@ -404,8 +404,9 @@ CONSTANCE_CONFIG = {
                 ],
             )
         ),
-        "Calling codes (e.g. 265 for Malawi) that send_sms may send to. Keep in sync with the Twilio geo "
-        "permissions. Does not cover the Firebase SMS sent at registration. EMPTY ALLOWS EVERY COUNTRY.",
+        "Calling codes (e.g. 265 for Malawi) of the phone numbers we send SMS to and that may start a "
+        "configuration session (which can trigger a Firebase SMS). Keep in sync with the Twilio geo "
+        "permissions. EMPTY ALLOWS EVERY COUNTRY.",
         "calling_codes",
     ),
     "BLACKLISTED_COUNTRY_CODES": (
