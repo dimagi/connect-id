@@ -34,9 +34,9 @@ def test_test_numbers_are_skipped_without_building_a_vendor(get_vendor):
     get_vendor.assert_not_called()
 
 
-def test_unparseable_number_is_not_treated_as_a_test_number(get_vendor, settings):
+def test_unparseable_number_is_not_treated_as_a_test_number(get_vendor, settings, config):
     settings.SMS_DEFAULT_VENDOR = "twilio"
-    settings.SMS_SUPPORTED_COUNTRY_CODES = []
+    config.SMS_SUPPORTED_COUNTRY_CODES = ""
     send_sms(to_python("garbage"), "hi")
 
     get_vendor.assert_called_once_with("twilio")
@@ -53,8 +53,8 @@ def test_console_vendor_logs_instead_of_sending(settings, caplog):
     assert "Your code is 123456" in caplog.text
 
 
-def test_number_outside_supported_countries_is_not_sent(get_vendor, settings):
-    settings.SMS_SUPPORTED_COUNTRY_CODES = ["265"]
+def test_number_outside_supported_countries_is_not_sent(get_vendor, config):
+    config.SMS_SUPPORTED_COUNTRY_CODES = "265"
 
     with pytest.raises(SmsCountryNotSupportedError):
         send_sms(to_python("+258821234567"), "hi")
@@ -62,24 +62,24 @@ def test_number_outside_supported_countries_is_not_sent(get_vendor, settings):
     get_vendor.assert_not_called()
 
 
-def test_number_in_supported_countries_is_sent(get_vendor, settings):
-    settings.SMS_SUPPORTED_COUNTRY_CODES = ["265"]
+def test_number_in_supported_countries_is_sent(get_vendor, config):
+    config.SMS_SUPPORTED_COUNTRY_CODES = "265"
 
     send_sms(to_python("+265991234567"), "hi")
 
     get_vendor.return_value.send.assert_called_once()
 
 
-def test_supported_country_codes_may_have_spaces(get_vendor, settings):
-    settings.SMS_SUPPORTED_COUNTRY_CODES = ["265", " 258"]
+def test_supported_country_codes_may_have_spaces(get_vendor, config):
+    config.SMS_SUPPORTED_COUNTRY_CODES = "265, 258"
 
     send_sms(to_python("+258821234567"), "hi")
 
     get_vendor.return_value.send.assert_called_once()
 
 
-def test_sends_to_one_number_are_capped(get_vendor, settings):
-    settings.SMS_NUMBER_HOURLY_LIMIT = 2
+def test_sends_to_one_number_are_capped(get_vendor, config):
+    config.SMS_NUMBER_HOURLY_LIMIT = 2
     to = to_python("+265991234567")
     send_sms(to, "hi")
     send_sms(to, "hi")
@@ -91,8 +91,8 @@ def test_sends_to_one_number_are_capped(get_vendor, settings):
     assert get_vendor.return_value.send.call_count == 2
 
 
-def test_sends_to_one_country_are_capped_and_reported_once(get_vendor, settings, caplog):
-    settings.PHONE_COUNTRY_HOURLY_LIMIT = 1
+def test_sends_to_one_country_are_capped_and_reported_once(get_vendor, config, caplog):
+    config.PHONE_COUNTRY_HOURLY_LIMIT = 1
     send_sms(to_python("+265991234567"), "hi")
 
     for number in ["+265991234568", "+265991234569"]:
@@ -109,9 +109,9 @@ def test_sends_to_one_country_are_capped_and_reported_once(get_vendor, settings,
     assert len(blocks) == 2
 
 
-def test_nearing_a_country_limit_is_reported_once(get_vendor, settings, caplog):
-    settings.PHONE_COUNTRY_HOURLY_LIMIT = 5
-    settings.RATE_LIMIT_WARN_FRACTION = 0.6
+def test_nearing_a_country_limit_is_reported_once(get_vendor, config, caplog):
+    config.PHONE_COUNTRY_HOURLY_LIMIT = 5
+    config.RATE_LIMIT_WARN_FRACTION = 0.6
     for number in ["+265991234561", "+265991234562", "+265991234563", "+265991234564"]:
         send_sms(to_python(number), "hi")
 
@@ -121,8 +121,8 @@ def test_nearing_a_country_limit_is_reported_once(get_vendor, settings, caplog):
     ]
 
 
-def test_blocks_on_one_number_are_logged_without_the_number(get_vendor, settings, caplog):
-    settings.SMS_NUMBER_HOURLY_LIMIT = 1
+def test_blocks_on_one_number_are_logged_without_the_number(get_vendor, config, caplog):
+    config.SMS_NUMBER_HOURLY_LIMIT = 1
     to = to_python("+265991234567")
     send_sms(to, "hi")
 
@@ -137,9 +137,9 @@ def test_blocks_on_one_number_are_logged_without_the_number(get_vendor, settings
     assert "991234567" not in caplog.text
 
 
-def test_test_numbers_are_not_limited(get_vendor, settings):
-    settings.SMS_SUPPORTED_COUNTRY_CODES = ["265"]
-    settings.PHONE_COUNTRY_HOURLY_LIMIT = 0
+def test_test_numbers_are_not_limited(get_vendor, config):
+    config.SMS_SUPPORTED_COUNTRY_CODES = "265"
+    config.PHONE_COUNTRY_HOURLY_LIMIT = 0
 
     result = send_sms(to_python(TEST_NUMBER_PREFIX + "1234567"), "hi")
 

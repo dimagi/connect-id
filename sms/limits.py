@@ -1,8 +1,9 @@
 """Which destination countries may receive SMS, and how many."""
 
-from django.conf import settings
+from constance import config
 from phonenumber_field.phonenumber import PhoneNumber
 
+from utils.config import code_set
 from utils.rate_limit import Exceeded, Limit, hit, release
 
 HOUR = 60 * 60
@@ -16,8 +17,7 @@ def mask(number: PhoneNumber) -> str:
 
 
 def is_country_supported(number: PhoneNumber) -> bool:
-    # env.list keeps the spaces in "265, 258".
-    supported = {code.strip() for code in settings.SMS_SUPPORTED_COUNTRY_CODES} - {""}
+    supported = code_set("SMS_SUPPORTED_COUNTRY_CODES")
     return not supported or str(number.country_code) in supported
 
 
@@ -30,8 +30,8 @@ def hit_country_limit(scope: str, number: PhoneNumber) -> Exceeded | None:
     return hit(
         f"{scope}:country:{number.country_code}",
         [
-            _warned_limit(settings.PHONE_COUNTRY_HOURLY_LIMIT, HOUR),
-            _warned_limit(settings.PHONE_COUNTRY_DAILY_LIMIT, DAY),
+            _warned_limit(config.PHONE_COUNTRY_HOURLY_LIMIT, HOUR),
+            _warned_limit(config.PHONE_COUNTRY_DAILY_LIMIT, DAY),
         ],
         log_fields={"scope": scope, "kind": "country", "country_code": number.country_code},
         report=True,
@@ -40,7 +40,7 @@ def hit_country_limit(scope: str, number: PhoneNumber) -> Exceeded | None:
 
 def _warned_limit(max_count: int, window_seconds: int) -> Limit:
     """A limit that warns once its count reaches RATE_LIMIT_WARN_FRACTION of the maximum."""
-    warn_at = int(max_count * settings.RATE_LIMIT_WARN_FRACTION)
+    warn_at = int(max_count * config.RATE_LIMIT_WARN_FRACTION)
     return Limit(max_count, window_seconds, warn_at=warn_at if 0 < warn_at < max_count else None)
 
 
@@ -62,8 +62,8 @@ def release_user_otp_limit(user_id: int):
 
 def _user_otp_limits() -> list[Limit]:
     return [
-        Limit(settings.OTP_USER_HOURLY_LIMIT, HOUR),
-        Limit(settings.OTP_USER_DAILY_LIMIT, DAY),
+        Limit(config.OTP_USER_HOURLY_LIMIT, HOUR),
+        Limit(config.OTP_USER_DAILY_LIMIT, DAY),
     ]
 
 
@@ -71,8 +71,8 @@ def hit_number_limit(number: PhoneNumber) -> Exceeded | None:
     return hit(
         f"sms:number:{number.as_e164}",
         [
-            Limit(settings.SMS_NUMBER_HOURLY_LIMIT, HOUR),
-            Limit(settings.SMS_NUMBER_DAILY_LIMIT, DAY),
+            Limit(config.SMS_NUMBER_HOURLY_LIMIT, HOUR),
+            Limit(config.SMS_NUMBER_DAILY_LIMIT, DAY),
         ],
         log_fields={
             "scope": "sms",

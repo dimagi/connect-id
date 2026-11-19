@@ -4,6 +4,9 @@ SMS and OTPs are capped to keep costs down and stop abuse. The counters live in 
 (`utils/rate_limit.py`). If Redis can't be reached, everything is allowed, and the failure goes to Sentry as
 `Rate limit cache unavailable`.
 
+The limits are runtime settings: change them in Django admin under Config, with no restart. See
+[runtime-config.md](runtime-config.md).
+
 | Limit | Key | Settings (default) | When it's hit |
 |---|---|---|---|
 | Per country, SMS | `sms:country:<cc>` | `PHONE_COUNTRY_HOURLY_LIMIT` (50), `PHONE_COUNTRY_DAILY_LIMIT` (300) | `send_sms` raises `SmsRateLimitedError` |

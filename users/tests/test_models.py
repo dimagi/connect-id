@@ -310,8 +310,8 @@ class TestOTPDeviceConcurrentVerification:
 
 @pytest.mark.django_db
 class TestUserOTPLimit:
-    def test_caps_otps_across_a_users_numbers(self, settings):
-        settings.OTP_USER_HOURLY_LIMIT = 2
+    def test_caps_otps_across_a_users_numbers(self, config):
+        config.OTP_USER_HOURLY_LIMIT = 2
         user = UserFactory()
         primary, secondary, payment = (PhoneDeviceFactory(user=user) for _ in range(3))
         primary.generate_challenge()
@@ -324,14 +324,14 @@ class TestUserOTPLimit:
         payment.refresh_from_db()
         assert payment.otp_last_sent is None
 
-    def test_users_are_counted_separately(self, settings):
-        settings.OTP_USER_HOURLY_LIMIT = 1
+    def test_users_are_counted_separately(self, config):
+        config.OTP_USER_HOURLY_LIMIT = 1
         PhoneDeviceFactory().generate_challenge()
 
         PhoneDeviceFactory().generate_challenge(suppress_rate_limit=False)
 
-    def test_session_devices_without_a_user_are_not_capped_per_user(self, settings):
-        settings.OTP_USER_HOURLY_LIMIT = 0
+    def test_session_devices_without_a_user_are_not_capped_per_user(self, config):
+        config.OTP_USER_HOURLY_LIMIT = 0
         device = SessionPhoneDeviceFactory()
         assert device.user_id is None
 
@@ -343,9 +343,9 @@ class TestUserOTPLimit:
 
 @pytest.mark.django_db
 class TestUserOTPLimitWindows:
-    def test_hourly_rejections_do_not_use_up_the_daily_limit(self, settings):
-        settings.OTP_USER_HOURLY_LIMIT = 1
-        settings.OTP_USER_DAILY_LIMIT = 2
+    def test_hourly_rejections_do_not_use_up_the_daily_limit(self, config):
+        config.OTP_USER_HOURLY_LIMIT = 1
+        config.OTP_USER_DAILY_LIMIT = 2
         user = UserFactory()
         with mock.patch("utils.rate_limit.time.time", return_value=1000.0):
             PhoneDeviceFactory(user=user).generate_challenge()
@@ -364,8 +364,8 @@ class TestUserOTPLimitWindows:
             (SmsSendError("twilio", "account suspended"), SmsSendError),
         ],
     )
-    def test_otps_that_are_not_sent_do_not_count(self, settings, error, expected):
-        settings.OTP_USER_HOURLY_LIMIT = 1
+    def test_otps_that_are_not_sent_do_not_count(self, config, error, expected):
+        config.OTP_USER_HOURLY_LIMIT = 1
         user = UserFactory()
         with mock.patch("users.models.send_sms", side_effect=error), pytest.raises(expected):
             PhoneDeviceFactory(user=user).generate_challenge(suppress_rate_limit=False)
@@ -401,8 +401,8 @@ class TestRateLimitLogging:
         assert suppressed["user_id"] == device.user_id
         assert suppressed["retry_after_seconds"] > 0
 
-    def test_a_blocked_user_otp_is_logged_with_the_user(self, settings, caplog):
-        settings.OTP_USER_HOURLY_LIMIT = 0
+    def test_a_blocked_user_otp_is_logged_with_the_user(self, config, caplog):
+        config.OTP_USER_HOURLY_LIMIT = 0
         device = PhoneDeviceFactory()
 
         with pytest.raises(RateLimitedError):

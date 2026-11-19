@@ -54,6 +54,7 @@ deploy/             # Kamal deployment config
 - `users/models.py` - ConnectUser (custom user model), UserKey, PhoneDevice, Credential models
 - `users/views.py` - Main API endpoints (~1000 lines)
 - `conftest.py` - Shared pytest fixtures (user, authed_client, oauth_app, etc.)
+- `docs/runtime-config.md` - Settings editable in Django admin without a restart (country blocks, SMS limits), and how to add one
 - `docs/otp-flows.md` - Every OTP send/confirm endpoint, the device model behind it, auth per caller, and rate-limit/attempt rules
 
 ## Tech Stack
@@ -91,6 +92,7 @@ deploy/             # Kamal deployment config
 - **AllowCIDRMiddleware**: Runs first in middleware stack for IP whitelisting.
 - **Automated PR review**: `.github/workflows/claude-code-review.yml` runs OpenCodeReview (rules in `.opencodereview/`), then a Claude review if that found nothing. Drafts are reviewed only with the `review-draft` label. See `docs/automated-code-review.md`.
 - **Rate limits**: SMS/OTP caps in `sms/limits.py` on `utils/rate_limit.py`. Every block is logged as a structured `rate_limit_*` line, and country limits report to Sentry. See `docs/rate-limits.md`. Never put a full phone number in `log_fields`.
+- **Runtime settings**: Country lists (`SMS_SUPPORTED_COUNTRY_CODES`, `BLACKLISTED_COUNTRY_CODES`) and SMS/OTP limits are django-constance settings in the database, edited in admin at `/admin/constance/config/` without a restart. Read them via `constance.config`, not `django.conf.settings`. Their env vars only seed the value on first read. In tests, set them on the autouse `config` fixture. See `docs/runtime-config.md`.
 - **Health checks**: `/up` is the container liveness probe (no dependencies). `/status/` and `/status/celery/` (django-health-check, subsets in `connectid/health_checks.py`) are for the status page; `HEALTH_CHECK_TOKENS` gates them (`Authorization: Bearer <token>` header or `?token=`), answering 404 otherwise.
 
 ## Testing

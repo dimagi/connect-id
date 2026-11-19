@@ -240,8 +240,8 @@ class TestValidatePhone:
         assert mock_send_sms.call_count == 2
 
     @pytest.mark.django_db
-    def test_user_otp_limit_returns_429(self, auth_device, user, settings):
-        settings.OTP_USER_HOURLY_LIMIT = 1
+    def test_user_otp_limit_returns_429(self, auth_device, user, config):
+        config.OTP_USER_HOURLY_LIMIT = 1
         with mock.patch("users.models.send_sms") as mock_send_sms:
             PhoneDeviceFactory(user=user).generate_challenge()
             response = auth_device.post(reverse("validate_phone"))
@@ -804,8 +804,8 @@ class TestInitiateDeactivation(BaseTestDeactivation):
             expected_status=400,
         )
 
-    def test_rate_limited_sms_saves_no_token(self, client, recovery_status, settings):
-        settings.SMS_NUMBER_HOURLY_LIMIT = 0
+    def test_rate_limited_sms_saves_no_token(self, client, recovery_status, config):
+        config.SMS_NUMBER_HOURLY_LIMIT = 0
         user = recovery_status.user
         user.phone_number = "+265991234567"
         user.save()
@@ -1532,10 +1532,11 @@ class TestStartConfigurationView:
         assert response.status_code == 200
 
     @skip_app_integrity_check
-    @patch("users.views.settings.BLACKLISTED_COUNTRY_CODES", ["XX"])
     @patch("users.models.ConfigurationSession.country_code")
-    def test_unsupported_country(self, mock_country_code, client):
-        mock_country_code.return_value = "XX"
+    def test_unsupported_country(self, mock_country_code, client, config):
+        # Entered in admin as upper case; country_code() is always lower case.
+        config.BLACKLISTED_COUNTRY_CODES = "ke, XX"
+        mock_country_code.return_value = "xx"
         phone_number = Faker().phone_number()
         gps_location = "1.2 3.4"
 
@@ -1549,8 +1550,8 @@ class TestStartConfigurationView:
         assert response.json() == {"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}
 
     @skip_app_integrity_check
-    def test_sessions_per_country_are_capped(self, client, settings):
-        settings.PHONE_COUNTRY_HOURLY_LIMIT = 1
+    def test_sessions_per_country_are_capped(self, client, config):
+        config.PHONE_COUNTRY_HOURLY_LIMIT = 1
         responses = [
             client.post(
                 reverse("start_device_configuration"),
@@ -1568,8 +1569,8 @@ class TestStartConfigurationView:
         assert ConfigurationSession.objects.count() == 1
 
     @skip_app_integrity_check
-    def test_demo_users_are_not_capped(self, client, settings):
-        settings.PHONE_COUNTRY_HOURLY_LIMIT = 0
+    def test_demo_users_are_not_capped(self, client, config):
+        config.PHONE_COUNTRY_HOURLY_LIMIT = 0
 
         response = client.post(
             reverse("start_device_configuration"),
@@ -2169,8 +2170,8 @@ class TestSendSessionOtp:
         assert response.status_code == 429
         assert response.json() == {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": 120}
 
-    def test_sms_limit_returns_429(self, authed_client_token, valid_token, settings):
-        settings.SMS_NUMBER_HOURLY_LIMIT = 0
+    def test_sms_limit_returns_429(self, authed_client_token, valid_token, config):
+        config.SMS_NUMBER_HOURLY_LIMIT = 0
         valid_token.phone_number = "+265991234567"
         valid_token.save()
 
@@ -2182,8 +2183,8 @@ class TestSendSessionOtp:
         assert response.json()["retry_after_seconds"] > 0
         get_vendor.assert_not_called()
 
-    def test_unsupported_country_returns_403(self, authed_client_token, valid_token, settings):
-        settings.SMS_SUPPORTED_COUNTRY_CODES = ["265"]
+    def test_unsupported_country_returns_403(self, authed_client_token, valid_token, config):
+        config.SMS_SUPPORTED_COUNTRY_CODES = "265"
         valid_token.phone_number = "+963944123456"
         valid_token.save()
 

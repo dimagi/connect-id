@@ -331,6 +331,7 @@ dependencies = [
     { name = "django-anymail", extra = ["amazon-ses"] },
     { name = "django-axes", extra = ["ipware"] },
     { name = "django-celery-beat" },
+    { name = "django-constance" },
     { name = "django-environ" },
     { name = "django-health-check" },
     { name = "django-oauth-toolkit" },
@@ -373,6 +374,7 @@ requires-dist = [
     { name = "django-anymail", extras = ["amazon-ses"], specifier = ">=15.0" },
     { name = "django-axes", extras = ["ipware"], specifier = "==8.3.1" },
     { name = "django-celery-beat", specifier = "==2.9.0" },
+    { name = "django-constance", specifier = "==4.5.0" },
     { name = "django-environ", specifier = "==0.13.0" },
     { name = "django-health-check", specifier = "==4.8.0" },
     { name = "django-oauth-toolkit", specifier = "==3.3.0" },
@@ -576,6 +578,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/05/45/fc97bc1d9af8e7dc07f1e37044d9551a30e6793249864cef802341e2e3a8/django_celery_beat-2.9.0.tar.gz", hash = "sha256:92404650f52fcb44cf08e2b09635cb1558327c54b1a5d570f0e2d3a22130934c", size = 177667, upload-time = "2026-02-28T16:45:34.749Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/71/ae/9befa7ae37f5e5c41be636a254fcf47ff30dd5c88bd115070e252f6b9162/django_celery_beat-2.9.0-py3-none-any.whl", hash = "sha256:4a9e5ebe26d6f8d7215e1fc5c46e466016279dc102435a28141108649bdf2157", size = 105013, upload-time = "2026-02-28T16:45:32.822Z" },
+]
+
+[[package]]
+name = "django-constance"
+version = "4.5.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/96/c4980722d8cce79d600b1cca8436d02b84eea8f79d009174c28da4cbf28a/django_constance-4.5.0.tar.gz", hash = "sha256:a467fd202449e508e120dbee5bb6410103bc418140bb1be87eef3c270240407f", size = 187719, upload-time = "2026-10-28T15:12:38.45Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/62/dee274de0ef07b44a60eba3e30acefb85aa2d126e2cc455bb32e856bf47b/django_constance-4.5.0-py3-none-any.whl", hash = "sha256:b3ff93c231f86786aa0d6606c72cf1ea26393500defdfe11e3b0f2c172a30b94", size = 69324, upload-time = "2026-10-28T15:12:36.926Z" },
 ]
 
 [[package]]

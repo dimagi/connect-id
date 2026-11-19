@@ -40,6 +40,7 @@ from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
 from utils.app_integrity.decorators import require_app_integrity
 from utils.app_integrity.exceptions import DuplicateSampleRequestError
 from utils.app_integrity.google_play_integrity import AppIntegrityService
+from utils.config import code_set
 from utils.rest_framework import ClientProtectedResourceAuth
 
 from .auth import DeviceBasicAuthentication, IssuingCredentialsAuth, SessionTokenAuthentication
@@ -140,7 +141,7 @@ def start_device_configuration(request):
         device=data.get("device", ""),
     )
 
-    if token_session.country_code() in settings.BLACKLISTED_COUNTRY_CODES:
+    if token_session.country_code() in code_set("BLACKLISTED_COUNTRY_CODES"):
         return JsonResponse({"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}, status=403)
 
     token_session.save()
