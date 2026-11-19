@@ -88,48 +88,18 @@ The checks are defined in `connectid/health_checks.py`, built on
 
 ## Production Deploy
 
-### Setup
+Production is deployed with [Kamal 2](https://kamal-deploy.org/), only from the
+[Deploy workflow](.github/workflows/deploy.yml). It runs on a schedule (Monday, Wednesday and Friday,
+when there is something new on `main` and CI passed) and can be started by hand from the Actions tab.
+Do not deploy from a laptop.
 
-#### Kamal
+- `deploy/config/deploy.yml`: servers, roles, kamal-proxy and logging config.
+- `deploy/.kamal/secrets`: commands that fetch secrets at deploy time (no values are committed).
+- `deploy/Gemfile.lock`: the pinned Kamal version; Dependabot proposes updates. CI installs it with
+  `bundle exec`, using the Ruby version in `deploy/.ruby-version`.
 
-(requires Ruby)
+The web host sits behind an ALB, which terminates TLS. kamal-proxy runs on the web host on port 80
+and switches traffic to the new container once `/up` answers. The celery and celery-beat roles are
+not proxied.
 
-```bash
-gem install kamal -v '~> 1.9.2'
-```
-
-#### 1Password CLI
-
-See https://developer.1password.com/docs/cli/get-started/
-
-Note: Do not use Flatpack or snap to install 1password CLI as these do not work with the SSH agent.
-
-You will also need to update the 1Password configuration to allow it to access the SSH key:
-
-_~/.config/1Password/ssh/agent.toml_
-
-```toml
-[[ssh-keys]]
-vault = "Commcare Connect"
-```
-
-See https://developer.1password.com/docs/ssh/agent for more details.
-
-To test that this is working you can run:
-
-```bash
-ssh connect@54.160.64.28
-```
-
-#### AWS CLI
-
-```bash
-aws configure sso --profile commcare-connect
-aws sso login --profile commcare-connect
-```
-
-Note: If you used a different profile name you will need to set the `AWS_PROFILE` environment variable to the profile name.
-
-### Deploy
-
-To deploy run `kamal deploy` from within the `deploy` directory. Make sure you are on the `main` branch and have pulled the latest code.
+App environment variables are read on each host from `/home/connect/www/docker.env`.

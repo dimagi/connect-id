@@ -23,8 +23,6 @@ servers:
     options:
       env-file: '/home/connect/www/docker.env'
     cmd: /start_celery
-    labels:
-      traefik.enable: false
     logging:
       options:
         awslogs-group: 'connect-id-celery'
@@ -34,31 +32,49 @@ servers:
     options:
       env-file: '/home/connect/www/docker.env'
     cmd: /start_celery_beat
-    labels:
-      traefik.enable: false
     logging:
       options:
         awslogs-group: 'connect-id-celery'
 
+# kamal-proxy runs on the web host only (the primary role); the celery roles are not proxied.
+# TLS ends at the ALB in front of the web host, so no `ssl` or `host` here: the proxy serves
+# plain HTTP on port 80 and forwards every request to the app.
+proxy:
+  app_port: 8000
+  # The app reads the client IP from X-Forwarded-For (rate limiting, CIDR allowlist).
+  # This is the default when ssl is off, but stated so turning ssl on later can't silently drop it.
+  forward_headers: true
+  healthcheck:
+    path: /up
+    interval: 5
+    timeout: 5
+  run:
+    # Kamal adds `--log-opt max-size` by default, which the awslogs driver rejects
+    log_max_size: ''
+    options:
+      log-driver: awslogs
+      log-opt:
+        - awslogs-region=us-east-1
+        - awslogs-group=connect-id
+
+# The web container runs migrations before starting gunicorn (docker/start_migrate),
+# so allow time for a slow migration before the deploy gives up on /up.
+deploy_timeout: 200
+
 registry:
   server: 037129986032.dkr.ecr.us-east-1.amazonaws.com
   username: AWS
-  password: <%= %x(./config/registry_password.sh) %>
+  password:
+    - KAMAL_REGISTRY_PASSWORD
 
 logging:
   driver: awslogs
   options:
     awslogs-region: 'us-east-1'
-    # Traefik only gets these global options; the roles set their own groups.
+    # Each role sets its own group
     awslogs-group: 'connect-id'
 
 builder:
-  multiarch: false
+  arch: amd64
   dockerfile: '../Dockerfile'
   context: '../'
-
-healthcheck:
-  path: /up
-  port: 8000
-  max_attempts: 10
-  interval: 20s
