@@ -30,14 +30,26 @@ which drops spaces and blanks and returns lowercase codes.
 Each setting's env var of the same name (e.g. `SMS_SUPPORTED_COUNTRY_CODES=265,258`) gives its starting value.
 The first time a setting is read, constance saves that value to the database, and **from then on the env var
 is ignored**. To change a setting, use admin. To go back to the env var's value, edit it in admin, or delete
-the setting's row (`constance_constance` table, key is the setting name) so the next read saves the env value
-again.
+the setting's row (`constance_constance` table, key is the setting name). The next read after the cached value
+expires (up to 5 minutes, see below) saves the env value again.
+
+## Caching
+
+Values are cached in Redis (the `constance` cache in `connectid/settings.py`, on the same Redis as the rate
+limits), so a read usually costs no database query.
+
+- **Edits through admin show at once** everywhere: saving updates the shared cache.
+- **Changes that skip admin**, made straight in the database or while Redis was down, show once the cached
+  value expires, within 5 minutes (the cache's `TIMEOUT` and `CONSTANCE_DATABASE_CACHE_AUTOFILL_TIMEOUT`).
+- **If Redis is down**, reads go to the database. `utils.cache.FailSoftRedisCache` treats errors as cache
+  misses and logs `Cache constance unavailable` at WARNING. It then skips Redis in that process for 30 seconds,
+  so an outage costs one connection timeout per process per 30 seconds rather than one per read.
 
 ## Adding a setting
 
 Add it to `CONSTANCE_CONFIG` in `connectid/settings.py` as `(default, help text, type)`, and to a group in
-`CONSTANCE_CONFIG_FIELDSETS`. Read it with `from constance import config; config.MY_SETTING`. Each read is one
-database query, so read it where it's used rather than at import time. Keep secrets and anything needed
+`CONSTANCE_CONFIG_FIELDSETS`. Read it with `from constance import config; config.MY_SETTING`, where it's
+used rather than at import time, so a change is picked up. Keep secrets and anything needed
 before Django starts (database, Redis, storage) in env vars.
 
 In tests, the autouse `config` fixture in `conftest.py` keeps values in memory and resets them for each test:

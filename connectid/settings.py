@@ -277,6 +277,17 @@ CACHES = {
         "KEY_PREFIX": "rate_limit",
         "OPTIONS": {"socket_connect_timeout": 1, "socket_timeout": 1},
     },
+    # In front of the runtime settings (django-constance) in the database. Shared, so an admin edit reaches
+    # every process at once. If Redis is down, reads go to the database instead (utils.cache).
+    "constance": {
+        "BACKEND": "utils.cache.FailSoftRedisCache",
+        "LOCATION": env("RATE_LIMIT_REDIS_URL", default=CELERY_BROKER_URL),
+        "KEY_PREFIX": "constance",
+        # Bounds how long a change that skipped the cache (made while Redis was down, or straight in the
+        # database) takes to show. Edits through admin update the cache immediately.
+        "TIMEOUT": 300,
+        "OPTIONS": {"socket_connect_timeout": 1, "socket_timeout": 1},
+    },
 }
 
 if SENTRY_DSN:
@@ -354,6 +365,9 @@ SMS_DEFAULT_VENDOR = env("SMS_DEFAULT_VENDOR", default="twilio")
 # "Config" without a restart. The env vars below only seed them: once a value has been saved in admin, the
 # saved value wins and the env var is ignored. See docs/runtime-config.md.
 CONSTANCE_BACKEND = "constance.backends.database.DatabaseBackend"
+CONSTANCE_DATABASE_CACHE_BACKEND = "constance"
+# On a cache miss, every setting is loaded into the cache in one query, for this long.
+CONSTANCE_DATABASE_CACHE_AUTOFILL_TIMEOUT = 300
 CONSTANCE_ADDITIONAL_FIELDS = {
     "calling_codes": [
         "django.forms.CharField",

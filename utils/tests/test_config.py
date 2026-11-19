@@ -1,8 +1,12 @@
 import pytest
 from constance import config as constance_config
 from constance.backends.database import DatabaseBackend
+from constance.codecs import dumps
 from constance.forms import ConstanceForm
+from constance.models import Constance
+from django.core.cache.backends.filebased import FileBasedCache
 
+from utils.cache import FailSoftRedisCache
 from utils.config import code_set
 
 
@@ -18,15 +22,54 @@ def test_code_set_is_empty_for_an_empty_setting(config):
     assert code_set("BLACKLISTED_COUNTRY_CODES") == set()
 
 
-@pytest.mark.django_db
-def test_values_saved_to_the_database_are_read_back(monkeypatch):
-    # The conftest `config` fixture keeps values in memory; production keeps them in the database.
-    monkeypatch.setattr(constance_config, "_backend", DatabaseBackend())
+@pytest.fixture
+def database_backend(monkeypatch, tmp_path):
+    """The production backend: values in the database, cached. The conftest `config` fixture keeps them in memory.
 
+    The cache is file-based rather than Redis, so the test needs no Redis and leaves none behind. Constance
+    refuses a local-memory cache.
+    """
+    backend = DatabaseBackend()
+    backend._cache = FileBasedCache(str(tmp_path), {"TIMEOUT": 300})
+    monkeypatch.setattr(constance_config, "_backend", backend)
+    return backend
+
+
+@pytest.mark.django_db
+def test_values_saved_to_the_database_are_read_back(database_backend):
     constance_config.SMS_SUPPORTED_COUNTRY_CODES = "265"
     constance_config.PHONE_COUNTRY_HOURLY_LIMIT = 7
 
     assert code_set("SMS_SUPPORTED_COUNTRY_CODES") == {"265"}
+    assert constance_config.PHONE_COUNTRY_HOURLY_LIMIT == 7
+    assert Constance.objects.get(key="PHONE_COUNTRY_HOURLY_LIMIT")
+
+
+@pytest.mark.django_db
+def test_reads_come_from_the_cache(database_backend, django_assert_num_queries):
+    constance_config.PHONE_COUNTRY_HOURLY_LIMIT = 7
+    # A change that skips the cache, e.g. made straight in the database, isn't seen until the cache expires.
+    Constance.objects.filter(key="PHONE_COUNTRY_HOURLY_LIMIT").update(value=dumps(8))
+
+    with django_assert_num_queries(0):
+        assert constance_config.PHONE_COUNTRY_HOURLY_LIMIT == 7
+
+
+@pytest.mark.django_db
+def test_a_saved_change_is_seen_at_once(database_backend):
+    constance_config.PHONE_COUNTRY_HOURLY_LIMIT = 7
+    assert constance_config.PHONE_COUNTRY_HOURLY_LIMIT == 7
+
+    constance_config.PHONE_COUNTRY_HOURLY_LIMIT = 9
+
+    assert constance_config.PHONE_COUNTRY_HOURLY_LIMIT == 9
+
+
+@pytest.mark.django_db
+def test_reads_fall_back_to_the_database_when_the_cache_is_down(database_backend):
+    constance_config.PHONE_COUNTRY_HOURLY_LIMIT = 7
+    database_backend._cache = FailSoftRedisCache("redis://127.0.0.1:1/0", {"KEY_PREFIX": "constance"})
+
     assert constance_config.PHONE_COUNTRY_HOURLY_LIMIT == 7
 
 
