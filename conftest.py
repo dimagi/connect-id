@@ -2,6 +2,8 @@ import base64
 from datetime import timedelta
 
 import pytest
+from constance import config as constance_config
+from constance.backends.memory import MemoryBackend
 from django.conf import settings
 from django.core.cache import caches
 from django.utils.timezone import now
@@ -46,6 +48,18 @@ def production_behaviour(settings, tmp_path):
             for alias in settings.FILE_STORAGE_BUCKETS
         },
     }
+
+
+@pytest.fixture(autouse=True)
+def config(monkeypatch):
+    """Runtime settings (django-constance), held in memory and reset for each test.
+
+    Set one with `config.PHONE_COUNTRY_HOURLY_LIMIT = 1`. Unset ones read as their CONSTANCE_CONFIG default.
+    """
+    backend = MemoryBackend()
+    backend._storage = {}
+    monkeypatch.setattr(constance_config, "_backend", backend)
+    return constance_config
 
 
 @pytest.fixture

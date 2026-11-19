@@ -17,6 +17,7 @@ from pathlib import Path
 import environ
 import sentry_sdk
 from django.core.exceptions import ImproperlyConfigured
+from django.core.validators import RegexValidator
 from sentry_sdk.integrations.celery import CeleryIntegration
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration, ignore_logger
@@ -48,6 +49,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django_celery_beat",
+    "constance",
     "phonenumber_field",
     "oauth2_provider",
     "rest_framework",
@@ -275,6 +277,17 @@ CACHES = {
         "KEY_PREFIX": "rate_limit",
         "OPTIONS": {"socket_connect_timeout": 1, "socket_timeout": 1},
     },
+    # In front of the runtime settings (django-constance) in the database. Shared, so an admin edit reaches
+    # every process at once. If Redis is down, reads go to the database instead (utils.cache).
+    "constance": {
+        "BACKEND": "utils.cache.FailSoftRedisCache",
+        "LOCATION": env("RATE_LIMIT_REDIS_URL", default=CELERY_BROKER_URL),
+        "KEY_PREFIX": "constance",
+        # Bounds how long a change that skipped the cache (made while Redis was down, or straight in the
+        # database) takes to show. Edits through admin update the cache immediately.
+        "TIMEOUT": 300,
+        "OPTIONS": {"socket_connect_timeout": 1, "socket_timeout": 1},
+    },
 }
 
 if SENTRY_DSN:
@@ -348,44 +361,114 @@ SMS_VENDORS = {
 # The vendor send_sms uses. Set to "console" to run without Twilio.
 SMS_DEFAULT_VENDOR = env("SMS_DEFAULT_VENDOR", default="twilio")
 
-# Calling codes of the countries send_sms may send to. Keep in sync with the Twilio geo permissions.
-# Set the env var to an empty string to allow every country.
-SMS_SUPPORTED_COUNTRY_CODES = env.list(
-    "SMS_SUPPORTED_COUNTRY_CODES",
-    default=[
-        "1",  # Canada, USA
-        "27",  # South Africa
-        "44",  # UK
-        "91",  # India
-        "221",  # Senegal
-        "231",  # Liberia
-        "232",  # Sierra Leone
-        "233",  # Ghana
-        "234",  # Nigeria
-        "236",  # Central African Republic
-        "243",  # DR Congo
-        "251",  # Ethiopia
-        "252",  # Somalia
-        "254",  # Kenya
-        "255",  # Tanzania
-        "256",  # Uganda
-        "258",  # Mozambique
-        "260",  # Zambia
-        "265",  # Malawi
+# Country lists and SMS caps are runtime settings (django-constance), changed in Django admin under
+# "Config" without a restart. The env vars below only seed them: once a value has been saved in admin, the
+# saved value wins and the env var is ignored. See docs/runtime-config.md.
+CONSTANCE_BACKEND = "constance.backends.database.DatabaseBackend"
+CONSTANCE_DATABASE_CACHE_BACKEND = "constance"
+# On a cache miss, every setting is loaded into the cache in one query, for this long.
+CONSTANCE_DATABASE_CACHE_AUTOFILL_TIMEOUT = 300
+CONSTANCE_ADDITIONAL_FIELDS = {
+    "calling_codes": [
+        "django.forms.CharField",
+        {
+            "required": False,
+            "validators": [
+                RegexValidator(r"^\s*(\d{1,4}\s*(,\s*\d{1,4}\s*)*)?$", "Comma-separated calling codes, e.g. 265, 258")
+            ],
+        },
     ],
-)
-# Caps per destination country, applied separately to SMS sends and to new configuration sessions
-# (which can trigger a Firebase SMS that never passes through send_sms).
-PHONE_COUNTRY_HOURLY_LIMIT = env.int("PHONE_COUNTRY_HOURLY_LIMIT", default=50)
-PHONE_COUNTRY_DAILY_LIMIT = env.int("PHONE_COUNTRY_DAILY_LIMIT", default=300)
-# Caps on SMS sent to a single number.
-SMS_NUMBER_HOURLY_LIMIT = env.int("SMS_NUMBER_HOURLY_LIMIT", default=5)
-SMS_NUMBER_DAILY_LIMIT = env.int("SMS_NUMBER_DAILY_LIMIT", default=10)
-# Caps on OTP SMS sent for one user, across all their numbers (primary, secondary, payment).
-OTP_USER_HOURLY_LIMIT = env.int("OTP_USER_HOURLY_LIMIT", default=10)
-OTP_USER_DAILY_LIMIT = env.int("OTP_USER_DAILY_LIMIT", default=20)
-# Share of a country limit at which a warning goes to Sentry, ahead of the limit blocking people.
-RATE_LIMIT_WARN_FRACTION = env.float("RATE_LIMIT_WARN_FRACTION", default=0.8)
+    "alpha2_codes": [
+        "django.forms.CharField",
+        {
+            "required": False,
+            "validators": [
+                RegexValidator(
+                    r"^\s*([A-Za-z]{2}\s*(,\s*[A-Za-z]{2}\s*)*)?$", "Comma-separated two-letter codes, e.g. ke, ng"
+                )
+            ],
+        },
+    ],
+}
+CONSTANCE_CONFIG = {
+    "SMS_SUPPORTED_COUNTRY_CODES": (
+        ",".join(
+            env.list(
+                "SMS_SUPPORTED_COUNTRY_CODES",
+                default=[
+                    "1",  # Canada, USA
+                    "27",  # South Africa
+                    "44",  # UK
+                    "91",  # India
+                    "221",  # Senegal
+                    "231",  # Liberia
+                    "232",  # Sierra Leone
+                    "233",  # Ghana
+                    "234",  # Nigeria
+                    "236",  # Central African Republic
+                    "243",  # DR Congo
+                    "251",  # Ethiopia
+                    "252",  # Somalia
+                    "254",  # Kenya
+                    "255",  # Tanzania
+                    "256",  # Uganda
+                    "258",  # Mozambique
+                    "260",  # Zambia
+                    "265",  # Malawi
+                ],
+            )
+        ),
+        "Calling codes (e.g. 265 for Malawi) of the phone numbers we send SMS to and that may start a "
+        "configuration session (which can trigger a Firebase SMS). Keep in sync with the Twilio geo "
+        "permissions. EMPTY ALLOWS EVERY COUNTRY.",
+        "calling_codes",
+    ),
+    "BLACKLISTED_COUNTRY_CODES": (
+        ",".join(env.list("BLACKLISTED_COUNTRY_CODES", default=[])),
+        "Two-letter country codes (e.g. ke) blocked from starting a configuration session, judged by the "
+        "device's GPS location. Only applies when MAPBOX_ACCESS_TOKEN is set and the device sent a location.",
+        "alpha2_codes",
+    ),
+    "PHONE_COUNTRY_HOURLY_LIMIT": (
+        env.int("PHONE_COUNTRY_HOURLY_LIMIT", default=50),
+        "Per destination country, per hour: SMS sends, and separately new configuration sessions.",
+        int,
+    ),
+    "PHONE_COUNTRY_DAILY_LIMIT": (
+        env.int("PHONE_COUNTRY_DAILY_LIMIT", default=300),
+        "Per destination country, per day: SMS sends, and separately new configuration sessions.",
+        int,
+    ),
+    "SMS_NUMBER_HOURLY_LIMIT": (env.int("SMS_NUMBER_HOURLY_LIMIT", default=5), "SMS to one number, per hour.", int),
+    "SMS_NUMBER_DAILY_LIMIT": (env.int("SMS_NUMBER_DAILY_LIMIT", default=10), "SMS to one number, per day.", int),
+    "OTP_USER_HOURLY_LIMIT": (
+        env.int("OTP_USER_HOURLY_LIMIT", default=10),
+        "OTP SMS for one user across all their numbers, per hour.",
+        int,
+    ),
+    "OTP_USER_DAILY_LIMIT": (
+        env.int("OTP_USER_DAILY_LIMIT", default=20),
+        "OTP SMS for one user across all their numbers, per day.",
+        int,
+    ),
+    "RATE_LIMIT_WARN_FRACTION": (
+        env.float("RATE_LIMIT_WARN_FRACTION", default=0.8),
+        "Share of a country limit at which a warning goes to Sentry, ahead of the limit blocking people.",
+        float,
+    ),
+}
+CONSTANCE_CONFIG_FIELDSETS = {
+    "Countries": ("SMS_SUPPORTED_COUNTRY_CODES", "BLACKLISTED_COUNTRY_CODES"),
+    "SMS and OTP rate limits": (
+        "PHONE_COUNTRY_HOURLY_LIMIT",
+        "PHONE_COUNTRY_DAILY_LIMIT",
+        "SMS_NUMBER_HOURLY_LIMIT",
+        "SMS_NUMBER_DAILY_LIMIT",
+        "OTP_USER_HOURLY_LIMIT",
+        "OTP_USER_DAILY_LIMIT",
+        "RATE_LIMIT_WARN_FRACTION",
+    ),
+}
 
 EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Connect <noreply@commcare-connect.org>")
@@ -497,10 +580,6 @@ CONNECT_INVITED_USER_URL = "https://connect.dimagi.com/users/invited_user/"
 CONNECT_RESEND_INVITES_URL = "https://connect.dimagi.com/users/resend_invites/"
 CONNECT_TOGGLES_URL = "https://connect.dimagi.com/users/toggles/"
 CONNECT_UPDATE_PROFILE_URL = "https://connect.dimagi.com/users/update_profile/"
-
-# List of countries that are blacklisted from using PersonalID
-# Example: ["us", "ca", "gb"] (Alpha-2 country codes)
-BLACKLISTED_COUNTRY_CODES = env.list("BLACKLISTED_COUNTRY_CODES", default=[])
 
 MAPBOX_ACCESS_TOKEN = env("MAPBOX_ACCESS_TOKEN", default="")
 
