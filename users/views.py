@@ -110,6 +110,25 @@ def register(request):
     return JsonResponse({"secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key})
 
 
+def _refuse_session_by_country(phone_number: str) -> JsonResponse | None:
+    """The response refusing a new configuration session for this number's country, or None to allow it.
+
+    A new session can lead to an SMS from us or from Firebase, so the SMS country rules apply here too. The
+    allowlist is checked before the limit, so attempts from unsupported countries don't use up anyone's quota.
+    """
+    number = to_python(phone_number)
+    if not is_country_supported(number):
+        logger.warning("Configuration session for %s refused: country not supported", mask(number))
+        return JsonResponse({"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}, status=403)
+    exceeded = hit_country_limit("configuration_session", number)
+    if exceeded:
+        return JsonResponse(
+            {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": exceeded.retry_after_seconds},
+            status=429,
+        )
+    return None
+
+
 @api_view(["POST"])
 @permission_classes([])
 @require_app_integrity
@@ -123,19 +142,8 @@ def start_device_configuration(request):
         )
 
     is_demo_user = data["phone_number"].startswith(TEST_NUMBER_PREFIX)
-    if not is_demo_user:
-        # A new session can lead to an SMS from us or from Firebase, so the SMS country rules apply here too.
-        # Checked before the limit, so attempts from unsupported countries don't use up anyone's quota.
-        phone_number = to_python(data["phone_number"])
-        if not is_country_supported(phone_number):
-            logger.warning("Configuration session for %s refused: country not supported", mask(phone_number))
-            return JsonResponse({"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}, status=403)
-        exceeded = hit_country_limit("configuration_session", phone_number)
-        if exceeded:
-            return JsonResponse(
-                {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": exceeded.retry_after_seconds},
-                status=429,
-            )
+    if not is_demo_user and (refusal := _refuse_session_by_country(data["phone_number"])):
+        return refusal
 
     token_session = ConfigurationSession(
         phone_number=data["phone_number"],
