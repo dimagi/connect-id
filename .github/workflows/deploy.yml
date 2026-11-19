@@ -166,15 +166,15 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-          DEPLOY_ENV: ${{ inputs.environment }}
-          DEPLOY_TYPE: ${{ inputs.deploy_type }}
+          DEPLOY_ENV: ${{ env.DEPLOY_ENVIRONMENT }}
+          DEPLOY_TYPE: ${{ inputs.deploy_type || 'scheduled' }}
         run: |
           # required_contexts=[] skips GitHub's commit-status check; CI gating is the deploy process's job
           DEPLOYMENT_ID="$(jq -n \
             --arg ref "${GITHUB_SHA}" \
             --arg environment "${DEPLOY_ENV}" \
             --arg description "${DEPLOY_TYPE} deploy of ${GITHUB_REF_NAME}" \
-            --argjson production "${{ inputs.environment == 'production' }}" \
+            --argjson production "${{ env.DEPLOY_ENVIRONMENT == 'production' }}" \
             '{ref: $ref, environment: $environment, description: $description, auto_merge: false,
               required_contexts: [], production_environment: $production}' \
             | gh api "repos/${GITHUB_REPOSITORY}/deployments" --input - --jq '.id')"
