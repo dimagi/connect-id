@@ -5,4 +5,4 @@ set -o pipefail
 set -o nounset
 
 
-REMAP_SIGTERM=SIGQUIT celery -A connectid.celery_app beat -l INFO
+REMAP_SIGTERM=SIGQUIT exec celery -A connectid.celery_app beat -l INFO
