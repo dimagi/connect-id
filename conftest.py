@@ -6,6 +6,7 @@ from constance import config as constance_config
 from constance.backends.memory import MemoryBackend
 from django.conf import settings
 from django.core.cache import caches
+from django.utils.functional import empty
 from django.utils.timezone import now
 from oauth2_provider.models import AccessToken, Application
 from rest_framework.test import APIClient
@@ -58,7 +59,11 @@ def config(monkeypatch):
     """
     backend = MemoryBackend()
     backend._storage = {}
-    monkeypatch.setattr(constance_config, "_backend", backend)
+    # Patch the Config that constance's LazyConfig wraps, not the lazy proxy: `_backend` lives on the wrapped
+    # object, and from pytest 9.2 undoing a patch on the proxy deletes the real `_backend` instead of restoring it.
+    if constance_config._wrapped is empty:
+        constance_config._setup()
+    monkeypatch.setattr(constance_config._wrapped, "_backend", backend)
     return constance_config
 
 
