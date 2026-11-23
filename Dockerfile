@@ -13,7 +13,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # install system dependencies
-RUN apt-get update && apt-get -y install libpq-dev gcc curl
+RUN apt-get update && apt-get -y install libpq-dev gcc curl postgresql-client
 
 
 RUN addgroup --system django \
