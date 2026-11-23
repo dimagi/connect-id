@@ -13,6 +13,7 @@ from django.urls import reverse, reverse_lazy
 from django.utils.timezone import now
 from faker import Faker
 from fcm_django.models import FCMDevice
+from kombu.exceptions import OperationalError as KombuOperationalError
 from phonenumbers.phonenumberutil import NumberParseException
 from waffle.testutils import override_switch
 
@@ -3922,7 +3923,7 @@ class TestCompleteRecoveryApi:
 
 
 class TestForwardHQInvite:
-    def _post(self, client, phone_number, callback_url="https://www.commcarehq.org/callback"):
+    def _post(self, client, phone_number, callback_url="https://www.commcarehq.org/callback", push_error=None):
         data = {
             "phone_number": str(phone_number),
             "callback_url": callback_url,
@@ -3930,7 +3931,7 @@ class TestForwardHQInvite:
             "user_domain": "domain",
             "invite_code": "code",
         }
-        with mock.patch("users.views.send_bulk_notification_task.delay") as push:
+        with mock.patch("users.views.send_bulk_notification_task.delay", side_effect=push_error) as push:
             response = client.post(reverse("forward_hq_invite"), data)
         return response, push
 
@@ -3955,6 +3956,13 @@ class TestForwardHQInvite:
 
         assert response.json() == {"success": True}
         push.assert_not_called()
+
+    def test_broker_failure_still_reports_success(self, authed_client, user):
+        response, push = self._post(authed_client, user.phone_number, push_error=KombuOperationalError("down"))
+
+        push.assert_called_once()
+        assert response.status_code == 200
+        assert response.json() == {"success": True}
 
     def test_untrusted_callback_url(self, authed_client, user):
         response, push = self._post(authed_client, user.phone_number, callback_url="https://evil.example.com/cb")

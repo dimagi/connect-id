@@ -411,7 +411,7 @@ class UserCredential(models.Model):
                 "credential_title": title,
             },
         }
-        transaction.on_commit(lambda: send_bulk_notification_task.delay(**notification))
+        send_bulk_notification_task.delay_on_commit(**notification)
 
 
 class ConfigurationSession(models.Model):

@@ -21,6 +21,7 @@ from django.utils.timezone import now
 from django.views import View
 from firebase_admin import auth
 from googleapiclient.errors import HttpError
+from kombu.exceptions import OperationalError as KombuOperationalError
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from phonenumber_field.phonenumber import to_python
@@ -881,19 +882,22 @@ class ForwardHQInvite(APIView):
         )
         deeplink = f"https://connectid.dimagi.com/hq_invite/?{query_string}"
 
-        # Queued rather than sent here, so the response is the same whether or not the push reaches a device
-        # and doesn't reveal that the account exists.
-        send_bulk_notification_task.delay(
-            usernames=[user.username],
-            title="CommCare project invite",
-            body=f"You are invited to join the CommCare project {request.data['user_domain']}. Tap to join.",
-            data={
-                "action": HQ_INVITE_ACTION,
-                "deeplink": deeplink,
-                "hq_domain": request.data["user_domain"],
-                "hq_username": request.data["username"],
-            },
-        )
+        # Queued rather than sent here, and a broker failure still reports success, so the response is the
+        # same as for an unknown number and doesn't reveal that the account exists.
+        try:
+            send_bulk_notification_task.delay(
+                usernames=[user.username],
+                title="CommCare project invite",
+                body=f"You are invited to join the CommCare project {request.data['user_domain']}. Tap to join.",
+                data={
+                    "action": HQ_INVITE_ACTION,
+                    "deeplink": deeplink,
+                    "hq_domain": request.data["user_domain"],
+                    "hq_username": request.data["username"],
+                },
+            )
+        except KombuOperationalError:
+            logger.exception("HQ invite push not queued")
         return JsonResponse({"success": True})
 
 
