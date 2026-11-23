@@ -65,6 +65,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "allow_cidr.middleware.AllowCIDRMiddleware",
+    "utils.middleware.RequestLoggingMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -180,6 +181,10 @@ LOGGING = {
         "propagate": False,
     },
     "loggers": {
+        # One line per request, from utils.middleware.RequestLoggingMiddleware. Set to WARNING to turn it off.
+        "connectid.requests": {
+            "level": env("REQUEST_LOG_LEVEL", default="INFO"),
+        },
         "django.security.DisallowedHost": {
             "handlers": ["null"],
             "propagate": False,
