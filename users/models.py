@@ -17,6 +17,7 @@ from django.urls import reverse
 from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
 from geopy.geocoders import MapBox
+from kombu.exceptions import OperationalError as KombuOperationalError
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 from phonenumber_field.modelfields import PhoneNumberField
 
@@ -394,9 +395,6 @@ class UserCredential(models.Model):
             user_credential.notify_awarded()
 
     def notify_awarded(self):
-        # Imported here: messaging imports users.models.
-        from messaging.tasks import send_bulk_notification_task
-
         domain = Site.objects.get_current().domain
         location = reverse("accept_credential", args=(self.invite_id,))
         title = self.credential.title
@@ -411,7 +409,23 @@ class UserCredential(models.Model):
                 "credential_title": title,
             },
         }
-        send_bulk_notification_task.delay_on_commit(**notification)
+        transaction.on_commit(partial(_queue_credential_awarded_push, self.pk, notification))
+
+
+def _queue_credential_awarded_push(user_credential_id, notification):
+    """Queue the push, logging a broker failure instead of raising it.
+
+    Raising would fail the rest of an AddCredential batch, and the award is already saved either way, so a
+    retry wouldn't resend the push. The catch is inside the on_commit callback (not around delay_on_commit),
+    so it also covers the case where the callback runs after an enclosing transaction commits.
+    """
+    # Imported here: messaging imports users.models.
+    from messaging.tasks import send_bulk_notification_task
+
+    try:
+        send_bulk_notification_task.delay(**notification)
+    except KombuOperationalError:
+        logger.exception("Credential awarded push not queued for UserCredential %s", user_credential_id)
 
 
 class ConfigurationSession(models.Model):

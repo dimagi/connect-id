@@ -7,6 +7,7 @@ from django.contrib.auth.hashers import check_password
 from django.db import IntegrityError, connection
 from django.urls import reverse
 from django.utils.timezone import now
+from kombu.exceptions import OperationalError as KombuOperationalError
 
 from sms import SmsCountryNotSupportedError, SmsRateLimitedError, SmsSendError
 from users.const import CREDENTIAL_AWARDED_ACTION, MAX_OTP_BURN_COOLDOWN_HOURS, MAX_OTP_VERIFY_ATTEMPTS
@@ -418,8 +419,11 @@ class TestRateLimitLogging:
 
 @pytest.mark.django_db
 class TestAddCredential:
-    def _add(self, user, credential, capture):
-        with mock.patch("messaging.tasks.send_bulk_notification_task.delay") as push, capture(execute=True):
+    def _add(self, user, credential, capture, push_error=None):
+        with (
+            mock.patch("messaging.tasks.send_bulk_notification_task.delay", side_effect=push_error) as push,
+            capture(execute=True),
+        ):
             UserCredential.add_credential(user, credential, request=None)
         return push
 
@@ -446,3 +450,15 @@ class TestAddCredential:
         push = self._add(user_credential.user, user_credential.credential, django_capture_on_commit_callbacks)
 
         push.assert_not_called()
+
+    def test_broker_failure_is_logged_not_raised(
+        self, django_capture_on_commit_callbacks, credential_issuing_authority, caplog
+    ):
+        user = UserFactory()
+        credential = CredentialFactory(issuer=credential_issuing_authority)
+
+        push = self._add(user, credential, django_capture_on_commit_callbacks, KombuOperationalError("down"))
+
+        push.assert_called_once()
+        assert UserCredential.objects.filter(user=user, credential=credential).exists()
+        assert "Credential awarded push not queued" in caplog.text
