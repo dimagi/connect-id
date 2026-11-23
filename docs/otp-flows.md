@@ -172,15 +172,14 @@ These are still routed in `users/urls.py` and still send an SMS, but the current
 
 | Send endpoint | Confirm endpoint | What it did | Why it is unused |
 |---------------|------------------|-------------|------------------|
-| `validate_secondary_phone` | `confirm_secondary_otp` | Verified the recovery (secondary) phone and set `user.recovery_phone_validated` | The app no longer tracks secondary phone numbers |
 | `recover` | `recover/confirm_otp` | Old account recovery, step 1: a code to the primary phone | The app stopped calling it in June 2025 |
-| `recover/secondary` | `recover/confirm_secondary_otp` | Old account recovery, step 2: a code to the recovery phone | The app no longer tracks secondary phone numbers |
 | `profile/payment_phone_number` | `profile/confirm_payment_otp` | Verified the phone a user is paid on and set `payment_profile.is_verified` (views in `payments/views.py`) | The app never called it |
 
 - All of them use `PhoneDevice`.
 - A rate-limited send returns 200 and sends nothing.
 - A wrong code returns 401 `{"error": "OTP token is incorrect"}`, without `attempts_left`.
 - The `recover*` views need no auth (`@permission_classes([])`). `recover` returns a `secret`. Later recovery calls send it back as `secret_key`, and each call checks the stored `RecoveryStatus.step`.
+- The recovery phone OTP endpoints (`validate_secondary_phone`, `confirm_secondary_otp`, `recover/secondary`, `recover/confirm_secondary_otp`) and the SMS-token account deactivation endpoints (`recover/initiate_deactivation`, `recover/confirm_deactivation`) were removed.
 
 ## Related code
 

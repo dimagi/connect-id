@@ -19,11 +19,10 @@ from waffle.testutils import override_switch
 from flags.const import EMAIL_OTP_VERIFICATION
 from payments.models import PaymentProfile
 from services.ai.ocs import OpenChatStudio
-from sms import SmsCountryNotSupportedError, SmsRateLimitedError
 from test_utils.decorators import skip_app_integrity_check
 from users.const import (
+    HQ_INVITE_ACTION,
     MAX_OTP_VERIFY_ATTEMPTS,
-    NO_RECOVERY_PHONE_ERROR,
     TEST_NUMBER_PREFIX,
     ErrorCodes,
     RecoveryMethods,
@@ -257,17 +256,6 @@ class TestValidatePhone:
         assert mock_send_sms.call_count == 1
 
 
-class TestValidateSecondaryPhone:
-    def test_no_recovery_phone(self, auth_device):
-        endpoint = reverse("validate_secondary_phone")
-        response = auth_device.post(
-            endpoint,
-        )
-        assert isinstance(response, JsonResponse)
-        assert response.status_code == 400
-        assert response.json() == {"error": NO_RECOVERY_PHONE_ERROR}
-
-
 class TestConfirmOTP:
     @patch.object(PhoneDevice, "verify_token")
     def test_invalid_token(self, verify_token_mock, auth_device, user):
@@ -326,15 +314,6 @@ class TestConfirmOTP:
         assert response.status_code == 200
         user.refresh_from_db()
         assert user.phone_validated
-
-
-class TestConfirmSecondaryOTP:
-    def test_no_recovery_phone(self, auth_device, user):
-        endpoint = reverse("confirm_secondary_otp")
-        response = auth_device.post(endpoint)
-        assert isinstance(response, JsonResponse)
-        assert response.status_code == 400
-        assert response.json() == {"error": NO_RECOVERY_PHONE_ERROR}
 
 
 class TestRecoverAccount:
@@ -474,24 +453,6 @@ class TestConfirmRecoverOTP:
 
     def _make_post(self, client, data):
         return client.post(reverse("confirm_recovery_otp"), data=data)
-
-
-@pytest.mark.django_db
-class TestRecoverSecondaryPhone:
-    def test_no_recovery_phone(self, client, user):
-        RecoveryStatus.objects.create(
-            user=user,
-            secret_key="test_key",
-            step=RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY,
-        )
-        data = {
-            "phone": user.phone_number,
-            "secret_key": "test_key",
-        }
-        response = client.post(reverse("recover_secondary_phone"), data)
-        assert isinstance(response, JsonResponse)
-        assert response.status_code == 400
-        assert json.loads(response.content) == {"error": NO_RECOVERY_PHONE_ERROR}
 
 
 @pytest.mark.django_db
@@ -761,126 +722,6 @@ class TestListCredentials:
         assert response.status_code == 401
 
 
-class BaseTestDeactivation:
-    @property
-    def endpoint(self):
-        return reverse(self.urlname)
-
-    def get_post_data(self, user=None, recovery_status=None):
-        token = "123ABC"
-        if user and user.deactivation_token:
-            token = user.deactivation_token
-        return {
-            "phone_number": user.phone_number if user else "1234567890",
-            "secret_key": recovery_status.secret_key if recovery_status else "123ABC",
-            "token": token,
-        }
-
-    def assert_fail_response(self, response, expected_code, expected_status=401):
-        assert response.status_code == expected_status
-        assert isinstance(response, JsonResponse)
-        assert json.loads(response.content) == {
-            "error_code": expected_code,
-        }
-
-
-@pytest.mark.django_db
-class TestInitiateDeactivation(BaseTestDeactivation):
-    urlname = "initiate_deactivation"
-
-    @mock.patch("users.models.ConnectUser.initiate_deactivation")
-    def test_success(self, mock_initiate_deactivation, client, recovery_status):
-        response = client.post(
-            self.endpoint,
-            self.get_post_data(recovery_status.user, recovery_status),
-        )
-        assert response.status_code == 200
-        assert isinstance(response, HttpResponse)
-        mock_initiate_deactivation.assert_called()
-
-    def test_invalid_user(self, client):
-        response = client.post(
-            self.endpoint,
-            self.get_post_data(),
-        )
-        self.assert_fail_response(
-            response,
-            expected_code=ErrorCodes.USER_DOES_NOT_EXIST,
-            expected_status=400,
-        )
-
-    def test_rate_limited_sms_saves_no_token(self, client, recovery_status, config):
-        config.SMS_NUMBER_HOURLY_LIMIT = 0
-        user = recovery_status.user
-        user.phone_number = "+265991234567"
-        user.save()
-        token_before = user.deactivation_token
-
-        with mock.patch("sms.get_vendor"):
-            response = client.post(self.endpoint, self.get_post_data(user, recovery_status))
-
-        assert response.status_code == 429
-        user.refresh_from_db()
-        assert user.deactivation_token == token_before
-
-    def test_invalid_secret_key(self, client, recovery_status):
-        response = client.post(
-            self.endpoint,
-            self.get_post_data(recovery_status.user),
-        )
-        self.assert_fail_response(
-            response,
-            expected_code=ErrorCodes.INVALID_SECRET_KEY,
-        )
-
-
-@pytest.mark.django_db
-class TestConfirmDeactivation(BaseTestDeactivation):
-    urlname = "confirm_deactivation"
-
-    def test_success(self, client, recovery_status):
-        response = client.post(self.endpoint, self.get_post_data(recovery_status.user, recovery_status))
-        assert response.status_code == 200
-        assert isinstance(response, HttpResponse)
-
-        user = ConnectUser.objects.get(phone_number=recovery_status.user.phone_number)
-        assert user.is_active is False
-
-    def test_invalid_user(self, client):
-        response = client.post(self.endpoint, self.get_post_data())
-        self.assert_fail_response(
-            response,
-            expected_code=ErrorCodes.USER_DOES_NOT_EXIST,
-            expected_status=400,
-        )
-
-    def test_invalid_secret_key(self, client, recovery_status):
-        response = client.post(self.endpoint, self.get_post_data(recovery_status.user))
-        self.assert_fail_response(
-            response,
-            expected_code=ErrorCodes.INVALID_SECRET_KEY,
-        )
-
-    def test_invalid_deactivation_token(self, client, recovery_status):
-        data = self.get_post_data(recovery_status.user, recovery_status)
-        data["token"] = "wrong"
-        response = client.post(self.endpoint, data)
-        self.assert_fail_response(
-            response,
-            expected_code=ErrorCodes.INVALID_TOKEN,
-        )
-
-    def test_expired_deactivation_token(self, client, recovery_status_with_expired_token_user):
-        response = client.post(
-            self.endpoint,
-            self.get_post_data(recovery_status_with_expired_token_user.user, recovery_status_with_expired_token_user),
-        )
-        self.assert_fail_response(
-            response,
-            expected_code=ErrorCodes.TOKEN_EXPIRED,
-        )
-
-
 @pytest.mark.django_db
 class TestFetchUsers:
     @property
@@ -916,10 +757,7 @@ class TestGetDemoUsers:
         self.valid_user = UserFactory.create(
             phone_number=TEST_NUMBER_PREFIX + "1234567",
         )
-        invalid_user = UserFactory.create(
-            phone_number=TEST_NUMBER_PREFIX + "7654321",
-            deactivation_token=None,
-        )
+        invalid_user = UserFactory.create(phone_number=TEST_NUMBER_PREFIX + "7654321")
         self.valid_device = PhoneDeviceFactory.create(
             phone_number=TEST_NUMBER_PREFIX + "1234567",
             user=self.valid_user,
@@ -943,10 +781,6 @@ class TestGetDemoUsers:
                 {
                     "phone_number": TEST_NUMBER_PREFIX + "1234567",
                     "token": self.valid_device.token,
-                },
-                {
-                    "phone_number": TEST_NUMBER_PREFIX + "1234567",
-                    "token": self.valid_user.deactivation_token,
                 },
             ]
         }
@@ -4087,18 +3921,43 @@ class TestCompleteRecoveryApi:
         assert "previous_device" not in response.json()
 
 
-@pytest.mark.parametrize("error", [SmsRateLimitedError(60), SmsCountryNotSupportedError(92)])
-def test_forward_hq_invite_hides_sms_failures(authed_client, user, error):
-    data = {
-        "phone_number": str(user.phone_number),
-        "callback_url": "https://www.commcarehq.org/callback",
-        "username": "hq-user",
-        "user_domain": "domain",
-        "invite_code": "code",
-    }
-    with mock.patch("users.views.send_sms", side_effect=error) as send_sms:
-        response = authed_client.post(reverse("forward_hq_invite"), data)
+class TestForwardHQInvite:
+    def _post(self, client, phone_number, callback_url="https://www.commcarehq.org/callback"):
+        data = {
+            "phone_number": str(phone_number),
+            "callback_url": callback_url,
+            "username": "hq-user",
+            "user_domain": "domain",
+            "invite_code": "code",
+        }
+        with mock.patch("users.views.send_bulk_notification_task.delay") as push:
+            response = client.post(reverse("forward_hq_invite"), data)
+        return response, push
 
-    send_sms.assert_called_once()
-    assert response.status_code == 200
-    assert response.json() == {"success": True}
+    def test_sends_push_notification(self, authed_client, user):
+        response, push = self._post(authed_client, user.phone_number)
+
+        assert response.status_code == 200
+        assert response.json() == {"success": True}
+        push.assert_called_once()
+        kwargs = push.call_args.kwargs
+        assert kwargs["usernames"] == [user.username]
+        data = kwargs["data"]
+        assert data["action"] == HQ_INVITE_ACTION
+        assert data["hq_domain"] == "domain"
+        assert data["hq_username"] == "hq-user"
+        assert data["deeplink"].startswith("https://connectid.dimagi.com/hq_invite/?")
+        assert f"connect_username={user.username}" in data["deeplink"]
+        assert all(isinstance(value, str) for value in data.values())
+
+    def test_unknown_number_sends_nothing(self, authed_client, user):
+        response, push = self._post(authed_client, "+15555550199")
+
+        assert response.json() == {"success": True}
+        push.assert_not_called()
+
+    def test_untrusted_callback_url(self, authed_client, user):
+        response, push = self._post(authed_client, user.phone_number, callback_url="https://evil.example.com/cb")
+
+        assert response.status_code == 400
+        push.assert_not_called()

@@ -1,6 +1,8 @@
 TEST_NUMBER_PREFIX = "+7426"
 
-NO_RECOVERY_PHONE_ERROR = "Recovery phone number does not exist for user"
+# `action` in the data of push notifications sent from this app, so the mobile app knows how to handle them.
+CREDENTIAL_AWARDED_ACTION = "ccc_credential_awarded"
+HQ_INVITE_ACTION = "ccc_hq_invite"
 
 
 MAX_PHOTO_SIZE = 1 * 1024 * 1024  # 1 MB

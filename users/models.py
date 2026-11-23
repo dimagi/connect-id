@@ -16,7 +16,6 @@ from django.db.models.functions import Lower
 from django.urls import reverse
 from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
-from django_otp.util import random_hex
 from geopy.geocoders import MapBox
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 from phonenumber_field.modelfields import PhoneNumberField
@@ -28,7 +27,12 @@ from users.hashers import check_secret_password, make_secret_password
 from users.services import get_user_photo_base64
 from utils.rate_limit import BLOCKED, SUPPRESSED, log_event
 
-from .const import MAX_BACKUP_CODE_ATTEMPTS, MAX_OTP_BURN_COOLDOWN_HOURS, MAX_OTP_VERIFY_ATTEMPTS
+from .const import (
+    CREDENTIAL_AWARDED_ACTION,
+    MAX_BACKUP_CODE_ATTEMPTS,
+    MAX_OTP_BURN_COOLDOWN_HOURS,
+    MAX_OTP_VERIFY_ATTEMPTS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,20 +93,6 @@ class ConnectUser(AbstractUser):
 
     def check_password(self, raw_password):
         return check_secret_password(raw_password, self.password, partial(rehash_password, self))
-
-    def initiate_deactivation(self):
-        self.deactivation_token = random_hex(7)
-        self.deactivation_token_valid_until = now() + timedelta(seconds=600)
-        message = (
-            f"Your account deactivation request is pending. Please enter this token {self.deactivation_token} "
-            f"to confirm account deactivation."
-            f"Warning: This action is irreversible. If you didn't request deactivation, "
-            f"please ignore this message."
-        )
-        # Sent before saving, so a token is only stored once its SMS is out.
-        send_sms(self.phone_number, message)
-        self.save()
-        return message
 
     def get_photo(self):
         return get_user_photo_base64(self.username)
@@ -401,16 +391,27 @@ class UserCredential(models.Model):
     def add_credential(cls, user, credential, request):
         user_credential, created = cls.objects.get_or_create(user=user, credential=credential)
         if created:
-            domain = Site.objects.get_current().domain
-            location = reverse("accept_credential", args=(user_credential.invite_id,))
-            url = f"https://{domain}{location}"
-            message = (
-                f"You have been given credential '{credential.title}'. Please click the following link to accept {url}"
-            )
-            try:
-                send_sms(user.phone_number, message)
-            except (SmsRateLimitedError, SmsCountryNotSupportedError):
-                logger.warning("Credential %s granted to %s without an SMS", credential.pk, user.username)
+            user_credential.notify_awarded()
+
+    def notify_awarded(self):
+        # Imported here: messaging imports users.models.
+        from messaging.tasks import send_bulk_notification_task
+
+        domain = Site.objects.get_current().domain
+        location = reverse("accept_credential", args=(self.invite_id,))
+        title = self.credential.title
+        notification = {
+            "usernames": [self.user.username],
+            "title": "New credential",
+            "body": f"You have been given credential '{title}'. Tap to accept it.",
+            "data": {
+                "action": CREDENTIAL_AWARDED_ACTION,
+                "invite_id": str(self.invite_id),
+                "accept_url": f"https://{domain}{location}",
+                "credential_title": title,
+            },
+        }
+        transaction.on_commit(lambda: send_bulk_notification_task.delay(**notification))
 
 
 class ConfigurationSession(models.Model):

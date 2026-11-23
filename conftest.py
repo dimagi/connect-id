@@ -151,14 +151,6 @@ def recovery_status():
 
 
 @pytest.fixture
-def recovery_status_with_expired_token_user():
-    status = RecoveryStatusFactory()
-    status.user.deactivation_token_valid_until = now() - timedelta(days=1)
-    status.user.save()
-    return status
-
-
-@pytest.fixture
 def token_auth():
     return SessionTokenAuthentication()
 

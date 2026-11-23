@@ -13,12 +13,8 @@ urlpatterns = [
     path("confirm_otp", views.confirm_otp, name="confirm_otp"),
     path("send_session_otp", views.send_session_otp, name="send_session_otp"),
     path("confirm_session_otp", views.confirm_session_otp, name="confirm_session_otp"),
-    path("validate_secondary_phone", views.validate_secondary_phone, name="validate_secondary_phone"),
-    path("confirm_secondary_otp", views.confirm_secondary_otp, name="confirm_secondary_otp"),
     path("recover", views.recover_account, name="recover_account"),
     path("recover/confirm_otp", views.confirm_recovery_otp, name="confirm_recovery_otp"),
-    path("recover/secondary", views.recover_secondary_phone, name="recover_secondary_phone"),
-    path("recover/confirm_secondary_otp", views.confirm_secondary_recovery_otp, name="confirm_secondary_recovery_otp"),
     path("recover/reset_password", views.reset_password, name="reset_password"),
     path("recover/confirm_password", views.confirm_password, name="confirm_password"),
     path("phone_available", views.phone_available, name="phone_available"),
@@ -37,8 +33,6 @@ urlpatterns = [
     path("credentials", views.ListCredentials.as_view(), name="list_credentials"),
     path("accept_credential/<slug:invite_id>", views.accept_credential, name="accept_credential"),
     path("fetch_db_key", views.fetch_db_key, name="fetch_db_key"),
-    path("recover/initiate_deactivation", views.initiate_deactivation, name="initiate_deactivation"),
-    path("recover/confirm_deactivation", views.confirm_deactivation, name="confirm_deactivation"),
     path(
         "profile/payment_phone_number", payment_views.update_payment_profile_phone, name="update_payment_profile_phone"
     ),
