@@ -132,4 +132,14 @@ Note: If you used a different profile name you will need to set the `AWS_PROFILE
 
 ### Deploy
 
-To deploy run `kamal deploy` from within the `deploy` directory. Make sure you are on the `main` branch and have pulled the latest code.
+Production deploys continuously: every push to `main` is deployed by the `Deploy` workflow
+(`.github/workflows/deploy.yml`) once CI passes on it. A deploy is skipped if CI failed, if a newer commit has
+landed on `main` since (that commit's own CI run deploys it), or if the commit is already live. These are checked
+again just before the deploy starts, in case things changed while it waited for an earlier deploy to finish. Deploys never
+overlap; merges that land while one is running go out together in the next one.
+
+To retry a failed deploy or redeploy, run the `Deploy` workflow by hand from the Actions tab. It must be run on
+`main` (any other branch fails) and deploys right away, without waiting for CI. To ship a fix, merge it to `main`.
+
+To deploy from your own machine, run `kamal deploy` from within the `deploy` directory. Make sure you are on the
+`main` branch and have pulled the latest code.

@@ -39,7 +39,8 @@ In particular consider how existing data may be impacted by this change.
 ### Deployment
 
 <!--
-    Think about whether merging this to main is enough to ship it safely.
+    Merging to main deploys to production as soon as CI passes, so think about
+    whether merging is enough to ship it safely.
     Does it need a config value set, a management command run, a feature flag
     created, a migration applied out of band, or a coordinated release with
     another service?

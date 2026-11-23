@@ -27,9 +27,9 @@ jobs:
 
           echo "::error::The \"This PR can be deployed\" checkbox in the PR description is not ticked."
           echo ""
-          echo "Before merging to main, confirm this change can be deployed as-is."
-          echo "If it needs configuration, commands, or other manual steps, describe"
-          echo "them in the PR description and coordinate with whoever will deploy."
+          echo "Merging to main deploys to production once CI passes, so first confirm"
+          echo "this change can be deployed as-is. If it needs configuration, commands,"
+          echo "or other manual steps, do them before merging."
           echo ""
           echo "Then tick the box in the Deployment section of the PR description:"
           echo "  - [x] This PR can be deployed: ..."

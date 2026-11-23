@@ -1,12 +1,19 @@
 name: Deploy
-run-name: Deploy to ${{ inputs.environment || 'production' }} (${{ inputs.deploy_type || 'scheduled' }})
+run-name: Deploy to ${{ inputs.environment || 'production' }} (${{ github.event_name == 'workflow_run' && 'continuous' || 'manual' }})
+
+# Continuous deploy: every push to main deploys once CI passes on it. Deploys never overlap (see the deploy job).
+# Manual runs (Actions > Deploy > Run workflow) must be started on main. They deploy right away, without waiting for
+# CI, for retries, redeploys and incidents.
 
 env:
   AWS_REGION: 'us-east-1'
   SENTRY_ORG: 'dimagi'
   SENTRY_PROJECT: 'connect-id'
-  # Scheduled runs have no inputs, so fall back to the defaults
+  # Automatic runs have no inputs, so fall back to the defaults
   DEPLOY_ENVIRONMENT: ${{ inputs.environment || 'production' }}
+  # On workflow_run, github.sha is the tip of main when this run started, not the commit CI tested
+  DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  DEPLOY_TYPE: ${{ github.event_name == 'workflow_run' && 'continuous' || 'manual' }}
 
 permissions:
   id-token: write
@@ -14,13 +21,10 @@ permissions:
   deployments: write
 
 on:
-  schedule:
-    # 12:00 UTC on Monday, Wednesday and Friday
-    - cron: '0 12 * * 1,3,5'
-  #  workflow_run:
-  #    workflows: [CI]
-  #    types: [completed]
-  #    branches: [main]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       environment:
@@ -29,81 +33,74 @@ on:
         type: choice
         options:
           - production
-      deploy_type:
-        description: 'Whether this deploy is part of the regular schedule or an adhoc/hotfix deploy'
-        required: true
-        default: 'scheduled'
-        type: choice
-        options:
-          - scheduled
-          - adhoc
 
 jobs:
   check:
+    # Only CI runs for pushes to main in this repository. A pull request from a fork's `main` branch
+    # also matches `branches: [main]` above, and must never deploy.
+    if: >-
+      github.event_name == 'workflow_dispatch' || (
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      )
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     permissions:
       contents: read
-      actions: read
     outputs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
     steps:
-      # Scheduled deploys only go out when there is something new on main and CI passed on it.
-      # Manual deploys always go ahead.
+      # Automatic deploys go out only when CI passed, the commit is still the tip of main and it isn't live yet.
+      # Manual deploys must be of main, and skip these checks.
       - id: check
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
+          skip() {
+            echo "::notice::$1, skipping deploy."
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "skip_reason=$1" >> "$GITHUB_OUTPUT"
+            echo "notify_skip=${2:-false}" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          if [ "$GITHUB_EVENT_NAME" != "workflow_run" ]; then
+            if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+              echo "::error::Manual deploys must be run on main, not ${GITHUB_REF_NAME}. Merge the change to main first."
+              exit 1
+            fi
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # Releases are only created by successful deploys, so the latest one marks what is live
+          # Failed CI is the one skip worth telling Slack about: main can't deploy until it's fixed
+          if [ "$CI_CONCLUSION" != "success" ]; then
+            skip "CI did not pass on ${DEPLOY_SHA::7} (${CI_CONCLUSION})" true
+          fi
+
+          # CI runs for different commits can finish out of order. Deploying an older commit after a newer
+          # one would roll production back, so only the tip of main deploys; its own CI run will handle it.
+          main_sha=$(gh api "repos/$GH_REPO/commits/main" --jq .sha)
+          if [ "$main_sha" != "$DEPLOY_SHA" ]; then
+            skip "${DEPLOY_SHA::7} is no longer the tip of main (now ${main_sha::7})"
+          fi
+
+          # Releases are only created by successful deploys, so the latest one marks what is live.
+          # Catches a re-run of CI on a commit that already went out.
           last_release_tag=$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName // ""')
           if [ -n "$last_release_tag" ]; then
             last_deployed_sha=$(gh api "repos/$GH_REPO/commits/$last_release_tag" --jq .sha)
-            if [ "$last_deployed_sha" = "$GITHUB_SHA" ]; then
-              reason="Nothing new since the last release ($last_release_tag)"
-              echo "::notice::$reason, skipping deploy."
-              echo "should_deploy=false" >> "$GITHUB_OUTPUT"
-              echo "skip_reason=$reason" >> "$GITHUB_OUTPUT"
-              exit 0
+            if [ "$last_deployed_sha" = "$DEPLOY_SHA" ]; then
+              skip "${DEPLOY_SHA::7} is already live ($last_release_tag)"
             fi
-          fi
-
-          # Something merged just before the scheduled time may still be in CI, so give it time to finish
-          deadline=$((SECONDS + 20 * 60))
-          while true; do
-            read -r ci_status ci_conclusion < <(
-              gh run list --workflow ci.yaml --event push --commit "$GITHUB_SHA" --limit 1 \
-                --json status,conclusion --jq '.[0] | "\(.status // "none") \(.conclusion // "")"'
-            )
-            if [ "$ci_status" = "completed" ] || [ "$SECONDS" -ge "$deadline" ]; then
-              break
-            fi
-            echo "CI on ${GITHUB_SHA::7} is ${ci_status}, waiting for it to finish..."
-            sleep 30
-          done
-
-          if [ "$ci_conclusion" != "success" ]; then
-            case "$ci_status" in
-              completed) ci_detail="$ci_conclusion" ;;
-              none) ci_detail="no CI run found" ;;
-              *) ci_detail="still ${ci_status} after 20 minutes" ;;
-            esac
-            reason="CI has not passed on ${GITHUB_SHA::7} (${ci_detail})"
-            echo "::warning::$reason, skipping deploy."
-            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
-            echo "skip_reason=$reason" >> "$GITHUB_OUTPUT"
-            exit 0
           fi
 
           echo "should_deploy=true" >> "$GITHUB_OUTPUT"
 
       - name: Notify Deploy Skipped
-        if: ${{ steps.check.outputs.should_deploy == 'false' }}
+        if: ${{ steps.check.outputs.notify_skip == 'true' }}
         uses: slackapi/slack-github-action@v1.24.0
         with:
           channel-id: 'C09HWCJSVJ6'
@@ -144,18 +141,58 @@ jobs:
   deploy:
     needs: check
     if: needs.check.outputs.should_deploy == 'true'
+    # Set on this job, not the workflow, so a run that skips can't push a pending deploy out of the queue.
+    # GitHub keeps at most one pending run per group, the newest, so merges during a deploy go out together.
+    concurrency:
+      group: deploy-${{ inputs.environment || 'production' }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     env:
       LOG_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
+      # The check job ran before this one waited its turn in the queue. Ask again now that it is this run's turn:
+      # a newer commit may have landed, or gone out, in the meantime. Every later step is gated on this.
+      # Manual runs skip it, as they skip the check job's tests.
+      - id: recheck
+        name: Re-check this is still the commit to deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != "workflow_run" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          main_sha=$(gh api "repos/$GH_REPO/commits/main" --jq .sha)
+          if [ "$main_sha" != "$DEPLOY_SHA" ]; then
+            echo "::notice::${DEPLOY_SHA::7} is no longer the tip of main (now ${main_sha::7}), skipping deploy."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          last_release_tag=$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName // ""')
+          if [ -n "$last_release_tag" ] && \
+             [ "$(gh api "repos/$GH_REPO/commits/$last_release_tag" --jq .sha)" = "$DEPLOY_SHA" ]; then
+            echo "::notice::${DEPLOY_SHA::7} is already live ($last_release_tag), skipping deploy."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "go=true" >> "$GITHUB_OUTPUT"
+
       - name: Checkout source code
+        if: steps.recheck.outputs.go == 'true'
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
 
       - name: Set release identifier
+        if: steps.recheck.outputs.go == 'true'
         run: |
           # Sentry release versions cannot contain slashes, so sanitize the ref name
           SAFE_REF_NAME="${GITHUB_REF_NAME//\//-}"
-          echo "APP_RELEASE=${SAFE_REF_NAME}.${GITHUB_SHA}" >> "$GITHUB_ENV"
+          echo "APP_RELEASE=${SAFE_REF_NAME}.${DEPLOY_SHA}" >> "$GITHUB_ENV"
 
       # Record the deploy in GitHub's Deployments API so the environment shows what is running there.
       # Created explicitly rather than via the job-level `environment:` key, which would change the
@@ -163,15 +200,15 @@ jobs:
       # Bookkeeping only: a failure here must not block the deploy.
       - id: gh_deployment
         name: Create GitHub deployment
+        if: steps.recheck.outputs.go == 'true'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           DEPLOY_ENV: ${{ env.DEPLOY_ENVIRONMENT }}
-          DEPLOY_TYPE: ${{ inputs.deploy_type || 'scheduled' }}
         run: |
           # required_contexts=[] skips GitHub's commit-status check; CI gating is the deploy process's job
           DEPLOYMENT_ID="$(jq -n \
-            --arg ref "${GITHUB_SHA}" \
+            --arg ref "${DEPLOY_SHA}" \
             --arg environment "${DEPLOY_ENV}" \
             --arg description "${DEPLOY_TYPE} deploy of ${GITHUB_REF_NAME}" \
             --argjson production "${{ env.DEPLOY_ENVIRONMENT == 'production' }}" \
@@ -184,12 +221,15 @@ jobs:
             -f log_url="${LOG_URL}" > /dev/null
 
       - name: Set up Ruby
+        if: steps.recheck.outputs.go == 'true'
         uses: actions/setup-ruby@v1
 
       - name: Install Kamal
+        if: steps.recheck.outputs.go == 'true'
         run: gem install kamal -v '~> 1.9.2'
 
       - name: Install SSH key
+        if: steps.recheck.outputs.go == 'true'
         uses: shimataro/ssh-key-action@v2.5.1
         with:
           key: ${{ secrets.SSH_KEY }}
@@ -200,6 +240,7 @@ jobs:
               UserKnownHostsFile=/dev/null
 
       - name: configure aws credentials
+        if: steps.recheck.outputs.go == 'true'
         uses: aws-actions/configure-aws-credentials@v3.0.1
         with:
           role-to-assume: arn:aws:iam::037129986032:role/github_deploy
@@ -208,6 +249,7 @@ jobs:
 
       - id: slack
         name: Notify Deploy Start
+        if: steps.recheck.outputs.go == 'true'
         uses: slackapi/slack-github-action@v1.24.0
         with:
           channel-id: 'C09HWCJSVJ6'
@@ -246,11 +288,12 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN}}
 
       - id: deploy
+        if: steps.recheck.outputs.go == 'true'
         working-directory: ./deploy
         run: 'kamal deploy'
 
       - name: Create Sentry release
-        if: ${{ success() }}
+        if: ${{ success() && steps.recheck.outputs.go == 'true' }}
         uses: getsentry/action-release@v3
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -260,19 +303,19 @@ jobs:
           projects: ${{ env.SENTRY_PROJECT }}
           set_commits: manual
           repo: dimagi/connect-id
-          commit: ${{ github.sha }}
+          commit: ${{ env.DEPLOY_SHA }}
 
       - name: Set release tag
-        if: ${{ success() && env.DEPLOY_ENVIRONMENT == 'production' }}
+        if: ${{ success() && steps.recheck.outputs.go == 'true' && env.DEPLOY_ENVIRONMENT == 'production' }}
         run: echo "RELEASE_TAG=$(date -u +'%Y-%m-%d_%H-%M-%S')" >> "$GITHUB_ENV"
 
       - name: Create GitHub release
-        if: ${{ success() && env.DEPLOY_ENVIRONMENT == 'production' }}
+        if: ${{ success() && steps.recheck.outputs.go == 'true' && env.DEPLOY_ENVIRONMENT == 'production' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ env.DEPLOY_SHA }}
           generate_release_notes: true
 
       - name: Update GitHub deployment status
@@ -291,7 +334,8 @@ jobs:
 
       - name: Notify Deploy End
         uses: slackapi/slack-github-action@v1.24.0
-        if: always()
+        # Not when the re-check decided to skip: no deploy started, so there is nothing to report
+        if: ${{ always() && steps.recheck.outputs.go != 'false' }}
         with:
           channel-id: 'C09HWCJSVJ6'
           update-ts: ${{ steps.slack.outputs.ts }}
