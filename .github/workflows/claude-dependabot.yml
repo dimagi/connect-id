@@ -17,11 +17,13 @@
 #
 # Requirements:
 # - `.claude/skills/dependabot-pr-review/` must be committed to the repo.
-# - ANTHROPIC_API_KEY must exist in BOTH secret stores, under the same name:
-#     Settings > Secrets and variables > Actions      (workflow_dispatch runs)
-#     Settings > Secrets and variables > Dependabot   (Dependabot-triggered runs)
-#   A run triggered by Dependabot reads only the Dependabot store, so a key
-#   present in just the Actions store yields an empty value and the step fails.
+# - A Claude API workload identity federation rule (IDs on the action step
+#   below). The job exchanges its GitHub OIDC token for a short-lived Claude API
+#   token, so it holds no static API key and needs no secret in either the
+#   Actions or the Dependabot store. The rule must accept the OIDC subjects of
+#   both triggers: `repo:dimagi/connect-id:pull_request` (Dependabot runs) and
+#   `repo:dimagi/connect-id:ref:refs/heads/<branch>` (workflow_dispatch runs,
+#   from whichever branch the workflow is dispatched on).
 #   No PAT is required: Dependabot runs start with a read-only GITHUB_TOKEN,
 #   but the `permissions:` block below raises it, which is GitHub's documented
 #   way to grant write access for these events.
@@ -63,10 +65,14 @@ jobs:
       contents: read
       pull-requests: write
       issues: read
-      # Deliberately no `id-token: write`. This job never authenticates to a
-      # cloud provider, and the repo's deploy workflow assumes an AWS role via
-      # OIDC -- so minting an OIDC token here would hand any code that runs in
-      # this job a path to those deploy credentials.
+      # Workload identity federation: the action exchanges this job's OIDC
+      # token for a Claude API token. `deploy.yml` also assumes an AWS role via
+      # OIDC (`github_deploy`); that role's trust policy must pin the token
+      # subject to the refs deploys run from, so a token minted here (a
+      # `pull_request` subject, or a dispatch from a non-deploy branch) cannot
+      # assume it. A wildcard subject there would let code in this job obtain
+      # deploy credentials.
+      id-token: write
       # Gates the github_ci MCP server, which replaces shelling out to
       # `gh pr checks` / `gh run view` / `gh api .../jobs/<id>/logs`.
       actions: read
@@ -141,7 +147,7 @@ jobs:
           cat /tmp/lockdiff.txt
 
       # Deliberately no dependency install and no test run in this job. It holds
-      # ANTHROPIC_API_KEY and a write-scoped GITHUB_TOKEN, and installed or
+      # an OIDC-token grant and a write-scoped GITHUB_TOKEN, and installed or
       # tested PR dependencies would execute their code next to both. The repo's
       # own CI (ci.yaml) already runs the suite on the PR with no secrets; the
       # review reads those results through the github_ci tools.
@@ -164,7 +170,16 @@ jobs:
         uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc # v1.0.276
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Workload identity federation, in place of anthropic_api_key. Setting
+          # an API key as well would silently take precedence over these. The
+          # IDs are identifiers, not credentials: the exchange only succeeds for
+          # an OIDC token that matches the rule, which lives in the Anthropic
+          # Console. A subject the rule doesn't accept fails the run with
+          # `match_subject_prefix` in the Console's authentication history.
+          anthropic_federation_rule_id: fdrl_0181bBaR5WZFP9VnUzSq9DL1
+          anthropic_organization_id: 06badd8a-f111-4e74-916c-0cb534e08138
+          anthropic_service_account_id: svac_01E5D9kszb5inEkq6uKi74Ag
+          anthropic_workspace_id: wrkspc_017tmXt8q4V8naGWzjZAR5QF
           allowed_bots: 'dependabot[bot]'
           # Unlocks the github_ci MCP tools listed in --allowedTools below.
           additional_permissions: |
