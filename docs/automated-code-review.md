@@ -28,4 +28,4 @@ The **Automated review verdict** check is advisory: it never fails. Its job summ
 
 To review a Dependabot PR again, or one that opened before the workflow existed, run the workflow by hand (Actions → Claude Dependabot PR Review → Run workflow) with the PR number. Manual runs are limited to PRs that Dependabot opened.
 
-It needs `ANTHROPIC_API_KEY` in **both** secret stores under the same name: Settings → Secrets and variables → Actions (manual runs) and → Dependabot (runs Dependabot triggers). A Dependabot-triggered run reads only the Dependabot store.
+It authenticates to the Claude API with workload identity federation, so it needs no API key secret. Its federation rule (IDs in the workflow) must accept the subjects of both triggers: `repo:dimagi/connect-id:pull_request` for Dependabot-triggered runs and `repo:dimagi/connect-id:ref:refs/heads/<branch>` for manual runs.
