@@ -13,6 +13,7 @@ from rest_framework.test import APIClient
 from users.const import ErrorCodes
 from users.factories import UserDeviceInfoFactory, UserFactory
 from users.oauth import ConnectOAuth2Validator, LoginFromDifferentDeviceError
+from users.tasks import clear_expired_oauth_tokens
 
 
 def _oauth_request_mock():
@@ -284,6 +285,29 @@ class TestOAuth2TokenRevocation:
         assert not AccessToken.objects.filter(pk=access_token.pk).exists()
         refresh_token.refresh_from_db()
         assert refresh_token.revoked is not None
+
+
+@pytest.mark.django_db
+class TestClearExpiredOAuthTokens:
+    def _refresh_token(self, user, app, name, access_expired_days_ago):
+        access_token = AccessToken.objects.create(
+            user=user,
+            application=app,
+            token=f"access-{name}",
+            expires=now() - timedelta(days=access_expired_days_ago),
+        )
+        return RefreshToken.objects.create(
+            user=user, application=app, token=f"refresh-{name}", access_token=access_token
+        )
+
+    def test_deletes_refresh_tokens_idle_longer_than_90_days(self, oauth_app, user):
+        stale = self._refresh_token(user, oauth_app, "stale", access_expired_days_ago=91)
+        recent = self._refresh_token(user, oauth_app, "recent", access_expired_days_ago=89)
+
+        clear_expired_oauth_tokens()
+
+        assert not RefreshToken.objects.filter(pk=stale.pk).exists()
+        assert RefreshToken.objects.filter(pk=recent.pk).exists()
 
 
 @pytest.mark.django_db

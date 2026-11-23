@@ -491,6 +491,10 @@ OAUTH2_PROVIDER = {
     "SCOPES": {"openid": "OpenID Connect scope", "sync": "sync with commcarehq"},
     "PKCE_REQUIRED": False,
     "OAUTH2_VALIDATOR_CLASS": "users.oauth.ConnectOAuth2Validator",
+    # django-oauth-toolkit does not check this when a refresh token is used. The weekly `cleartokens`
+    # task (users.tasks.clear_expired_oauth_tokens) deletes refresh tokens whose access token expired
+    # more than this long ago, plus revoked ones. Refresh tokens rotate on use, so this is an idle limit.
+    "REFRESH_TOKEN_EXPIRE_SECONDS": env.int("REFRESH_TOKEN_EXPIRE_SECONDS", default=90 * 24 * 60 * 60),
 }
 
 FCM_PRIVATE_KEY = env.str("FCM_PRIVATE_KEY", multiline=True, default="")
