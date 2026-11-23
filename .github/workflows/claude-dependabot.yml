@@ -17,13 +17,15 @@
 #
 # Requirements:
 # - `.claude/skills/dependabot-pr-review/` must be committed to the repo.
-# - A Claude API workload identity federation rule (IDs on the action step
+# - Two Claude API workload identity federation rules (IDs on the action step
 #   below). The job exchanges its GitHub OIDC token for a short-lived Claude API
 #   token, so it holds no static API key and needs no secret in either the
-#   Actions or the Dependabot store. The rule must accept the OIDC subjects of
-#   both triggers: `repo:dimagi/connect-id:pull_request` (Dependabot runs) and
-#   `repo:dimagi/connect-id:ref:refs/heads/<branch>` (workflow_dispatch runs,
-#   from whichever branch the workflow is dispatched on).
+#   Actions or the Dependabot store. The two triggers mint tokens with different
+#   subjects, so each has its own rule:
+#     Dependabot runs:        `repo:dimagi/connect-id:pull_request`
+#     workflow_dispatch runs: `repo:dimagi/connect-id:ref:refs/heads/main`
+#   Manual runs therefore only authenticate when dispatched from main, so a
+#   modified copy of this workflow on another branch cannot obtain a token.
 #   No PAT is required: Dependabot runs start with a read-only GITHUB_TOKEN,
 #   but the `permissions:` block below raises it, which is GitHub's documented
 #   way to grant write access for these events.
@@ -94,6 +96,12 @@ jobs:
           PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
           REPO: ${{ github.repository }}
         run: |
+          # The manual-run federation rule only accepts main's OIDC subject.
+          # Fail here with a clear message rather than at the token exchange.
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Run this workflow from main (dispatched from $GITHUB_REF)."
+            exit 1
+          fi
           if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
             echo "::error::pr_number must be a number."
             exit 1
@@ -176,7 +184,10 @@ jobs:
           # an OIDC token that matches the rule, which lives in the Anthropic
           # Console. A subject the rule doesn't accept fails the run with
           # `match_subject_prefix` in the Console's authentication history.
-          anthropic_federation_rule_id: fdrl_0181bBaR5WZFP9VnUzSq9DL1
+          # One rule per trigger, because their OIDC subjects differ (see the
+          # header): fdrl_01L66mkk... for manual runs from main, fdrl_0181bBaR...
+          # for Dependabot's pull_request runs.
+          anthropic_federation_rule_id: ${{ github.event_name == 'workflow_dispatch' && 'fdrl_01L66mkkSotGUjEKFhn5HbCQ' || 'fdrl_0181bBaR5WZFP9VnUzSq9DL1' }}
           anthropic_organization_id: 06badd8a-f111-4e74-916c-0cb534e08138
           anthropic_service_account_id: svac_01E5D9kszb5inEkq6uKi74Ag
           anthropic_workspace_id: wrkspc_017tmXt8q4V8naGWzjZAR5QF
