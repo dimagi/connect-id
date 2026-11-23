@@ -1,6 +1,7 @@
 import logging
 import re
 import time
+from urllib.parse import unquote_plus
 
 from rest_framework.settings import api_settings
 
@@ -68,5 +69,16 @@ class RequestLoggingMiddleware:
         return response
 
     def _query_param_names(self, request) -> str:
-        names = [name if self._SAFE_PARAM_NAME.fullmatch(name) else "?" for name in request.GET]
-        return ",".join(names[: self.MAX_QUERY_PARAMS])
+        # Parsed from the raw query string, not request.GET: that raises TooManyFieldsSent past
+        # DATA_UPLOAD_MAX_NUMBER_FIELDS, which would turn the response into a 400.
+        names = []
+        for pair in request.META.get("QUERY_STRING", "").split("&"):
+            if len(names) == self.MAX_QUERY_PARAMS:
+                break
+            name = unquote_plus(pair.partition("=")[0])
+            if not name:
+                continue
+            name = name if self._SAFE_PARAM_NAME.fullmatch(name) else "?"
+            if name == "?" or name not in names:
+                names.append(name)
+        return ",".join(names)

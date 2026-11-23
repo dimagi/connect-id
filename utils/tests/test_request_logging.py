@@ -1,6 +1,9 @@
 import logging
 
 import pytest
+from django.http import HttpResponse
+
+from utils.middleware import RequestLoggingMiddleware
 
 LOGGER = "connectid.requests"
 
@@ -94,6 +97,29 @@ def test_keeps_only_the_first_query_parameter_names(api_client, caplog):
 
     [record] = _request_logs(caplog)
     assert record.request_log["query"] == ",".join(f"p{i}" for i in range(20))
+
+
+def test_more_query_parameters_than_django_parses_do_not_change_the_response(rf, caplog):
+    # Past DATA_UPLOAD_MAX_NUMBER_FIELDS, reading request.GET raises. DRF views read it anyway, but a
+    # plain view that doesn't must not get a 400 because the middleware read it.
+    params = "&".join(f"p{i}=1" for i in range(1001))
+    request = rf.get(f"/plain?{params}")
+    request.resolver_match = None
+    middleware = RequestLoggingMiddleware(lambda request: HttpResponse("ok"))
+
+    response = middleware(request)
+
+    assert response.status_code == 200
+    [record] = _request_logs(caplog)
+    assert record.request_log["query"] == ",".join(f"p{i}" for i in range(20))
+
+
+@pytest.mark.django_db
+def test_logs_a_repeated_query_parameter_once(api_client, caplog):
+    api_client.get("/users/accept_credential/abc?id=1&id=2&x=3")
+
+    [record] = _request_logs(caplog)
+    assert record.request_log["query"] == "id,x"
 
 
 @pytest.mark.django_db
