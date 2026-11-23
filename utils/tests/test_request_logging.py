@@ -25,7 +25,7 @@ def test_logs_an_authenticated_request(auth_device, user, caplog):
     assert fields["status"] == response.status_code
     assert fields["user_id"] == user.pk
     assert isinstance(fields["duration_ms"], int)
-    assert record.getMessage().startswith("request method=POST route=/users/heartbeat ")
+    assert record.getMessage().startswith("request method=POST route=/users/heartbeat query= ")
 
 
 @pytest.mark.django_db
@@ -40,12 +40,69 @@ def test_logs_the_route_pattern_not_the_path_or_query(api_client, caplog):
 
 
 @pytest.mark.django_db
-def test_logs_the_path_of_an_unmatched_request(api_client, caplog):
-    api_client.get("/no/such/page?token=abc")
+def test_logs_an_unmatched_request_without_its_path(api_client, caplog):
+    # accept_credential has no trailing slash, so this near miss matches no route.
+    api_client.get("/users/accept_credential/secret-invite-id/")
 
     [record] = _request_logs(caplog)
-    assert record.request_log["route"] == "/no/such/page"
+    assert record.request_log["route"] == "<unresolved>"
     assert record.request_log["status"] == 404
+    assert "secret-invite-id" not in record.getMessage()
+    assert "secret-invite-id" not in str(record.request_log)
+
+
+@pytest.mark.django_db
+def test_an_encoded_newline_in_the_path_cannot_forge_a_log_line(api_client, caplog):
+    api_client.get("/nope%0AINFO%20forged%20line")
+
+    [record] = _request_logs(caplog)
+    assert "\n" not in record.getMessage()
+    assert "forged" not in record.getMessage()
+
+
+@pytest.mark.django_db
+def test_logs_query_parameter_names_but_not_values(api_client, caplog):
+    api_client.get("/users/accept_credential/abc?phone_number=%2B15555550123&generation=2&token=secret")
+
+    [record] = _request_logs(caplog)
+    assert record.request_log["query"] == "phone_number,generation,token"
+    assert "15555550123" not in record.getMessage()
+    assert "secret" not in record.getMessage()
+
+
+@pytest.mark.django_db
+def test_logs_an_empty_query_when_there_is_none(auth_device, caplog):
+    auth_device.post("/users/heartbeat", {})
+
+    [record] = _request_logs(caplog)
+    assert record.request_log["query"] == ""
+
+
+@pytest.mark.django_db
+def test_masks_query_parameter_names_that_are_not_identifiers(api_client, caplog):
+    api_client.get("/users/accept_credential/abc?ok=1&bad%0Aname=1&a%20b=1")
+
+    [record] = _request_logs(caplog)
+    assert record.request_log["query"] == "ok,?,?"
+    assert "\n" not in record.getMessage()
+
+
+@pytest.mark.django_db
+def test_keeps_only_the_first_query_parameter_names(api_client, caplog):
+    params = "&".join(f"p{i}=1" for i in range(30))
+    api_client.get(f"/users/accept_credential/abc?{params}")
+
+    [record] = _request_logs(caplog)
+    assert record.request_log["query"] == ",".join(f"p{i}" for i in range(20))
+
+
+@pytest.mark.django_db
+def test_logs_nothing_when_the_logger_is_turned_off(api_client, caplog):
+    caplog.set_level(logging.WARNING, logger=LOGGER)
+
+    api_client.get("/users/accept_credential/abc")
+
+    assert _request_logs(caplog) == []
 
 
 def test_skips_the_liveness_probe(client, caplog):

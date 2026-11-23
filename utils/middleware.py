@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 
 from rest_framework.settings import api_settings
@@ -24,14 +25,20 @@ class CurrentVersionMiddleware:
 
 
 class RequestLoggingMiddleware:
-    """Log one line per request: `request method=... route=... status=... duration_ms=... user_id=...`.
+    """Log one line per request: `request method=... route=... query=... status=... duration_ms=... user_id=...`.
 
-    The route is the matched URL pattern (`accept_credential/<slug:invite_id>`), not the path, and the
-    query string is left out, so tokens and other identifiers in URLs are not logged. A path that matches
-    no route is logged as is. `/up` is skipped: it is the liveness probe and would drown out the rest.
+    Nothing the caller sent is logged as is, so tokens, phone numbers and forged log lines stay out:
+    - `route` is the matched URL pattern (`/users/accept_credential/<slug:invite_id>`), or `<unresolved>`
+      when no pattern matches, never the path.
+    - `query` is the names of the query parameters, never their values. A name that isn't a plain
+      identifier is logged as `?`, and only the first `MAX_QUERY_PARAMS` names are kept.
+    `/up` is skipped: it is the liveness probe and would drown out the rest.
     """
 
     SKIPPED_URL_NAMES = {"up"}
+    UNRESOLVED_ROUTE = "<unresolved>"
+    MAX_QUERY_PARAMS = 20
+    _SAFE_PARAM_NAME = re.compile(r"[A-Za-z0-9_.\-\[\]]{1,64}")
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -39,6 +46,8 @@ class RequestLoggingMiddleware:
     def __call__(self, request):
         start = time.monotonic()
         response = self.get_response(request)
+        if not request_logger.isEnabledFor(logging.INFO):
+            return response
         duration_ms = round((time.monotonic() - start) * 1000)
 
         match = request.resolver_match
@@ -48,7 +57,8 @@ class RequestLoggingMiddleware:
         user = getattr(request, "user", None)
         fields = {
             "method": request.method,
-            "route": f"/{match.route}" if match is not None else request.path,
+            "route": f"/{match.route}" if match is not None else self.UNRESOLVED_ROUTE,
+            "query": self._query_param_names(request),
             "status": response.status_code,
             "duration_ms": duration_ms,
             "user_id": user.pk if user is not None and user.is_authenticated else None,
@@ -56,3 +66,7 @@ class RequestLoggingMiddleware:
         message = " ".join(["request", *(f"{name}={value}" for name, value in fields.items())])
         request_logger.info(message, extra={"request_log": fields})
         return response
+
+    def _query_param_names(self, request) -> str:
+        names = [name if self._SAFE_PARAM_NAME.fullmatch(name) else "?" for name in request.GET]
+        return ",".join(names[: self.MAX_QUERY_PARAMS])
