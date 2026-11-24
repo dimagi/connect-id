@@ -27,7 +27,7 @@ def production_behaviour(settings, tmp_path):
     """Tests exercise the production code paths whatever the developer's .env says.
 
     The exceptions: each file storage bucket is pointed at its own temp directory so no test touches
-    S3, and the rate limit cache is an emptied in-memory cache so no test needs Redis. Tests of the
+    S3, and the rate limit and throttle caches are emptied in-memory caches so no test needs Redis. Tests of the
     opt-outs turn them on themselves.
     """
     settings.PLAYSTORE_INTEGRITY_DISABLED = False
@@ -37,8 +37,10 @@ def production_behaviour(settings, tmp_path):
     settings.CACHES = {
         **settings.CACHES,
         "rate_limit": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "rate_limit"},
+        "throttle": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "throttle"},
     }
     caches["rate_limit"].clear()
+    caches["throttle"].clear()
     settings.STORAGES = {
         **settings.STORAGES,
         **{

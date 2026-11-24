@@ -210,8 +210,10 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
     "DEFAULT_THROTTLE_CLASSES": [
-        "rest_framework.throttling.AnonRateThrottle",
-        "rest_framework.throttling.UserRateThrottle",
+        # Both keep their counts in the shared "throttle" cache. The user throttle also gives each message
+        # server / client-credentials caller its own bucket.
+        "utils.rest_framework.SharedAnonRateThrottle",
+        "utils.rest_framework.ServiceAwareUserRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {"anon": "1000/day", "user": "10000/day"},
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
@@ -280,6 +282,14 @@ CACHES = {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
         "LOCATION": env("RATE_LIMIT_REDIS_URL", default=CELERY_BROKER_URL),
         "KEY_PREFIX": "rate_limit",
+        "OPTIONS": {"socket_connect_timeout": 1, "socket_timeout": 1},
+    },
+    # DRF throttle history (utils.rest_framework). Shared, so a caller's limit counts its requests to every worker
+    # and host. If Redis is down, throttling is skipped rather than failing requests (utils.cache).
+    "throttle": {
+        "BACKEND": "utils.cache.FailSoftRedisCache",
+        "LOCATION": env("RATE_LIMIT_REDIS_URL", default=CELERY_BROKER_URL),
+        "KEY_PREFIX": "throttle",
         "OPTIONS": {"socket_connect_timeout": 1, "socket_timeout": 1},
     },
     # In front of the runtime settings (django-constance) in the database. Shared, so an admin edit reaches

@@ -5,7 +5,7 @@ from rest_framework.authentication import BasicAuthentication, TokenAuthenticati
 from users.const import ErrorCodes
 from users.device_utils import check_login_from_different_device, update_device_last_accessed
 from users.models import ConfigurationSession, ConnectUser, IssuingAuthority, SessionUser
-from utils.rest_framework import OauthClientUser
+from utils.rest_framework import IssuingAuthorityUser
 
 
 class SessionTokenAuthentication(TokenAuthentication):
@@ -37,7 +37,7 @@ class SessionTokenAuthentication(TokenAuthentication):
         ).exists()
         if locked_user_exists:
             raise exceptions.AuthenticationFailed({"error_code": ErrorCodes.LOCKED_ACCOUNT})
-        user = SessionUser()
+        user = SessionUser(token)
         return (user, token)
 
 
@@ -67,4 +67,4 @@ class IssuingCredentialsAuth(BasicAuthentication):
             raise exceptions.AuthenticationFailed({"error_code": ErrorCodes.INVALID_CREDENTIALS})
         valid = password == issuing_auth.server_credentials.secret_key
         if valid:
-            return OauthClientUser(), None
+            return IssuingAuthorityUser(f"issuing_authority:{issuing_auth.pk}"), None
