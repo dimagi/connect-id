@@ -8,15 +8,6 @@ def batched(items, size):
         yield items[start : start + size]
 
 
-def get_ip(request):
-    """The client's address, found the same way the throttles find it (settings.NUM_PROXIES), or None."""
-    address = BaseThrottle().get_ident(request)
-    try:
-        return str(ipaddress.ip_address(address))
-    except ValueError:
-        return None
-
-
 class ConnectIDRateParser:
     def parse_rate(self, rate):
         if rate is None:

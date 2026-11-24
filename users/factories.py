@@ -9,7 +9,6 @@ from users.models import (
     Credential,
     IssuingAuthority,
     PhoneDevice,
-    RecoveryStatus,
     ServerKeys,
     SessionEmailOTPDevice,
     SessionPhoneDevice,
@@ -62,15 +61,6 @@ class PhoneDeviceFactory(DjangoModelFactory):
     phone_number = factory.Faker("phone_number")
     token = factory.Faker("bothify", text="????####")
     user = factory.SubFactory(UserFactory)
-
-
-class RecoveryStatusFactory(DjangoModelFactory):
-    class Meta:
-        model = RecoveryStatus
-
-    secret_key = factory.Faker("uuid4")
-    user = factory.SubFactory(UserFactory)
-    step = RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
 
 
 class ConfigurationSessionFactory(DjangoModelFactory):
