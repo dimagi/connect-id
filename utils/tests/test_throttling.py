@@ -1,13 +1,15 @@
 import base64
 
 import pytest
-from django.core.cache import cache
+from django.core.cache import caches
 from django.urls import reverse
 from oauth2_provider.models import Application
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.test import APIClient, APIRequestFactory
 from rest_framework.views import APIView
 
+from connectid import settings as project_settings
 from messaging.factories import ServerFactory
 from users.auth import IssuingCredentialsAuth
 from users.factories import IssuingAuthorityFactory, ServerKeysFactory, UserFactory
@@ -15,15 +17,15 @@ from utils.rest_framework import (
     ClientProtectedResourceAuth,
     MessagingServerAuth,
     ServiceAwareUserRateThrottle,
+    SharedAnonRateThrottle,
 )
 
 
 @pytest.fixture(autouse=True)
 def low_rate(monkeypatch):
-    cache.clear()
+    # The throttle cache is an emptied in-memory cache for each test (conftest)
     monkeypatch.setattr(ServiceAwareUserRateThrottle, "rate", "2/day", raising=False)
-    yield
-    cache.clear()
+    monkeypatch.setattr(SharedAnonRateThrottle, "rate", "2/day", raising=False)
 
 
 def basic_auth(client_id, secret):
@@ -119,3 +121,58 @@ def test_people_are_still_keyed_on_their_pk():
     request.user = user
 
     assert ServiceAwareUserRateThrottle().get_cache_key(request, None) == f"throttle_user_{user.pk}"
+
+
+def test_throttle_cache_is_shared_and_fails_soft():
+    throttle_cache = project_settings.CACHES["throttle"]
+
+    # The same Redis as the rate limit cache, which every worker and host shares
+    assert throttle_cache["LOCATION"] == project_settings.CACHES["rate_limit"]["LOCATION"]
+    assert throttle_cache["BACKEND"] == "utils.cache.FailSoftRedisCache"
+    assert set(project_settings.REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"]) == {
+        "utils.rest_framework.SharedAnonRateThrottle",
+        "utils.rest_framework.ServiceAwareUserRateThrottle",
+    }
+
+
+@pytest.mark.django_db
+def test_counts_go_to_the_throttle_cache_not_the_per_process_default():
+    view = make_view(MessagingServerAuth)
+    server = message_server()
+
+    call(view, server)
+
+    assert any("throttle_user_message_server" in key for key in caches["throttle"]._cache)
+    assert not any("throttle_" in key for key in caches["default"]._cache)
+
+
+@pytest.mark.django_db
+def test_anonymous_callers_are_counted_in_the_throttle_cache():
+    class OpenView(APIView):
+        authentication_classes = []
+        permission_classes = [AllowAny]
+
+        def get(self, request):
+            return Response({})
+
+    view = OpenView.as_view()
+
+    assert [view(APIRequestFactory().get("/")).status_code for _ in range(3)] == [200, 200, 429]
+    assert any("throttle_anon_" in key for key in caches["throttle"]._cache)
+
+
+@pytest.mark.django_db
+def test_requests_are_allowed_while_redis_is_down(settings):
+    settings.CACHES = {
+        **settings.CACHES,
+        "throttle": {
+            "BACKEND": "utils.cache.FailSoftRedisCache",
+            "LOCATION": "redis://127.0.0.1:1/0",
+            "KEY_PREFIX": "throttle",
+            "OPTIONS": {"socket_connect_timeout": 0.1, "socket_timeout": 0.1},
+        },
+    }
+    view = make_view(MessagingServerAuth)
+    server = message_server()
+
+    assert [call(view, server) for _ in range(3)] == [200, 200, 200]

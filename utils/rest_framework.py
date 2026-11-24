@@ -1,8 +1,9 @@
 from django.contrib.auth.models import AnonymousUser
+from django.core.cache import caches
 from oauth2_provider.views.mixins import OAuthLibMixin
 from oauthlib.common import Request as OauthlibRequest
 from rest_framework.authentication import BaseAuthentication, BasicAuthentication
-from rest_framework.throttling import UserRateThrottle
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
 from messaging.models import MessageServer
 
@@ -70,7 +71,23 @@ class MessagingServerUser(ServiceUser):
         return "MessagingServerUser"
 
 
-class ServiceAwareUserRateThrottle(UserRateThrottle):
+THROTTLE_CACHE_ALIAS = "throttle"
+
+
+class SharedCacheThrottleMixin:
+    """Keep throttle history in the shared "throttle" cache instead of DRF's default, the per-process
+    "default" cache, so a limit counts a caller's requests across every worker and host."""
+
+    @property
+    def cache(self):
+        return caches[THROTTLE_CACHE_ALIAS]
+
+
+class SharedAnonRateThrottle(SharedCacheThrottleMixin, AnonRateThrottle):
+    pass
+
+
+class ServiceAwareUserRateThrottle(SharedCacheThrottleMixin, UserRateThrottle):
     """UserRateThrottle that gives each service caller (ServiceUser) its own bucket.
 
     DRF keys an authenticated caller on `user.pk`, which is None for every ServiceUser, so without this
