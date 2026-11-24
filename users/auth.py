@@ -37,7 +37,7 @@ class SessionTokenAuthentication(TokenAuthentication):
         ).exists()
         if locked_user_exists:
             raise exceptions.AuthenticationFailed({"error_code": ErrorCodes.LOCKED_ACCOUNT})
-        user = SessionUser()
+        user = SessionUser(token)
         return (user, token)
 
 

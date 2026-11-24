@@ -1,6 +1,7 @@
 import base64
 
 import pytest
+from django.contrib.auth.models import AnonymousUser
 from django.core.cache import caches
 from django.urls import reverse
 from oauth2_provider.models import Application
@@ -11,8 +12,8 @@ from rest_framework.views import APIView
 
 from connectid import settings as project_settings
 from messaging.factories import ServerFactory
-from users.auth import IssuingCredentialsAuth
-from users.factories import IssuingAuthorityFactory, ServerKeysFactory, UserFactory
+from users.auth import IssuingCredentialsAuth, SessionTokenAuthentication
+from users.factories import ConfigurationSessionFactory, IssuingAuthorityFactory, ServerKeysFactory, UserFactory
 from utils.rest_framework import (
     ClientProtectedResourceAuth,
     MessagingServerAuth,
@@ -176,3 +177,43 @@ def test_requests_are_allowed_while_redis_is_down(settings):
     server = message_server()
 
     assert [call(view, server) for _ in range(3)] == [200, 200, 200]
+
+
+def session_bearer(phone_number):
+    return f"Bearer {ConfigurationSessionFactory(phone_number=phone_number).key}"
+
+
+@pytest.mark.django_db
+def test_each_phone_numbers_sessions_have_their_own_bucket():
+    view = make_view(SessionTokenAuthentication)
+    first = session_bearer("+27831234567")
+
+    assert [call(view, first) for _ in range(3)] == [200, 200, 429]
+    # Before, every session shared the bucket keyed on pk None, so this was throttled too
+    assert call(view, session_bearer("+27831234568")) == 200
+    # A new session for the same number doesn't get a fresh quota
+    assert call(view, session_bearer("+27831234567")) == 429
+
+
+@pytest.mark.django_db
+def test_session_bucket_does_not_store_the_phone_number():
+    call(make_view(SessionTokenAuthentication), session_bearer("+27831234567"))
+
+    keys = list(caches["throttle"]._cache)
+    assert any("throttle_user_session_phone:" in key for key in keys)
+    assert not any("27831234567" in key for key in keys)
+
+
+def test_fake_user_without_an_ident_is_keyed_per_client():
+    class OtherFakeUser(AnonymousUser):
+        @property
+        def is_authenticated(self):
+            return True
+
+    def key_for(address):
+        request = APIRequestFactory().get("/", REMOTE_ADDR=address)
+        request.user = OtherFakeUser()
+        return ServiceAwareUserRateThrottle().get_cache_key(request, None)
+
+    assert key_for("10.0.0.1") == "throttle_user_unidentified:10.0.0.1"
+    assert key_for("10.0.0.2") != key_for("10.0.0.1")

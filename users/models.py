@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import logging
 import os
 from datetime import timedelta
@@ -558,6 +559,20 @@ class UserDeviceInfo(models.Model):
 
 
 class SessionUser(AnonymousUser):
+    """Fake user for a request authenticated with a ConfigurationSession token.
+
+    It has no pk. `throttle_ident` names the phone number the session is for (hashed, so the number is
+    not stored in the throttle cache), so each number gets its own throttle bucket
+    (utils.rest_framework.ServiceAwareUserRateThrottle) rather than every session sharing the one keyed on
+    pk None.
+    """
+
+    def __init__(self, session=None):
+        self.throttle_ident = None
+        if session is not None:
+            digest = hashlib.sha256(str(session.phone_number).encode()).hexdigest()[:32]
+            self.throttle_ident = f"session_phone:{digest}"
+
     @property
     def is_authenticated(self):
         return True

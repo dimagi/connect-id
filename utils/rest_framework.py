@@ -88,14 +88,19 @@ class SharedAnonRateThrottle(SharedCacheThrottleMixin, AnonRateThrottle):
 
 
 class ServiceAwareUserRateThrottle(SharedCacheThrottleMixin, UserRateThrottle):
-    """UserRateThrottle that gives each service caller (ServiceUser) its own bucket.
+    """UserRateThrottle that gives each fake user its own bucket.
 
-    DRF keys an authenticated caller on `user.pk`, which is None for every ServiceUser, so without this
-    all message servers and client-credential callers would share one bucket.
+    DRF keys an authenticated caller on `user.pk`, which is None for every fake user (ServiceUser,
+    users.models.SessionUser), so without this all of them would share one bucket. A fake user is keyed on
+    its `throttle_ident`, or on the client's address if it has none.
     """
 
     def get_cache_key(self, request, view):
-        ident = getattr(request.user, "throttle_ident", None)
+        user = request.user
+        ident = getattr(user, "throttle_ident", None)
+        if ident is None and user and user.is_authenticated and user.pk is None:
+            # A fake user that names no caller: per client, never the one bucket keyed on pk None
+            ident = f"unidentified:{self.get_ident(request)}"
         if ident is None:
             return super().get_cache_key(request, view)
         return self.cache_format % {"scope": self.scope, "ident": ident}
