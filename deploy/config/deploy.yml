@@ -61,6 +61,8 @@ traefik:
   args:
     # Keep the X-Forwarded-For entries the ALB adds; Traefik deletes them from untrusted sources. The app reads the
     # client from them (NUM_PROXIES). Only applied by `kamal traefik reboot`, not by a deploy.
+    # Defining any entrypoint drops Traefik's default one on :80, so the address has to be given too.
+    entrypoints.http.address: ':80'
     entrypoints.http.forwardedheaders.trustedips: '172.31.0.0/16'
 
 healthcheck:
