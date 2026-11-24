@@ -50,8 +50,10 @@ COPY --from=build /app/.venv /app/.venv
 COPY --chmod=755 docker/* /
 
 # The code stays owned by root: the app user can read it but not change it.
+# local_blobs is the one writable directory, for DEFAULT_FILE_STORAGE_BACKEND=FileSystemStorage.
 COPY . /app/
-RUN python manage.py collectstatic --noinput
+RUN python manage.py collectstatic --noinput \
+    && install -d -o django -g django local_blobs
 
 USER django
 
