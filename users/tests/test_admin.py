@@ -329,3 +329,40 @@ class TestAdminIndexButton:
 
         assert response.status_code == 200
         assert unlock_url not in response.content.decode()
+
+
+@pytest.mark.django_db
+class TestAdminLoginLockout:
+    PASSWORD = "correct-horse-battery"
+
+    @pytest.fixture
+    def staff_user(self):
+        return UserFactory(phone_number="+27821110001", is_staff=True, is_superuser=True, password=self.PASSWORD)
+
+    def _login(self, client, username, password):
+        return client.post(reverse("admin:login"), {"username": username, "password": password, "next": "/admin/"})
+
+    def test_locks_out_after_failure_limit(self, client, staff_user, settings):
+        for _ in range(settings.AXES_FAILURE_LIMIT - 1):
+            assert self._login(client, staff_user.username, "wrong").status_code == 200
+
+        assert self._login(client, staff_user.username, "wrong").status_code == 429
+        # The correct password is refused too while locked out.
+        assert self._login(client, staff_user.username, self.PASSWORD).status_code == 429
+
+    def test_lockout_is_per_username(self, client, staff_user, settings):
+        for _ in range(settings.AXES_FAILURE_LIMIT):
+            self._login(client, "someone-else", "wrong")
+
+        response = self._login(client, staff_user.username, self.PASSWORD)
+
+        assert response.status_code == 302
+        assert response["Location"] == "/admin/"
+
+    def test_successful_login_resets_failures(self, client, staff_user, settings):
+        for _ in range(settings.AXES_FAILURE_LIMIT - 1):
+            self._login(client, staff_user.username, "wrong")
+        assert self._login(client, staff_user.username, self.PASSWORD).status_code == 302
+        client.logout()
+
+        assert self._login(client, staff_user.username, "wrong").status_code == 200

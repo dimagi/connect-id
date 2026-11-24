@@ -3,11 +3,11 @@ from datetime import timedelta
 from unittest.mock import MagicMock
 
 import pytest
+from axes.models import AccessAttempt
 from django.test import override_settings
 from django.urls import reverse
 from django.utils.timezone import now
 from oauth2_provider.models import AccessToken, Application, RefreshToken
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.test import APIClient
 
 from users.const import ErrorCodes
@@ -175,17 +175,28 @@ class TestOAuth2TokenEndpoint:
         assert response.status_code == 400
         assert response.json()["error_code"] == ErrorCodes.LOGIN_FROM_DIFFERENT_DEVICE
 
-    @override_settings(AXES_ENABLED=True, AXES_FAILURE_LIMIT=1)
-    def test_password_grant_lockout_after_axes_failure_limit(self, client, password_grant_app):
-        """Pins that django-axes still fires user_locked_out -> users/signals.py on lockout."""
-        user = UserFactory(password="correctpass")
+    @override_settings(AXES_FAILURE_LIMIT=1)
+    def test_password_grant_failures_are_not_locked_out_by_axes(self, client, password_grant_app):
+        """django-axes guards the admin login only. Failed API logins are neither recorded nor locked out."""
+        raw_password = "correctpass"
+        user = UserFactory(password=raw_password)
+        UserDeviceInfoFactory(user=user, raw_password=raw_password)
 
-        with pytest.raises(PermissionDenied):
-            _post_token(
+        for _ in range(3):
+            response = _post_token(
                 client,
                 password_grant_app,
                 {"grant_type": "password", "username": user.username, "password": "wrongpass"},
             )
+            assert response.status_code == 400
+        response = _post_token(
+            client,
+            password_grant_app,
+            {"grant_type": "password", "username": user.username, "password": raw_password},
+        )
+
+        assert response.status_code == 200
+        assert not AccessAttempt.objects.exists()
 
     def test_client_credentials_grant_issues_token(self, client, oauth_app):
         response = _post_token(client, oauth_app, {"grant_type": "client_credentials"})
