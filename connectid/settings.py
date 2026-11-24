@@ -205,7 +205,7 @@ API_VERSION = APIVersion
 # X-Forwarded-For. The client's address is taken that many entries from the right, so entries the client sent
 # itself are never used. Too low keys every client on a proxy's address; too high lets clients pick their own.
 # 0 ignores X-Forwarded-For and uses REMOTE_ADDR.
-NUM_PROXIES = env.int("NUM_PROXIES", default=1)
+NUM_PROXIES = env.int("NUM_PROXIES", default=2)
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [

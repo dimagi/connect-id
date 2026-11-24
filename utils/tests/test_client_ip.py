@@ -27,24 +27,27 @@ def anon_key(request):
 
 
 def test_num_proxies_is_set():
-    assert project_settings.REST_FRAMEWORK["NUM_PROXIES"] == 1
+    # Production has the ALB, then Traefik
+    assert project_settings.REST_FRAMEWORK["NUM_PROXIES"] == 2
 
 
 def test_client_supplied_forwarded_for_entries_are_ignored():
-    # The client sent "1.2.3.4"; the proxy appended the address it saw
-    request = make_request("1.2.3.4, 203.0.113.7")
+    # The client sent "1.2.3.4"; the ALB appended the client's address, then Traefik the ALB's
+    request = make_request("1.2.3.4, 203.0.113.7, 10.0.0.5")
 
     assert get_ip(request) == "203.0.113.7"
     assert anon_key(request) == "throttle_anon_203.0.113.7"
 
 
 def test_changing_the_spoofed_entry_does_not_change_the_bucket():
-    assert anon_key(make_request("1.1.1.1, 203.0.113.7")) == anon_key(make_request("2.2.2.2, 203.0.113.7"))
+    assert anon_key(make_request("1.1.1.1, 203.0.113.7, 10.0.0.5")) == anon_key(
+        make_request("2.2.2.2, 203.0.113.7, 10.0.0.5")
+    )
 
 
-def test_two_proxies(num_proxies):
-    num_proxies(2)
-    request = make_request("1.2.3.4, 203.0.113.7, 10.0.0.5")
+def test_one_proxy(num_proxies):
+    num_proxies(1)
+    request = make_request("1.2.3.4, 203.0.113.7")
 
     assert get_ip(request) == "203.0.113.7"
     assert anon_key(request) == "throttle_anon_203.0.113.7"
