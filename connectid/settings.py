@@ -211,7 +211,8 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.AnonRateThrottle",
-        "rest_framework.throttling.UserRateThrottle",
+        # UserRateThrottle, plus one bucket per message server / client-credentials caller
+        "utils.rest_framework.ServiceAwareUserRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {"anon": "1000/day", "user": "10000/day"},
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",

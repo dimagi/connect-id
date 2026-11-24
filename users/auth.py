@@ -67,4 +67,4 @@ class IssuingCredentialsAuth(BasicAuthentication):
             raise exceptions.AuthenticationFailed({"error_code": ErrorCodes.INVALID_CREDENTIALS})
         valid = password == issuing_auth.server_credentials.secret_key
         if valid:
-            return OauthClientUser(), None
+            return OauthClientUser(f"issuing_authority:{issuing_auth.pk}"), None
