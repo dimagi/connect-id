@@ -241,7 +241,7 @@ jobs:
 
       - name: configure aws credentials
         if: steps.recheck.outputs.go == 'true'
-        uses: aws-actions/configure-aws-credentials@v3.0.1
+        uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
           role-to-assume: arn:aws:iam::037129986032:role/github_deploy
           role-session-name: GithubDeploy
