@@ -183,7 +183,7 @@ jobs:
 
       - name: Checkout source code
         if: steps.recheck.outputs.go == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ env.DEPLOY_SHA }}
 
