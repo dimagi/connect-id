@@ -21,7 +21,7 @@ Email addresses are always verified with a ConnectID code.
 
 All endpoints are under `/users/` (see `users/urls.py`). Views are in `users/views.py`.
 
-Some older endpoints still send codes but the app no longer calls them. They are listed at the end, under [Endpoints the app no longer calls](#endpoints-the-app-no-longer-calls).
+Older endpoints that the app no longer calls have been removed. They are listed at the end, under [Removed endpoints](#removed-endpoints).
 
 ## How callers authenticate
 
@@ -41,7 +41,7 @@ Every ConnectID code goes through `BaseOTPDevice` in `users/models.py`, which bu
 
 SMS codes are valid for 30 minutes. Email codes are valid for `EMAIL_OTP_VALIDITY_SECONDS` (default 1800).
 
-`PhoneDevice.generate_challenge()` ignores `RateLimitedError` unless called with `suppress_rate_limit=False`. Only `validate_phone` does that. In the [endpoints the app no longer calls](#endpoints-the-app-no-longer-calls), a rate-limited request therefore returns 200 and sends nothing.
+`PhoneDevice.generate_challenge()` ignores `RateLimitedError` unless called with `suppress_rate_limit=False`. Its only caller, `validate_phone`, passes `False`, so a rate-limited request gets a 429.
 
 **Verifying** (`verify_token()`):
 
@@ -166,25 +166,20 @@ sequenceDiagram
 - The user then enters the code in the app, which submits it to `confirm_session_otp`.
 - `has_manual_otp` is only used for monitoring.
 
-## Endpoints the app no longer calls
+## Removed endpoints
 
-These are still routed in `users/urls.py` and still send an SMS, but the current Android app does not call them.
+The current Android app calls none of these, and no release since CommCare 2.57.0 (June 2025) has. They were removed:
 
-| Send endpoint | Confirm endpoint | What it did | Why it is unused |
-|---------------|------------------|-------------|------------------|
-| `recover` | `recover/confirm_otp` | Old account recovery, step 1: a code to the primary phone | The app stopped calling it in June 2025 |
-| `profile/payment_phone_number` | `profile/confirm_payment_otp` | Verified the phone a user is paid on and set `payment_profile.is_verified` (views in `payments/views.py`) | The app never called it |
-
-- All of them use `PhoneDevice`.
-- A rate-limited send returns 200 and sends nothing.
-- A wrong code returns 401 `{"error": "OTP token is incorrect"}`, without `attempts_left`.
-- The `recover*` views need no auth (`@permission_classes([])`). `recover` returns a `secret`. Later recovery calls send it back as `secret_key`, and each call checks the stored `RecoveryStatus.step`.
-- The recovery phone OTP endpoints (`validate_secondary_phone`, `confirm_secondary_otp`, `recover/secondary`, `recover/confirm_secondary_otp`) and the SMS-token account deactivation endpoints (`recover/initiate_deactivation`, `recover/confirm_deactivation`) were removed.
+- Old account recovery, which needed no auth and tracked progress in `RecoveryStatus`: `recover`, `recover/confirm_otp`, `recover/confirm_pin`, `recover/reset_password`, `recover/confirm_password`. Recovery now goes through `start_configuration` and `recover/complete_recovery`.
+- Old sign-up: `register` and `change_phone`. Sign-up now goes through `start_configuration`.
+- Payment phone verification: `profile/payment_phone_number` (which also made a paid Twilio carrier lookup) and `profile/confirm_payment_otp`. The app never called them.
+- Recovery phone OTPs: `validate_secondary_phone`, `confirm_secondary_otp`, `recover/secondary`, `recover/confirm_secondary_otp`.
+- SMS-token account deactivation: `recover/initiate_deactivation`, `recover/confirm_deactivation`.
 
 ## Related code
 
 - `users/models.py`: `BaseOTPDevice`, `BasePhoneDevice`, `PhoneDevice`, `SessionPhoneDevice`, `BaseEmailOTPDevice`, `ConfigurationSession`
-- `users/views.py`: all views above, except the payment phone views in `payments/views.py`
+- `users/views.py`: all views above
 - `users/auth.py`: `SessionTokenAuthentication`, `DeviceBasicAuthentication`
 - `users/const.py`: `MAX_OTP_VERIFY_ATTEMPTS`, `MAX_OTP_BURN_COOLDOWN_HOURS`, `ErrorCodes`
 - `sms/`: `send_sms()` and the SMS vendor registry

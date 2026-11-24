@@ -355,7 +355,7 @@ ALLOWED_CIDR_NETS = env.list("DJANGO_ALLOWED_CIDR_NETS", default=[])
 
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
-# Twilio settings. Still read directly by the carrier lookup in utils/twilio.py.
+# Twilio settings. Only used to build SMS_VENDORS below.
 TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default=None)
 TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default=None)
 TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default=None)
