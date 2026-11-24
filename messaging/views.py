@@ -330,7 +330,6 @@ class SendMobileConnectMessage(APIView):
         if errors:
             return JsonResponse({"errors": list(errors)}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Only into the user's own channels; another user's channel reads as missing
         channel_ids = {UUID(str(msg.channel_id)) for msg in messages}
         own_channel_ids = set(
             Channel.objects.filter(channel_id__in=channel_ids, connect_user=request.user).values_list(
@@ -339,7 +338,6 @@ class SendMobileConnectMessage(APIView):
         )
         if channel_ids - own_channel_ids:
             return JsonResponse({"errors": ["invalid channel_id"]}, status=status.HTTP_400_BAD_REQUEST)
-        # A message_id already used by another user's message is refused, never re-sent
         if Message.objects.filter(message_id__in=message_ids).exclude(channel__connect_user=request.user).exists():
             return JsonResponse({"errors": ["message_id already exists"]}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -457,7 +455,6 @@ class UpdateReceivedView(APIView):
             return JsonResponse({}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
-            # Only the user's own messages; another user's read as missing
             own_messages = Message.objects.filter(message_id__in=message_ids, channel__connect_user=request.user)
             messages = (
                 own_messages.select_for_update()
