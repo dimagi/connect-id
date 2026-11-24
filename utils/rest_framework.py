@@ -43,6 +43,13 @@ class OauthClientUser(ServiceUser):
         return "OauthClientUser"
 
 
+class IssuingAuthorityUser(ServiceUser):
+    """Fake user used for requests authenticated as a credential issuing authority"""
+
+    def __str__(self):
+        return "IssuingAuthorityUser"
+
+
 class MessagingServerAuth(BasicAuthentication):
     """Authenticate request using Client credentials (as in the OAuth2 spec)."""
 
