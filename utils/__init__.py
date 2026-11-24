@@ -1,6 +1,4 @@
-import ipaddress
-
-from rest_framework.throttling import AnonRateThrottle, BaseThrottle, ScopedRateThrottle, UserRateThrottle
+from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle, UserRateThrottle
 
 
 def batched(items, size):
