@@ -1,4 +1,6 @@
-from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle, UserRateThrottle
+import ipaddress
+
+from rest_framework.throttling import AnonRateThrottle, BaseThrottle, ScopedRateThrottle, UserRateThrottle
 
 
 def batched(items, size):
@@ -7,8 +9,12 @@ def batched(items, size):
 
 
 def get_ip(request):
-    ip_address = request.headers.get("x-forwarded-for", request.headers.get("REMOTE_ADDR", "127.0.0.1"))
-    return ip_address.split(",")[0]
+    """The client's address, found the same way the throttles find it (settings.NUM_PROXIES), or None."""
+    address = BaseThrottle().get_ident(request)
+    try:
+        return str(ipaddress.ip_address(address))
+    except ValueError:
+        return None
 
 
 class ConnectIDRateParser:

@@ -201,6 +201,12 @@ class APIVersion:
 
 API_VERSION = APIVersion
 
+# Number of reverse proxies in front of the app that each append the address they received the request from to
+# X-Forwarded-For. The client's address is taken that many entries from the right, so entries the client sent
+# itself are never used. Too low keys every client on a proxy's address; too high lets clients pick their own.
+# 0 ignores X-Forwarded-For and uses REMOTE_ADDR.
+NUM_PROXIES = env.int("NUM_PROXIES", default=1)
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "users.auth.DeviceBasicAuthentication",
@@ -216,6 +222,8 @@ REST_FRAMEWORK = {
         "utils.rest_framework.ServiceAwareUserRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {"anon": "1000/day", "user": "10000/day"},
+    # Without this DRF keys a client on the whole X-Forwarded-For header, which the client controls.
+    "NUM_PROXIES": NUM_PROXIES,
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
     "DEFAULT_VERSION": API_VERSION.V2,
     "ALLOWED_VERSIONS": [
