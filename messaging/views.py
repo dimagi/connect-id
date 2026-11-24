@@ -186,7 +186,6 @@ class SendServerConnectMessage(APIView):
             if not content[field]:
                 return JsonResponse({"errors": ErrorCodes.INVALID_MESSAGE_CONTENT}, status=status.HTTP_400_BAD_REQUEST)
         server = get_current_message_server(request)
-        # Scoped to the calling server: a channel belonging to another server reads as missing
         channel = (
             Channel.objects.filter(channel_id=data["channel"], server=server).select_related("connect_user").first()
         )
