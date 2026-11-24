@@ -1,3 +1,6 @@
+import importlib.util
+
+import environ
 import pytest
 from django.conf import settings as project_settings
 from rest_framework.test import APIRequestFactory
@@ -22,17 +25,27 @@ def anon_key(forwarded_for=None, remote_addr="10.0.0.9"):
     return SharedAnonRateThrottle().get_cache_key(request, None)
 
 
-def test_num_proxies_is_set():
-    # Production has the ALB, then Traefik
-    assert project_settings.REST_FRAMEWORK["NUM_PROXIES"] == 2
+def test_num_proxies_defaults_to_two(monkeypatch):
+    # Production has the ALB, then Traefik. Checked on a fresh copy of the settings module, so a NUM_PROXIES in the
+    # environment running the tests doesn't change the answer.
+    monkeypatch.setattr(environ.Env, "read_env", lambda *args, **kwargs: None)
+    monkeypatch.delenv("NUM_PROXIES", raising=False)
+    spec = importlib.util.find_spec("connectid.settings")
+    fresh = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fresh)
+
+    assert fresh.NUM_PROXIES == 2
+    assert fresh.REST_FRAMEWORK["NUM_PROXIES"] == 2
 
 
-def test_client_supplied_forwarded_for_entries_are_ignored():
+def test_client_supplied_forwarded_for_entries_are_ignored(num_proxies):
+    num_proxies(2)
     # The client sent "1.2.3.4"; the ALB appended the client's address, then Traefik the ALB's
     assert anon_key("1.2.3.4, 203.0.113.7, 10.0.0.5") == "throttle_anon_203.0.113.7"
 
 
-def test_changing_the_spoofed_entry_does_not_change_the_bucket():
+def test_changing_the_spoofed_entry_does_not_change_the_bucket(num_proxies):
+    num_proxies(2)
     assert anon_key("1.1.1.1, 203.0.113.7, 10.0.0.5") == anon_key("2.2.2.2, 203.0.113.7, 10.0.0.5")
 
 
