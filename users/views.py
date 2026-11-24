@@ -6,7 +6,6 @@ from urllib.parse import urlencode, urlparse
 
 import requests
 from django.conf import settings
-from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -35,7 +34,6 @@ from flags.utils import get_user_toggles
 from messaging.tasks import send_bulk_notification_task
 from services.ai.ocs import OpenChatStudio
 from sms.limits import hit_country_limit, is_country_supported, mask
-from utils import get_ip
 from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
 from utils.app_integrity.decorators import require_app_integrity
 from utils.app_integrity.exceptions import DuplicateSampleRequestError
@@ -68,7 +66,6 @@ from .models import (
     Credential,
     IssuingAuthority,
     PhoneDevice,
-    RecoveryStatus,
     SessionEmailOTPDevice,
     SessionPhoneDevice,
     UserCredential,
@@ -81,33 +78,6 @@ from .services import upload_photo_to_s3
 from .tasks import push_profile_to_connect
 
 logger = logging.getLogger(__name__)
-
-
-@api_view(["POST"])
-@permission_classes([])
-def register(request):
-    data = request.data
-    fields = ["username", "password", "phone_number", "recovery_phone", "name", "dob"]
-    user_data = {}
-    for field in fields:
-        if data.get(field):
-            user_data[field] = data[field]
-    user_data["ip_address"] = get_ip(request)
-    user_data["recovery_phone_validation_deadline"] = now().date() + timedelta(days=7)
-
-    # skip validation if number starts with special prefix
-    if not user_data.get("phone_number", "").startswith(TEST_NUMBER_PREFIX):
-        u = ConnectUser(**user_data)
-        try:
-            u.full_clean()
-        except ValidationError as e:
-            return JsonResponse(e.message_dict, status=400)
-
-    user = ConnectUser.objects.create_user(**user_data)
-    if data.get("fcm_token"):
-        create_update_device(user, data["fcm_token"])
-    db_key = UserKey.get_or_create_key_for_user(user)
-    return JsonResponse({"secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key})
 
 
 def _refuse_session_by_country(phone_number: str) -> JsonResponse | None:
@@ -317,97 +287,6 @@ def complete_profile(request):
     )
 
 
-@api_view(["POST"])
-@permission_classes([])
-def recover_account(request):
-    data = request.data
-    if not data.get("phone"):
-        return JsonResponse({"error": "OTP missing required key phone"}, status=400)
-
-    user = ConnectUser.objects.get(phone_number=data["phone"], is_active=True)
-    if user.is_locked:
-        return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=401)
-    device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
-    device.generate_challenge()
-    secret = token_hex()
-    status, _ = RecoveryStatus.objects.get_or_create(user=user)
-    status.secret_key = secret
-    status.step = RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY
-    status.save()
-    return JsonResponse({"secret": secret})
-
-
-@api_view(["POST"])
-@permission_classes([])
-def confirm_recovery_otp(request):
-    data = request.data
-    required_keys = ["phone", "secret_key"]
-    missing = []
-    for key in required_keys:
-        if key not in data:
-            missing.append(key)
-    if missing:
-        missing_keys = ",".join(missing)
-        return JsonResponse({"error": f"OTP missing required key {missing_keys}"}, status=400)
-    phone_number = data["phone"]
-    secret_key = data["secret_key"]
-    user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
-    status = RecoveryStatus.objects.get(user=user)
-    if status.secret_key != secret_key:
-        return HttpResponse(status=401)
-    if status.step != RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY:
-        return HttpResponse(status=401)
-    device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
-    verified = device.verify_token(data.get("token"))
-    if not verified:
-        return JsonResponse({"error": "OTP token is incorrect"}, status=401)
-    status.step = RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
-    status.save()
-    return HttpResponse()
-
-
-@api_view(["POST"])
-@permission_classes([])
-def confirm_password(request):
-    data = request.data
-    phone_number = data["phone"]
-    secret_key = data["secret_key"]
-    user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
-    status = RecoveryStatus.objects.get(user=user)
-    if status.secret_key != secret_key:
-        return HttpResponse(status=401)
-    if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
-        return HttpResponse(status=401)
-    password = data["password"]
-    if not check_password(password, user.password):
-        return HttpResponse(status=401)
-    status.delete()
-    return JsonResponse(user_data(user))
-
-
-@api_view(["POST"])
-@permission_classes([])
-def reset_password(request):
-    data = request.data
-    phone_number = data["phone"]
-    secret_key = data["secret_key"]
-    user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
-    status = RecoveryStatus.objects.get(user=user)
-    if status.secret_key != secret_key:
-        return HttpResponse(status=401)
-    if status.step != RecoveryStatus.RecoverySteps.RESET_PASSWORD:
-        return HttpResponse(status=401)
-    password = data["password"]
-    try:
-        validate_password(password)
-    except ValidationError as e:
-        return JsonResponse(e.message_dict, status=400)
-    user.set_password(password)
-    user.save()
-    status.delete()
-    return HttpResponse()
-
-
 @api_view(["GET"])
 @permission_classes([])
 def phone_available(request):
@@ -420,28 +299,6 @@ def phone_available(request):
         return HttpResponse()
     else:
         return HttpResponse(status=403)
-
-
-@api_view(["POST"])
-@permission_classes([])
-def change_phone(request):
-    data = request.data
-    user = request.user
-    error = None
-    if user.phone_validated:
-        error = "You cannot change a validated number"
-    elif user.phone_number != data["old_phone_number"]:
-        error = "Old phone number does not match"
-    if error:
-        return JsonResponse({"error": error}, status=400)
-    user.phone_number = data["new_phone_number"]
-
-    try:
-        user.full_clean()
-    except ValidationError as e:
-        return JsonResponse(e.message_dict, status=400)
-    user.save()
-    return HttpResponse()
 
 
 @api_view(["POST"])
@@ -529,33 +386,6 @@ def user_payment_profile(user):
         }
     except ObjectDoesNotExist:
         return {"payment_profile": {}}
-
-
-@api_view(["POST"])
-@permission_classes([])
-def confirm_recovery_pin(request):
-    data = request.data
-    phone_number = data["phone"]
-    secret_key = data["secret_key"]
-    user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
-    if user.is_locked:
-        return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=401)
-    status = RecoveryStatus.objects.get(user=user)
-    if status.secret_key != secret_key:
-        return JsonResponse({"error_code": ErrorCodes.INVALID_SECRET_KEY}, status=401)
-    if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
-        return JsonResponse({"error_code": ErrorCodes.INVALID_STEP}, status=401)
-    recovery_pin = data["recovery_pin"]
-
-    try:
-        if not user.check_recovery_pin(recovery_pin):
-            return JsonResponse({"error_code": ErrorCodes.INCORRECT_CODE}, status=401)
-    except RecoveryPinNotSetError:
-        return JsonResponse({"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}, status=400)
-
-    status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
-    status.save()
-    return JsonResponse(user_data(user))
 
 
 def _verify_backup_code(user, backup_code):

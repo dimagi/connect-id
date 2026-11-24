@@ -16,7 +16,6 @@ from users.factories import (
     ConfigurationSessionFactory,
     FCMDeviceFactory,
     IssuingAuthorityFactory,
-    RecoveryStatusFactory,
     ServerKeysFactory,
     UserFactory,
 )
@@ -150,11 +149,6 @@ def authed_client_token(authed_client, valid_token):
 def authed_client_token_v3(authed_client_token):
     authed_client_token.defaults["HTTP_ACCEPT"] = f"application/json; version={settings.API_VERSION.V3}"
     return authed_client_token
-
-
-@pytest.fixture
-def recovery_status():
-    return RecoveryStatusFactory()
 
 
 @pytest.fixture

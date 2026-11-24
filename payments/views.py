@@ -1,49 +1,13 @@
-from django.http import HttpResponse, JsonResponse
+from django.http import JsonResponse
 from rest_framework import status as drf_status
-from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from messaging.serializers import NotificationData
-from users.models import PhoneDevice
 from utils.notification import send_bulk_notification
 from utils.rest_framework import ClientProtectedResourceAuth
-from utils.twilio import lookup_telecom_provider
 
 from .models import PaymentProfile
-
-
-@api_view(["POST"])
-def update_payment_profile_phone(request):
-    user = request.user
-    phone_number = request.data.get("phone_number")
-    owner_name = request.data.get("owner_name")
-    telecom_provider = lookup_telecom_provider(phone_number)
-    payment_profile, created = PaymentProfile.objects.update_or_create(
-        user=user,
-        defaults={
-            "phone_number": phone_number,
-            "owner_name": owner_name,
-            "telecom_provider": telecom_provider,
-            "is_verified": False,
-            "status": PaymentProfile.PENDING,
-        },
-    )
-    otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=payment_profile.phone_number, user=user)
-    otp_device.generate_challenge()
-    return HttpResponse()
-
-
-@api_view(["POST"])
-def confirm_payment_profile_otp(request):
-    payment_profile = request.user.payment_profile
-    device = PhoneDevice.objects.get(phone_number=payment_profile.phone_number, user=payment_profile.user)
-    if not device.verify_token(request.data.get("token")):
-        return JsonResponse({"error": "OTP token is incorrect"}, status=401)
-
-    payment_profile.is_verified = True
-    payment_profile.save()
-    return JsonResponse({"success": True})
 
 
 class FetchPhoneNumbers(APIView):

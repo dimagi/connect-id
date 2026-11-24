@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 from unittest import mock
 from unittest.mock import ANY, patch
 
-import factory
 import pytest
 import requests
 from django.core.files.storage import storages
@@ -18,7 +17,6 @@ from phonenumbers.phonenumberutil import NumberParseException
 from waffle.testutils import override_switch
 
 from flags.const import EMAIL_OTP_VERIFICATION
-from payments.models import PaymentProfile
 from services.ai.ocs import OpenChatStudio
 from test_utils.decorators import skip_app_integrity_check
 from users.const import (
@@ -34,7 +32,6 @@ from users.factories import (
     ConfigurationSessionFactory,
     CredentialFactory,
     PhoneDeviceFactory,
-    RecoveryStatusFactory,
     SessionEmailOTPDeviceFactory,
     SessionPhoneDeviceFactory,
     UserCredentialFactory,
@@ -49,7 +46,6 @@ from users.models import (
     Credential,
     DeviceIntegritySample,
     PhoneDevice,
-    RecoveryStatus,
     SessionEmailOTPDevice,
     SessionPhoneDevice,
     UserCredential,
@@ -60,41 +56,9 @@ from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
 from utils.app_integrity.google_play_integrity import AppIntegrityService
 
 
-@pytest.mark.django_db
-class TestRegistration:
-    def test_registration_v1(self, client):
-        response = client.post(
-            "/users/register",
-            {
-                "username": "testuser",
-                "password": "testpass",
-                "phone_number": "+27734567657",
-            },
-            HTTP_ACCEPT="application/json; version=1.0",
-        )
-        assert response.status_code == 200, response.content
-        user = ConnectUser.objects.get(username="testuser")
-        assert user.phone_number == "+27734567657"
-
-
 def supported_number():
     """A random Malawi mobile number. Malawi (265) is in the default SMS_SUPPORTED_COUNTRY_CODES."""
     return "+26599" + Faker().numerify("#######")
-
-
-@pytest.mark.django_db
-def test_registration_with_fcm_token(client):
-    response = client.post(
-        "/users/register",
-        {"username": "testuser", "password": "testpass", "phone_number": "+27734567657", "fcm_token": "testtoken"},
-        HTTP_ACCEPT="application/json; version=1.0",
-    )
-    assert response.status_code == 200, response.content
-    user = ConnectUser.objects.get(username="testuser")
-    device = FCMDevice.objects.get(user=user)
-    assert device.registration_id == "testtoken"
-    assert device.type == "android"
-    assert device.active is True
 
 
 def test_create_update_device__existing(user):
@@ -315,145 +279,6 @@ class TestConfirmOTP:
         assert response.status_code == 200
         user.refresh_from_db()
         assert user.phone_validated
-
-
-class TestRecoverAccount:
-    @patch.object(PhoneDevice, "generate_challenge")
-    def test_missing_phone_number(self, generate_challenge_mock, client, user):
-        response = client.post(
-            reverse("recover_account"),
-            data={},
-        )
-
-        assert response.status_code == 400
-        assert response.json()["error"] == "OTP missing required key phone"
-
-        generate_challenge_mock.assert_not_called()
-        assert not RecoveryStatus.objects.filter(user=user).exists()
-
-    @patch.object(PhoneDevice, "generate_challenge")
-    def test_success(self, generate_challenge_mock, client, user):
-        user.phone_number = TEST_NUMBER_PREFIX + "1234567"
-        user.save()
-        PhoneDeviceFactory(user=user, phone_number=user.phone_number)
-
-        response = client.post(
-            reverse("recover_account"),
-            data={"phone": user.phone_number},
-        )
-
-        assert response.status_code == 200
-        assert response.json()["secret"]
-
-        generate_challenge_mock.assert_called_once()
-
-        status = RecoveryStatus.objects.get(user=user)
-        assert status.step == RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY
-        assert status.secret_key == response.json()["secret"]
-
-    @patch.object(PhoneDevice, "generate_challenge")
-    def test_locked_user_refused(self, generate_challenge_mock, client, user):
-        user.is_locked = True
-        user.save()
-        PhoneDeviceFactory(user=user, phone_number=user.phone_number)
-
-        response = client.post(reverse("recover_account"), data={"phone": user.phone_number})
-
-        assert response.status_code == 401
-        assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
-        generate_challenge_mock.assert_not_called()
-        assert not RecoveryStatus.objects.filter(user=user).exists()
-
-
-class TestConfirmRecoverOTP:
-    secret_key = "chamber_of_secrets"
-
-    @patch.object(PhoneDevice, "verify_token")
-    def test_success(self, verify_token_mock, client, user):
-        verify_token_mock.return_value = True
-        self._prep_user(user)
-
-        data = {
-            "phone": user.phone_number,
-            "secret_key": self.secret_key,
-        }
-        response = self._make_post(client, data=data)
-        assert response.status_code == 200
-
-        verify_token_mock.assert_called_once()
-
-        status = RecoveryStatus.objects.get(user=user)
-        assert status.step == RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
-
-    @patch.object(PhoneDevice, "verify_token")
-    def test_missing_required_keys(self, verify_token_mock, client, user):
-        verify_token_mock.return_value = True
-        self._prep_user(user)
-
-        data = {"phone": user.phone_number}
-        response = self._make_post(client, data=data)
-        assert response.status_code == 400
-        assert response.json()["error"] == "OTP missing required key secret_key"
-
-        verify_token_mock.assert_not_called()
-
-        status = RecoveryStatus.objects.get(user=user)
-        assert status.step == RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY
-
-    @patch.object(PhoneDevice, "verify_token")
-    def test_secret_mismatch(self, verify_token_mock, client, user):
-        verify_token_mock.return_value = True
-        self._prep_user(user)
-
-        data = {"phone": user.phone_number, "secret_key": "goblet_of_fire"}
-        response = self._make_post(client, data=data)
-        assert response.status_code == 401
-
-        verify_token_mock.assert_not_called()
-
-        status = RecoveryStatus.objects.get(user=user)
-        assert status.step == RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY
-
-    @patch.object(PhoneDevice, "verify_token")
-    def test_wrong_step_fails(self, verify_token_mock, client, user):
-        verify_token_mock.return_value = True
-        self._prep_user(user)
-
-        status = RecoveryStatus.objects.get(user=user)
-        status.step = RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
-        status.save()
-
-        data = {"phone": user.phone_number, "secret_key": self.secret_key}
-        response = self._make_post(client, data=data)
-        assert response.status_code == 401
-
-        verify_token_mock.assert_not_called()
-
-    @patch.object(PhoneDevice, "verify_token")
-    def test_incorrect_token(self, verify_token_mock, client, user):
-        verify_token_mock.return_value = False
-        self._prep_user(user)
-
-        data = {"phone": user.phone_number, "secret_key": self.secret_key}
-        response = self._make_post(client, data=data)
-        assert response.status_code == 401
-        assert response.json()["error"] == "OTP token is incorrect"
-
-        verify_token_mock.assert_called_once()
-
-    def _prep_user(self, user):
-        user.phone_number = TEST_NUMBER_PREFIX + "1234567"
-        user.save()
-        PhoneDeviceFactory(user=user, phone_number=user.phone_number)
-
-        RecoveryStatusFactory(
-            user=user,
-            secret_key=self.secret_key,
-            step=RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY,
-        )
-
-    def _make_post(self, client, data):
-        return client.post(reverse("confirm_recovery_otp"), data=data)
 
 
 @pytest.mark.django_db
@@ -788,63 +613,6 @@ class TestGetDemoUsers:
 
 
 @pytest.mark.django_db
-class TestRecoveryPinConfirmationApi:
-    url = reverse("confirm_recovery_pin")
-
-    def _get_post_data(self, recovery_status):
-        return {
-            "phone": recovery_status.user.phone_number,
-            "secret_key": recovery_status.secret_key,
-            "recovery_pin": "1234",
-        }
-
-    def test_recovery_status_secret_mismatch(self, recovery_status, client):
-        data = self._get_post_data(recovery_status)
-        data["secret_key"] = "another_test_key"
-        response = client.post(self.url, data=data)
-        assert response.status_code == 401
-
-    def test_recovery_status_wrong_step(self, recovery_status, client):
-        recovery_status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
-        recovery_status.save()
-
-        response = client.post(self.url, data=self._get_post_data(recovery_status))
-        assert response.status_code == 401
-
-    def test_recovery_pin_not_set(self, recovery_status, client):
-        data = self._get_post_data(recovery_status)
-
-        recovery_status.user.recovery_pin = None
-        recovery_status.user.save()
-
-        response = client.post(self.url, data=data)
-        assert response.status_code == 400
-        assert response.json() == {"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}
-
-    def test_locked_user_refused(self, recovery_status, client):
-        recovery_status.user.set_recovery_pin("1234")
-        recovery_status.user.is_locked = True
-        recovery_status.user.save()
-
-        response = client.post(self.url, data=self._get_post_data(recovery_status))
-
-        recovery_status.refresh_from_db()
-        assert response.status_code == 401
-        assert response.json() == {"error_code": ErrorCodes.LOCKED_ACCOUNT}
-        assert recovery_status.step == RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
-
-    def test_confirm_recovery_pin_success(self, recovery_status, client):
-        recovery_status.user.set_recovery_pin("1234")
-        recovery_status.user.save()
-
-        response = client.post(self.url, data=self._get_post_data(recovery_status))
-
-        recovery_status.refresh_from_db()
-        assert response.status_code == 200
-        assert recovery_status.step == RecoveryStatus.RecoverySteps.RESET_PASSWORD
-
-
-@pytest.mark.django_db
 class TestConfirmBackupCodeApi:
     url = reverse("confirm_backup_code")
 
@@ -1038,37 +806,6 @@ class TestConfirmBackupCodeApi:
         assert "previous_device" not in data
 
 
-class TestChangePhone:
-    def test_phone_is_validated(self, auth_device, user):
-        user.phone_validated = True
-        user.save()
-
-        response = self._make_post(auth_device, data={})
-        assert response.status_code == 400
-        assert response.json()["error"] == "You cannot change a validated number"
-
-    def test_old_number_mismatch(self, auth_device, user):
-        response = self._make_post(auth_device, data={"old_phone_number": "1234"})
-        assert response.status_code == 400
-        assert response.json()["error"] == "Old phone number does not match"
-
-    def test_invalid_new_phone_number(self, auth_device, user):
-        data = {"old_phone_number": user.phone_number, "new_phone_number": "1234567890"}
-        response = self._make_post(auth_device, data=data)
-        assert response.status_code == 400
-
-    def test_success(self, auth_device, user):
-        data = {"old_phone_number": user.phone_number, "new_phone_number": factory.Faker("phone_number")}
-        response = self._make_post(auth_device, data=data)
-        assert response.status_code == 400
-
-    def _make_post(self, client, data):
-        return client.post(
-            reverse("change_phone"),
-            data=data,
-        )
-
-
 class TestChangePassword:
     def test_success(self, auth_device, user):
         response = self._make_post(auth_device, data={"password": "Ydi!asnf#i%48fnjas"})
@@ -1108,29 +845,6 @@ class TestSetRecoveryPin:
             reverse("set_recovery_pin"),
             data=data,
         )
-
-
-class TestUpdatePaymentProfilePhone:
-    @patch.object(PhoneDevice, "generate_challenge")
-    @patch("payments.views.lookup_telecom_provider")
-    def test_success(self, lookup_telecom_provider_mock, generate_challenge_mock, auth_device, user):
-        lookup_telecom_provider_mock.return_value = "Test carrier"
-
-        auth_device.post(
-            reverse("update_payment_profile_phone"),
-            data={
-                "phone_number": user.phone_number,
-                "owner_name": user.name,
-            },
-        )
-
-        generate_challenge_mock.assert_called_once()
-        profile = PaymentProfile.objects.get(user=user)
-
-        assert profile.phone_number == user.phone_number
-        assert profile.owner_name == user.name
-        assert not profile.is_verified
-        assert profile.status == PaymentProfile.PENDING
 
 
 @pytest.mark.django_db
@@ -3267,27 +2981,6 @@ class TestOtpVerifyLimit:
 
         user.refresh_from_db()
         assert not user.phone_validated
-
-    def test_payment_profile_otp_keeps_bare_401_but_burns_token(self, auth_device, user):
-        """Same for the live non-Connect payment-profile flow."""
-        profile = PaymentProfile.objects.create(
-            user=user, phone_number=user.phone_number, owner_name="Owner", status=PaymentProfile.PENDING
-        )
-        device = PhoneDeviceFactory(user=user, phone_number=profile.phone_number)
-        with mock.patch("users.models.send_sms"):
-            device.generate_challenge()
-        correct_token = device.token
-
-        url = reverse("confirm_payment_profile_otp")
-        for _ in range(MAX_OTP_VERIFY_ATTEMPTS):
-            response = auth_device.post(url, data={"token": WRONG_OTP})
-            assert response.status_code == 401
-            assert response.json() == {"error": "OTP token is incorrect"}
-
-        response = auth_device.post(url, data={"token": correct_token})
-        assert response.status_code == 401
-        profile.refresh_from_db()
-        assert not profile.is_verified
 
 
 @pytest.mark.django_db
