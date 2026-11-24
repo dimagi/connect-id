@@ -566,6 +566,51 @@ class TestSendMessageView:
         assert response.status_code == status.HTTP_201_CREATED
         assert json_data["message_id"] == [pending_msg.message_id]
 
+    def test_send_to_another_users_channel(self, auth_device):
+        other_channel = ChannelFactory()
+        data = rest_message(other_channel.channel_id)
+
+        with patch("messaging.views.send_messages_to_service_and_mark_status") as mock_send:
+            response = auth_device.post(self.url, json.dumps(data), content_type=APPLICATION_JSON)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json() == {"errors": ["invalid channel_id"]}
+        assert not Message.objects.filter(channel=other_channel).exists()
+        mock_send.assert_not_called()
+
+    def test_one_foreign_channel_rejects_the_whole_batch(self, auth_device, channel):
+        data = [rest_message(channel.channel_id), rest_message(ChannelFactory().channel_id)]
+
+        with patch("messaging.views.send_messages_to_service_and_mark_status") as mock_send:
+            response = auth_device.post(self.url, json.dumps(data), content_type=APPLICATION_JSON)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert not Message.objects.exists()
+        mock_send.assert_not_called()
+
+    def test_send_to_malformed_channel_id(self, auth_device):
+        data = rest_message()
+        data["channel"] = "not-a-uuid"
+
+        response = auth_device.post(self.url, json.dumps(data), content_type=APPLICATION_JSON)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json() == {"errors": ["invalid channel_id"]}
+
+    def test_reusing_another_users_message_id_does_not_resend_it(self, auth_device, channel):
+        other_message = MessageFactory(channel=ChannelFactory(), status=MessageStatus.PENDING)
+        data = rest_message(channel.channel_id)
+        data["message_id"] = str(other_message.message_id)
+
+        with patch("messaging.views.send_messages_to_service_and_mark_status") as mock_send:
+            response = auth_device.post(self.url, json.dumps(data), content_type=APPLICATION_JSON)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json() == {"errors": ["message_id already exists"]}
+        mock_send.assert_not_called()
+        other_message.refresh_from_db()
+        assert other_message.status == MessageStatus.PENDING
+
     def test_status_advances_to_sent_to_service_after_successful_dispatch(self, auth_device, channel):
         data = rest_message(channel.channel_id)
 
@@ -683,6 +728,18 @@ class TestUpdateConsentView:
         response = auth_device.post(url, data, content_type=APPLICATION_JSON)
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    def test_another_users_channel(self, auth_device):
+        other_channel = ChannelFactory(user_consent=True)
+        data = json.dumps({"channel": str(other_channel.channel_id), "consent": False})
+
+        with patch("messaging.views.make_request") as mock_make_request:
+            response = auth_device.post(self.url, data, content_type=APPLICATION_JSON)
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        other_channel.refresh_from_db()
+        assert other_channel.user_consent is True
+        mock_make_request.assert_not_called()
+
     def test_failure_from_hq(self, auth_device, channel, server):
         with patch("messaging.views.make_request") as mock_make_request:
             mock_make_request.side_effect = CommCareHQAPIException("HQ request failed")
@@ -741,9 +798,9 @@ class TestUpdateReceivedView:
         assert Message.objects.filter(received__isnull=False).count() == 0
 
     @patch("messaging.views.send_messages_to_service_and_mark_status")
-    def test_grouped_channel_messages(self, mock_send_messages, auth_device):
-        channel1 = ChannelFactory.create(server=ServerFactory.create())
-        channel2 = ChannelFactory.create(server=ServerFactory.create())
+    def test_grouped_channel_messages(self, mock_send_messages, auth_device, user):
+        channel1 = ChannelFactory.create(connect_user=user, server=ServerFactory.create())
+        channel2 = ChannelFactory.create(connect_user=user, server=ServerFactory.create())
         messages1 = MessageFactory.create_batch(3, channel=channel1)
         messages2 = MessageFactory.create_batch(2, channel=channel2)
 
@@ -775,6 +832,39 @@ class TestUpdateReceivedView:
             all(msg["received_on"] for msg in data[str(ch.channel_id)]["messages"]) for ch in [channel1, channel2]
         )
         assert msg_status == MessageStatus.CONFIRMED_RECEIVED
+
+    @patch("messaging.views.send_messages_to_service_and_mark_status")
+    def test_another_users_messages(self, mock_send_messages, auth_device):
+        other_message = MessageFactory(channel=ChannelFactory(), status=MessageStatus.PENDING)
+
+        response = auth_device.post(
+            self.url, json.dumps({"messages": [str(other_message.message_id)]}), content_type=APPLICATION_JSON
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        other_message.refresh_from_db()
+        assert other_message.received is None
+        assert other_message.status == MessageStatus.PENDING
+        mock_send_messages.assert_not_called()
+
+    @patch("messaging.views.send_messages_to_service_and_mark_status")
+    def test_only_own_messages_are_marked(self, mock_send_messages, auth_device, channel):
+        own_message = MessageFactory(channel=channel)
+        other_message = MessageFactory(channel=ChannelFactory())
+
+        response = auth_device.post(
+            self.url,
+            json.dumps({"messages": [str(own_message.message_id), str(other_message.message_id)]}),
+            content_type=APPLICATION_JSON,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        own_message.refresh_from_db()
+        other_message.refresh_from_db()
+        assert own_message.status == MessageStatus.DELIVERED
+        assert other_message.received is None
+        data, _ = mock_send_messages.call_args.args
+        assert list(data) == [str(channel.channel_id)]
 
     @patch("messaging.views.send_messages_to_service_and_mark_status")
     def test_reack_of_confirmed_message_does_not_downgrade_or_redispatch(

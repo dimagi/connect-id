@@ -288,6 +288,14 @@ class MessageAttachmentView(APIView):
         )
 
 
+def _is_uuid(value):
+    try:
+        UUID(str(value))
+    except ValueError:
+        return False
+    return True
+
+
 class SendMobileConnectMessage(APIView):
     def post(self, request, *args, **kwargs):
         data = request.data
@@ -302,6 +310,8 @@ class SendMobileConnectMessage(APIView):
 
             if not message.get("channel"):
                 errors.add("missing channel_id")
+            elif not _is_uuid(message["channel"]):
+                errors.add("invalid channel_id")
 
             for field in ("nonce", "tag", "ciphertext"):
                 if not message.get("content", {}).get(field):
@@ -322,7 +332,18 @@ class SendMobileConnectMessage(APIView):
         if errors:
             return JsonResponse({"errors": list(errors)}, status=status.HTTP_400_BAD_REQUEST)
 
-        existing_messages = Message.objects.filter(message_id__in=message_ids)
+        channel_ids = {UUID(str(msg.channel_id)) for msg in messages}
+        own_channel_ids = set(
+            Channel.objects.filter(channel_id__in=channel_ids, connect_user=request.user).values_list(
+                "channel_id", flat=True
+            )
+        )
+        if channel_ids - own_channel_ids:
+            return JsonResponse({"errors": ["invalid channel_id"]}, status=status.HTTP_400_BAD_REQUEST)
+        if Message.objects.filter(message_id__in=message_ids).exclude(channel__connect_user=request.user).exists():
+            return JsonResponse({"errors": ["message_id already exists"]}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing_messages = Message.objects.filter(message_id__in=message_ids, channel__connect_user=request.user)
         if existing_messages:
             existing_message_ids = list(existing_messages.values_list("message_id", flat=True))
             new_messages = [msg for msg in messages if UUID(msg.message_id) not in existing_message_ids]
@@ -401,7 +422,7 @@ class UpdateConsentView(APIView):
         if channel_id is None or consent is None:
             raise ValidationError("Both 'channel' and 'consent' fields are required.")
 
-        channel = get_object_or_404(Channel, channel_id=channel_id)
+        channel = get_object_or_404(Channel, channel_id=channel_id, connect_user=request.user)
 
         channel.user_consent = consent
         channel.save()
@@ -436,14 +457,14 @@ class UpdateReceivedView(APIView):
             return JsonResponse({}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
+            own_messages = Message.objects.filter(message_id__in=message_ids, channel__connect_user=request.user)
             messages = (
-                Message.objects.select_for_update()
-                .filter(message_id__in=message_ids)
+                own_messages.select_for_update()
                 .exclude(status=MessageStatus.CONFIRMED_RECEIVED)
                 .select_related("channel")
             )
 
-            if not Message.objects.filter(message_id__in=message_ids).exists():
+            if not own_messages.exists():
                 return JsonResponse({}, status=status.HTTP_404_NOT_FOUND)
 
             if not messages.exists():
