@@ -309,8 +309,8 @@ def rest_message(channel_id=None):
     return {"channel": str(channel_id) if channel_id else None, "content": content, "message_id": str(uuid.uuid4())}
 
 
-def make_basic_auth_header(server_id: str, secret_key: str) -> str:
-    credentials = f"{server_id}:{secret_key}"
+def make_basic_auth_header(client_id: str, secret_key: str) -> str:
+    credentials = f"{client_id}:{secret_key}"
     encoded_credentials = base64.b64encode(credentials.encode()).decode()
     headers = f"Basic {encoded_credentials}"
     return {"HTTP_AUTHORIZATION": headers}

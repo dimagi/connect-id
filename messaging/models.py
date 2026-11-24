@@ -3,7 +3,6 @@ import uuid
 from django.db import models
 from django.utils import timezone
 from firebase_admin import messaging
-from oauth2_provider.generators import generate_client_id, generate_client_secret
 
 from users.models import ConnectUser, ServerKeys
 from utils.storage import get_message_attachment_storage
@@ -15,11 +14,6 @@ class MessageServer(models.Model):
     callback_url = models.URLField(max_length=200)
     delivery_url = models.URLField(max_length=200)
     consent_url = models.URLField(max_length=200)
-    server_id = models.CharField(max_length=100, unique=True, default=generate_client_id, db_index=True)
-    secret_key = models.CharField(
-        max_length=255,
-        default=generate_client_secret,
-    )
     server_credentials = models.ForeignKey(ServerKeys, on_delete=models.PROTECT, null=True)
 
 
