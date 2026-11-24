@@ -185,9 +185,11 @@ class SendServerConnectMessage(APIView):
         for field in ("nonce", "tag", "ciphertext"):
             if not content[field]:
                 return JsonResponse({"errors": ErrorCodes.INVALID_MESSAGE_CONTENT}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            channel = Channel.objects.get(channel_id=data["channel"])
-        except Channel.DoesNotExist:
+        server = get_current_message_server(request)
+        channel = (
+            Channel.objects.filter(channel_id=data["channel"], server=server).select_related("connect_user").first()
+        )
+        if channel is None:
             return JsonResponse({"errors": ErrorCodes.CHANNEL_DOES_NOT_EXIST}, status=status.HTTP_400_BAD_REQUEST)
         if not channel.user_consent:
             return JsonResponse({"errors": ErrorCodes.NO_USER_CONSENT}, status=status.HTTP_400_BAD_REQUEST)

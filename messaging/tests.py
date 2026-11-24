@@ -452,6 +452,18 @@ class TestSendMessageToMobile:
         assert "errors" in json_data
         assert json_data["errors"] == ErrorCodes.CHANNEL_DOES_NOT_EXIST
 
+    def test_send_to_channel_of_another_server(self, client, server: MessageServer):
+        other_channel = ChannelFactory(server=ServerFactory(server_credentials=ServerKeysFactory()))
+        data = rest_message(other_channel.channel_id)
+        headers = make_basic_auth_header(server.server_credentials.client_id, server.server_credentials.secret_key)
+
+        with mock.patch("messaging.views.send_bulk_notification_task") as mock_send_bulk_task:
+            response = client.post(self.url, data=data, content_type=APPLICATION_JSON, **headers)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["errors"] == ErrorCodes.CHANNEL_DOES_NOT_EXIST
+        assert not Message.objects.filter(channel=other_channel).exists()
+        mock_send_bulk_task.delay.assert_not_called()
+
     def test_send_with_no_consent(self, client, channel: Channel, server: MessageServer):
         channel.user_consent = False
         channel.save()
