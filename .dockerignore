@@ -6,3 +6,22 @@ connectid/localsettings2.py
 .gitignore
 .venv
 venv
+
+# Not needed in the image. Keeping them out also stops changes to them from
+# invalidating the build cache.
+.git
+.github
+.claude
+.opencodereview
+.pre-commit-config.yaml
+/*.md
+docs
+deploy
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Local state that must not be baked into the image
+local_blobs
+staticfiles
+.local_temp_state

@@ -8,4 +8,4 @@ set -o nounset
 echo "Django migrate"
 python manage.py migrate --noinput
 echo "Run Gunicorn"
-exec gunicorn connectid.wsgi --bind 0.0.0.0:8000 --chdir=/app -w 4
+exec gunicorn connectid.wsgi --bind 0.0.0.0:8000 --chdir=/app -w "${WEB_CONCURRENCY:-4}"
