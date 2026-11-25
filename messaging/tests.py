@@ -944,6 +944,37 @@ class TestRetrieveNotificationsView:
         channel_ids = [c["channel_id"] for c in json_data["channels"]]
         assert str(channel.channel_id) in channel_ids
 
+    def test_retrieve_includes_stored_title_and_body(self, auth_device, fcm_device):
+        send_bulk_notification(
+            NotificationData(
+                usernames=[fcm_device.user.username],
+                title="drawer title",
+                body="drawer body",
+                data={"key": "value"},
+                send_push=False,
+            )
+        )
+
+        response = auth_device.get(self.url)
+
+        assert response.status_code == status.HTTP_200_OK
+        (notification,) = response.json()["notifications"]
+        assert notification["title"] == "drawer title"
+        assert notification["body"] == "drawer body"
+        assert notification["key"] == "value"
+
+    def test_retrieve_prefers_title_and_body_in_data(self, auth_device, fcm_device):
+        NotificationFactory(
+            user=fcm_device.user,
+            json={"title": "outer", "body": "outer", "data": {"title": "inner", "body": "inner"}},
+        )
+
+        response = auth_device.get(self.url)
+
+        (notification,) = response.json()["notifications"]
+        assert notification["title"] == "inner"
+        assert notification["body"] == "inner"
+
     def test_retrieve_messages_no_data(self, auth_device):
         Notification.objects.all().delete()
         response = auth_device.get(self.url)

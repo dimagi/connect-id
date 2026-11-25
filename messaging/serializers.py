@@ -210,4 +210,11 @@ class NotificationSerializer(serializers.ModelSerializer):
         # Add all keys from data dictionary to the top-level
         if isinstance(data, dict):
             rep.update(data)
+        # The send APIs store title and body beside data, not in it. A drawer-only notification
+        # (send_push=False) has no push to show them, so the drawer needs them here. A title or
+        # body the caller put in data wins.
+        for key in ("title", "body"):
+            value = instance.json.get(key) if isinstance(instance.json, dict) else None
+            if value and key not in rep:
+                rep[key] = value
         return rep
