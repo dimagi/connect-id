@@ -17,6 +17,8 @@ class NotificationData:
     body: str = None
     data: dict = None
     fcm_options: dict = dataclasses.field(default_factory=lambda: {})
+    # False stores the Notification (shown in the app's notification drawer) without an FCM push.
+    send_push: bool = True
 
 
 def _recipients(message: dict) -> list[str]:
@@ -35,6 +37,7 @@ class SingleMessageSerializer(serializers.Serializer):
     body = serializers.CharField(required=False)
     data = serializers.DictField(required=False)
     fcm_options = serializers.DictField(required=False, default={})
+    send_push = serializers.BooleanField(required=False, default=True)
 
     def create(self, validated_data):
         validated_data = dict(validated_data)

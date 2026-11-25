@@ -62,8 +62,12 @@ class SendMessage(APIView):
         "title": "test title",
         "body": "test message",
         "data": {"test": "data"},
-        "fcm_options": {"analytics_label": "label"}
+        "fcm_options": {"analytics_label": "label"},
+        "send_push": true
     }
+
+    ``send_push`` (default true): false stores the notification for the app's notification drawer
+    without sending an FCM push.
 
     Response:
     {
@@ -96,10 +100,14 @@ class SendMessageBulk(APIView):
                 "title": "test title",
                 "body": "test message",
                 "data": {"test": "data"},
-                "fcm_options": {"analytics_label": "label"}
+                "fcm_options": {"analytics_label": "label"},
+                "send_push": true
             },
         ]
     }
+
+    ``send_push`` (per message, default true): false stores the notifications for the app's
+    notification drawer without sending FCM pushes.
 
     Sending in the request keeps this worker busy for the whole FCM round trip, so a large batch can
     starve the web tier. Add ``"async": true`` to queue the sends on Celery instead. The response is then

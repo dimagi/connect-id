@@ -19,7 +19,9 @@ def send_bulk_notifications(messages: list[NotificationData]) -> list[dict]:
 
     Notifications are persisted per message (preserving ``Notification.save()`` semantics) inside a
     single transaction, then every FCM push is dispatched via ``messaging.send_each`` in batches of
-    ``MAX_MESSAGES_PER_BATCH`` (the per-call API limit).
+    ``MAX_MESSAGES_PER_BATCH`` (the per-call API limit). A message with ``send_push=False`` only stores
+    the notifications, for the app's notification drawer: no push is sent and an active user counts as
+    ``"success"`` whether or not they have an active device.
 
     Returns one result dict per input message, in input order::
 
@@ -40,6 +42,11 @@ def send_bulk_notifications(messages: list[NotificationData]) -> list[dict]:
                     continue
 
                 notification = _get_or_create_notification(user, message)
+                if not message.send_push:
+                    # Drawer only: the app picks the row up from /messaging/retrieve_notifications/.
+                    message_responses.append({"username": username, "status": "success"})
+                    continue
+
                 device = user.active_devices[0] if user.active_devices else None
                 if device is None:
                     message_responses.append({"username": username, "status": "deactivated"})
