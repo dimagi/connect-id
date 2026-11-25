@@ -470,6 +470,13 @@ def change_password(request):
     return HttpResponse()
 
 
+def _apply_demographic_fields(user, data):
+    sent_keys = [key for key in DEMOGRAPHIC_FIELDS if key in data]
+    for key in sent_keys:
+        setattr(user, DEMOGRAPHIC_FIELDS[key], data[key] or None)
+    return bool(sent_keys)
+
+
 @api_view(["POST"])
 def update_profile(request):
     data = request.data
@@ -482,10 +489,7 @@ def update_profile(request):
     if data.get("secondary_phone"):
         user.recovery_phone = data["secondary_phone"]
         changed = True
-    for key, field in DEMOGRAPHIC_FIELDS.items():
-        if key in data:
-            setattr(user, field, data[key] or None)
-            changed = True
+    changed |= _apply_demographic_fields(user, data)
     if data.get("photo"):
         error_code = upload_photo_to_s3(data["photo"], user.username)
         if error_code:
