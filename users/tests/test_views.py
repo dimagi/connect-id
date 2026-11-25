@@ -1294,10 +1294,6 @@ class TestUpdateProfile:
     @pytest.mark.parametrize(
         "data, error_field",
         [
-            ({"gender": "other"}, "gender"),
-            ({"education": "phd"}, "education"),
-            ({"chw_experience": "10_years"}, "chw_experience"),
-            ({"tech_proficiency": "none"}, "tech_proficiency"),
             ({"date_of_birth": "21-03-1994"}, "dob"),
             ({"languages": "English"}, "languages"),
             ({"languages": "eng, hau"}, "languages"),

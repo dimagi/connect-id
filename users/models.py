@@ -45,42 +45,17 @@ class ConnectUser(AbstractUser):
         PIN = "pin", "pin"
         BIOMETRIC = "biometric", "biometric"
 
-    class Gender(models.TextChoices):
-        FEMALE = "female"
-        MALE = "male"
-        PREFER_NOT_TO_SAY = "prefer_not_to_say"
-
-    class Education(models.TextChoices):
-        NO_FORMAL_EDUCATION = "no_formal_education"
-        HIGH_SCHOOL = "high_school"
-        COLLEGE_DIPLOMA = "college_diploma"
-        BACHELORS_DEGREE = "bachelors_degree"
-        MASTERS_OR_HIGHER = "masters_or_higher"
-
-    class ChwExperience(models.TextChoices):
-        NO_EXPERIENCE = "no_experience"
-        ONE_TO_TWO_YEARS = "1_2_years"
-        THREE_TO_FIVE_YEARS = "3_5_years"
-        SIX_PLUS_YEARS = "6_plus_years"
-
-    class TechProficiency(models.TextChoices):
-        NO_EXPERIENCE = "no_experience"
-        BEGINNER = "beginner"
-        COMFORTABLE = "comfortable"
-        ADVANCED = "advanced"
-        EXPERT = "expert"
-
     phone_number = PhoneNumberField()
     phone_validated = models.BooleanField(default=False)
     recovery_phone = PhoneNumberField(blank=True)
     recovery_phone_validated = models.BooleanField(default=False)
     name = models.TextField(max_length=150, blank=True)
     dob = models.DateField(blank=True, null=True, validators=[validate_not_after_tomorrow])
-    gender = models.CharField(choices=Gender.choices, max_length=32, blank=True, null=True)
+    gender = models.CharField(max_length=32, blank=True, null=True)
     languages = models.CharField(max_length=1000, blank=True, null=True, validators=[validate_language_codes])
-    education = models.CharField(choices=Education.choices, max_length=32, blank=True, null=True)
-    chw_experience = models.CharField(choices=ChwExperience.choices, max_length=32, blank=True, null=True)
-    tech_proficiency = models.CharField(choices=TechProficiency.choices, max_length=32, blank=True, null=True)
+    education = models.CharField(max_length=32, blank=True, null=True)
+    chw_experience = models.CharField(max_length=32, blank=True, null=True)
+    tech_proficiency = models.CharField(max_length=32, blank=True, null=True)
     ip_address = models.GenericIPAddressField(blank=True, null=True)
     # this is effectively a password so use set_recovery_pin to
     # store a hashed value rather than setting it directly
