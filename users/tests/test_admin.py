@@ -335,6 +335,10 @@ class TestAdminIndexButton:
 class TestAdminLoginLockout:
     PASSWORD = "correct-horse-battery"
 
+    @pytest.fixture(autouse=True)
+    def axes_enabled(self, settings):
+        settings.AXES_ENABLED = True
+
     @pytest.fixture
     def staff_user(self):
         return UserFactory(phone_number="+27821110001", is_staff=True, is_superuser=True, password=self.PASSWORD)

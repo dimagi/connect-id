@@ -175,7 +175,7 @@ class TestOAuth2TokenEndpoint:
         assert response.status_code == 400
         assert response.json()["error_code"] == ErrorCodes.LOGIN_FROM_DIFFERENT_DEVICE
 
-    @override_settings(AXES_FAILURE_LIMIT=1)
+    @override_settings(AXES_ENABLED=True, AXES_FAILURE_LIMIT=1)
     def test_password_grant_failures_are_not_locked_out_by_axes(self, client, password_grant_app):
         """django-axes guards the admin login only. Failed API logins are neither recorded nor locked out."""
         raw_password = "correctpass"
