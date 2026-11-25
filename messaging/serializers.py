@@ -215,6 +215,6 @@ class NotificationSerializer(serializers.ModelSerializer):
         # body the caller put in data wins.
         for key in ("title", "body"):
             value = instance.json.get(key) if isinstance(instance.json, dict) else None
-            if value and key not in rep:
+            if value is not None and key not in rep:
                 rep[key] = value
         return rep

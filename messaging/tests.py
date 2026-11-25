@@ -975,6 +975,15 @@ class TestRetrieveNotificationsView:
         assert notification["title"] == "inner"
         assert notification["body"] == "inner"
 
+    def test_retrieve_keeps_empty_title_and_omits_missing_body(self, auth_device, fcm_device):
+        NotificationFactory(user=fcm_device.user, json={"title": "", "body": None, "data": {}})
+
+        response = auth_device.get(self.url)
+
+        (notification,) = response.json()["notifications"]
+        assert notification["title"] == ""
+        assert "body" not in notification
+
     def test_retrieve_messages_no_data(self, auth_device):
         Notification.objects.all().delete()
         response = auth_device.get(self.url)
