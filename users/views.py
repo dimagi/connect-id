@@ -1,6 +1,6 @@
 import base64
 import logging
-from datetime import timedelta
+from datetime import date, timedelta
 from secrets import token_hex
 from urllib.parse import urlencode, urlparse
 
@@ -81,6 +81,15 @@ from .services import upload_photo_to_s3
 from .tasks import push_profile_to_connect
 
 logger = logging.getLogger(__name__)
+
+DEMOGRAPHIC_FIELDS = {
+    "gender": "gender",
+    "date_of_birth": "dob",
+    "languages": "languages",
+    "education": "education",
+    "chw_experience": "chw_experience",
+    "tech_proficiency": "tech_proficiency",
+}
 
 
 @api_view(["POST"])
@@ -473,6 +482,10 @@ def update_profile(request):
     if data.get("secondary_phone"):
         user.recovery_phone = data["secondary_phone"]
         changed = True
+    for key, field in DEMOGRAPHIC_FIELDS.items():
+        if key in data:
+            setattr(user, field, data[key] or None)
+            changed = True
     if data.get("photo"):
         error_code = upload_photo_to_s3(data["photo"], user.username)
         if error_code:
@@ -625,6 +638,10 @@ def _complete_recovery_for_user(user, session):
 
         if user.email:
             response_data["email"] = user.email
+
+        for key, field in DEMOGRAPHIC_FIELDS.items():
+            value = getattr(user, field)
+            response_data[key] = value.isoformat() if isinstance(value, date) else value
 
         return response_data
 
