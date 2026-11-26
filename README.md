@@ -89,9 +89,16 @@ The checks are defined in `connectid/health_checks.py`, built on
 ## Production Deploy
 
 Production is deployed with [Kamal 2](https://kamal-deploy.org/), only from the
-[Deploy workflow](.github/workflows/deploy.yml). It runs on a schedule (Monday, Wednesday and Friday,
-when there is something new on `main` and CI passed) and can be started by hand from the Actions tab.
-Do not deploy from a laptop.
+[Deploy workflow](.github/workflows/deploy.yml). Do not deploy from a laptop.
+
+Production deploys continuously: every push to `main` is deployed by the `Deploy` workflow once CI passes on it.
+A deploy is skipped if CI failed, if a newer commit has landed on `main` since (that commit's own CI run deploys
+it), or if the commit is already live. These are checked again just before the deploy starts, in case things
+changed while it waited for an earlier deploy to finish. Deploys never overlap; merges that land while one is
+running go out together in the next one.
+
+To retry a failed deploy or redeploy, run the `Deploy` workflow by hand from the Actions tab. It must be run on
+`main` (any other branch fails) and deploys right away, without waiting for CI. To ship a fix, merge it to `main`.
 
 - `deploy/config/deploy.yml`: servers, roles, kamal-proxy and logging config.
 - `deploy/.kamal/secrets`: commands that fetch secrets at deploy time (no values are committed).
@@ -99,7 +106,7 @@ Do not deploy from a laptop.
   `bundle exec`, using the Ruby version in `deploy/.ruby-version`.
 
 The web host sits behind an ALB, which terminates TLS. kamal-proxy runs on the web host on port 80
-and switches traffic to the new container once `/up` answers. The celery and celery-beat roles are
-not proxied.
+and switches traffic to the new container once `/up` answers. It keeps the ALB's `X-Forwarded-For` and appends
+the ALB's address, which is why `NUM_PROXIES` is 2. The celery and celery-beat roles are not proxied.
 
 App environment variables are read on each host from `/home/connect/www/docker.env`.

@@ -5,21 +5,25 @@ from unittest import mock
 import pytest
 from django.contrib.auth.hashers import check_password
 from django.db import IntegrityError, connection
+from django.urls import reverse
 from django.utils.timezone import now
+from kombu.exceptions import OperationalError as KombuOperationalError
 
 from sms import SmsCountryNotSupportedError, SmsRateLimitedError, SmsSendError
-from users.const import MAX_OTP_BURN_COOLDOWN_HOURS, MAX_OTP_VERIFY_ATTEMPTS
+from users.const import CREDENTIAL_AWARDED_ACTION, MAX_OTP_BURN_COOLDOWN_HOURS, MAX_OTP_VERIFY_ATTEMPTS
 from users.exceptions import RateLimitedError, UnsupportedCountryError
 from users.factories import (
     ConfigurationSessionFactory,
+    CredentialFactory,
     PhoneDeviceFactory,
     SessionEmailOTPDeviceFactory,
     SessionPhoneDeviceFactory,
+    UserCredentialFactory,
     UserDeviceInfoFactory,
     UserEmailOTPDeviceFactory,
     UserFactory,
 )
-from users.models import SessionEmailOTPDevice, UserEmailOTPDevice
+from users.models import SessionEmailOTPDevice, UserCredential, UserEmailOTPDevice
 
 
 @pytest.mark.django_db
@@ -411,3 +415,50 @@ class TestRateLimitLogging:
         (blocked,) = self._events(caplog, "rate_limit_blocked")
         assert blocked["kind"] == "user"
         assert blocked["user_id"] == device.user_id
+
+
+@pytest.mark.django_db
+class TestAddCredential:
+    def _add(self, user, credential, capture, push_error=None):
+        with (
+            mock.patch("messaging.tasks.send_bulk_notification_task.delay", side_effect=push_error) as push,
+            capture(execute=True),
+        ):
+            UserCredential.add_credential(user, credential, request=None)
+        return push
+
+    def test_new_credential_sends_push(self, django_capture_on_commit_callbacks, credential_issuing_authority):
+        user = UserFactory()
+        credential = CredentialFactory(issuer=credential_issuing_authority)
+
+        push = self._add(user, credential, django_capture_on_commit_callbacks)
+
+        push.assert_called_once()
+        kwargs = push.call_args.kwargs
+        user_credential = UserCredential.objects.get(user=user, credential=credential)
+        assert kwargs["usernames"] == [user.username]
+        assert credential.title in kwargs["body"]
+        data = kwargs["data"]
+        assert data["action"] == CREDENTIAL_AWARDED_ACTION
+        assert data["invite_id"] == user_credential.invite_id
+        assert data["accept_url"].endswith(reverse("accept_credential", args=(user_credential.invite_id,)))
+        assert all(isinstance(value, str) for value in data.values())
+
+    def test_existing_credential_sends_nothing(self, django_capture_on_commit_callbacks, credential_issuing_authority):
+        user_credential = UserCredentialFactory(credential__issuer=credential_issuing_authority)
+
+        push = self._add(user_credential.user, user_credential.credential, django_capture_on_commit_callbacks)
+
+        push.assert_not_called()
+
+    def test_broker_failure_is_logged_not_raised(
+        self, django_capture_on_commit_callbacks, credential_issuing_authority, caplog
+    ):
+        user = UserFactory()
+        credential = CredentialFactory(issuer=credential_issuing_authority)
+
+        push = self._add(user, credential, django_capture_on_commit_callbacks, KombuOperationalError("down"))
+
+        push.assert_called_once()
+        assert UserCredential.objects.filter(user=user, credential=credential).exists()
+        assert "Credential awarded push not queued" in caplog.text

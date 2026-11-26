@@ -83,13 +83,14 @@ def send_messages_to_service_and_mark_status(channel_messages, status_to_be_upda
     max_retries=3,
     retry_backoff=10,
 )
-def send_bulk_notification_task(usernames, data=None, fcm_options=None, title=None, body=None):
+def send_bulk_notification_task(usernames, data=None, fcm_options=None, title=None, body=None, send_push=True):
     message = NotificationData(
         usernames=usernames,
         data=data,
         fcm_options=fcm_options or {},
         title=title,
         body=body,
+        send_push=send_push,
     )
     send_bulk_notification(message)
 

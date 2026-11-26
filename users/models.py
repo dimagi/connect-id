@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import logging
 import os
 from datetime import timedelta
@@ -16,8 +17,8 @@ from django.db.models.functions import Lower
 from django.urls import reverse
 from django.utils.timezone import now
 from django_otp.models import SideChannelDevice
-from django_otp.util import random_hex
 from geopy.geocoders import MapBox
+from kombu.exceptions import OperationalError as KombuOperationalError
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 from phonenumber_field.modelfields import PhoneNumberField
 
@@ -26,9 +27,15 @@ from sms.limits import hit_user_otp_limit, release_user_otp_limit
 from users.exceptions import RateLimitedError, RecoveryPinNotSetError, UnsupportedCountryError
 from users.hashers import check_secret_password, make_secret_password
 from users.services import get_user_photo_base64
+from users.validators import validate_language_codes, validate_not_after_tomorrow
 from utils.rate_limit import BLOCKED, SUPPRESSED, log_event
 
-from .const import MAX_BACKUP_CODE_ATTEMPTS, MAX_OTP_BURN_COOLDOWN_HOURS, MAX_OTP_VERIFY_ATTEMPTS
+from .const import (
+    CREDENTIAL_AWARDED_ACTION,
+    MAX_BACKUP_CODE_ATTEMPTS,
+    MAX_OTP_BURN_COOLDOWN_HOURS,
+    MAX_OTP_VERIFY_ATTEMPTS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +50,12 @@ class ConnectUser(AbstractUser):
     recovery_phone = PhoneNumberField(blank=True)
     recovery_phone_validated = models.BooleanField(default=False)
     name = models.TextField(max_length=150, blank=True)
-    dob = models.DateField(blank=True, null=True)
+    dob = models.DateField(blank=True, null=True, validators=[validate_not_after_tomorrow])
+    gender = models.CharField(max_length=32, blank=True, null=True)
+    languages = models.CharField(max_length=1000, blank=True, null=True, validators=[validate_language_codes])
+    education = models.CharField(max_length=32, blank=True, null=True)
+    chw_experience = models.CharField(max_length=32, blank=True, null=True)
+    tech_proficiency = models.CharField(max_length=32, blank=True, null=True)
     ip_address = models.GenericIPAddressField(blank=True, null=True)
     # this is effectively a password so use set_recovery_pin to
     # store a hashed value rather than setting it directly
@@ -89,20 +101,6 @@ class ConnectUser(AbstractUser):
 
     def check_password(self, raw_password):
         return check_secret_password(raw_password, self.password, partial(rehash_password, self))
-
-    def initiate_deactivation(self):
-        self.deactivation_token = random_hex(7)
-        self.deactivation_token_valid_until = now() + timedelta(seconds=600)
-        message = (
-            f"Your account deactivation request is pending. Please enter this token {self.deactivation_token} "
-            f"to confirm account deactivation."
-            f"Warning: This action is irreversible. If you didn't request deactivation, "
-            f"please ignore this message."
-        )
-        # Sent before saving, so a token is only stored once its SMS is out.
-        send_sms(self.phone_number, message)
-        self.save()
-        return message
 
     def get_photo(self):
         return get_user_photo_base64(self.username)
@@ -401,16 +399,40 @@ class UserCredential(models.Model):
     def add_credential(cls, user, credential, request):
         user_credential, created = cls.objects.get_or_create(user=user, credential=credential)
         if created:
-            domain = Site.objects.get_current().domain
-            location = reverse("accept_credential", args=(user_credential.invite_id,))
-            url = f"https://{domain}{location}"
-            message = (
-                f"You have been given credential '{credential.title}'. Please click the following link to accept {url}"
-            )
-            try:
-                send_sms(user.phone_number, message)
-            except (SmsRateLimitedError, SmsCountryNotSupportedError):
-                logger.warning("Credential %s granted to %s without an SMS", credential.pk, user.username)
+            user_credential.notify_awarded()
+
+    def notify_awarded(self):
+        domain = Site.objects.get_current().domain
+        location = reverse("accept_credential", args=(self.invite_id,))
+        title = self.credential.title
+        notification = {
+            "usernames": [self.user.username],
+            "title": "New credential",
+            "body": f"You have been given credential '{title}'. Tap to accept it.",
+            "data": {
+                "action": CREDENTIAL_AWARDED_ACTION,
+                "invite_id": str(self.invite_id),
+                "accept_url": f"https://{domain}{location}",
+                "credential_title": title,
+            },
+        }
+        transaction.on_commit(partial(_queue_credential_awarded_push, self.pk, notification))
+
+
+def _queue_credential_awarded_push(user_credential_id, notification):
+    """Queue the push, logging a broker failure instead of raising it.
+
+    Raising would fail the rest of an AddCredential batch, and the award is already saved either way, so a
+    retry wouldn't resend the push. The catch is inside the on_commit callback (not around delay_on_commit),
+    so it also covers the case where the callback runs after an enclosing transaction commits.
+    """
+    # Imported here: messaging imports users.models.
+    from messaging.tasks import send_bulk_notification_task
+
+    try:
+        send_bulk_notification_task.delay(**notification)
+    except KombuOperationalError:
+        logger.exception("Credential awarded push not queued for UserCredential %s", user_credential_id)
 
 
 class ConfigurationSession(models.Model):
@@ -558,6 +580,20 @@ class UserDeviceInfo(models.Model):
 
 
 class SessionUser(AnonymousUser):
+    """Fake user for a request authenticated with a ConfigurationSession token.
+
+    It has no pk. `throttle_ident` names the phone number the session is for (hashed, so the number is
+    not stored in the throttle cache), so each number gets its own throttle bucket
+    (utils.rest_framework.ServiceAwareUserRateThrottle) rather than every session sharing the one keyed on
+    pk None.
+    """
+
+    def __init__(self, session=None):
+        self.throttle_ident = None
+        if session is not None:
+            digest = hashlib.sha256(str(session.phone_number).encode()).hexdigest()[:32]
+            self.throttle_ident = f"session_phone:{digest}"
+
     @property
     def is_authenticated(self):
         return True

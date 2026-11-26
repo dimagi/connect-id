@@ -17,6 +17,19 @@ class ConnectUserAdmin(UserAdmin):
         (None, {"fields": ("username", "password")}),
         (_("Personal info"), {"fields": ("name", "email", "phone_number")}),
         (
+            _("Demographics"),
+            {
+                "fields": (
+                    "gender",
+                    "dob",
+                    "languages",
+                    "education",
+                    "chw_experience",
+                    "tech_proficiency",
+                ),
+            },
+        ),
+        (
             _("Permissions"),
             {
                 "fields": (

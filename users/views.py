@@ -1,18 +1,17 @@
 import base64
 import logging
-from datetime import timedelta
+from datetime import date, timedelta
 from secrets import token_hex
 from urllib.parse import urlencode, urlparse
 
 import requests
 from django.conf import settings
-from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import validate_email
 from django.db import transaction
-from django.db.models import Count, Exists, F, OuterRef
+from django.db.models import Count, Exists, OuterRef
 from django.db.models.functions import TruncMonth
 from django.db.utils import IntegrityError
 from django.http import HttpResponse, JsonResponse
@@ -21,8 +20,8 @@ from django.utils.timezone import now
 from django.views import View
 from firebase_admin import auth
 from googleapiclient.errors import HttpError
+from kombu.exceptions import OperationalError as KombuOperationalError
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
-from oauth2_provider.models import AccessToken, RefreshToken
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from phonenumber_field.phonenumber import to_python
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
@@ -32,10 +31,9 @@ from waffle.decorators import waffle_switch
 
 from flags.const import EMAIL_OTP_VERIFICATION
 from flags.utils import get_user_toggles
+from messaging.tasks import send_bulk_notification_task
 from services.ai.ocs import OpenChatStudio
-from sms import SmsCountryNotSupportedError, SmsRateLimitedError, send_sms
 from sms.limits import hit_country_limit, is_country_supported, mask
-from utils import get_ip
 from utils.app_integrity.const import ErrorCodes as AppIntegrityErrorCodes
 from utils.app_integrity.decorators import require_app_integrity
 from utils.app_integrity.exceptions import DuplicateSampleRequestError
@@ -45,7 +43,7 @@ from utils.rest_framework import ClientProtectedResourceAuth
 
 from .auth import DeviceBasicAuthentication, IssuingCredentialsAuth, SessionTokenAuthentication
 from .const import (
-    NO_RECOVERY_PHONE_ERROR,
+    HQ_INVITE_ACTION,
     TEST_NUMBER_PREFIX,
     ErrorCodes,
     RecoveryMethods,
@@ -68,7 +66,6 @@ from .models import (
     Credential,
     IssuingAuthority,
     PhoneDevice,
-    RecoveryStatus,
     SessionEmailOTPDevice,
     SessionPhoneDevice,
     UserCredential,
@@ -82,32 +79,14 @@ from .tasks import push_profile_to_connect
 
 logger = logging.getLogger(__name__)
 
-
-@api_view(["POST"])
-@permission_classes([])
-def register(request):
-    data = request.data
-    fields = ["username", "password", "phone_number", "recovery_phone", "name", "dob"]
-    user_data = {}
-    for field in fields:
-        if data.get(field):
-            user_data[field] = data[field]
-    user_data["ip_address"] = get_ip(request)
-    user_data["recovery_phone_validation_deadline"] = now().date() + timedelta(days=7)
-
-    # skip validation if number starts with special prefix
-    if not user_data.get("phone_number", "").startswith(TEST_NUMBER_PREFIX):
-        u = ConnectUser(**user_data)
-        try:
-            u.full_clean()
-        except ValidationError as e:
-            return JsonResponse(e.message_dict, status=400)
-
-    user = ConnectUser.objects.create_user(**user_data)
-    if data.get("fcm_token"):
-        create_update_device(user, data["fcm_token"])
-    db_key = UserKey.get_or_create_key_for_user(user)
-    return JsonResponse({"secondary_phone_validate_by": user.recovery_phone_validation_deadline, "db_key": db_key.key})
+DEMOGRAPHIC_FIELDS = {
+    "gender": "gender",
+    "date_of_birth": "dob",
+    "languages": "languages",
+    "education": "education",
+    "chw_experience": "chw_experience",
+    "tech_proficiency": "tech_proficiency",
+}
 
 
 def _refuse_session_by_country(phone_number: str) -> JsonResponse | None:
@@ -254,35 +233,6 @@ def confirm_otp(request):
 
 
 @api_view(["POST"])
-def validate_secondary_phone(request):
-    user = request.user
-    if not user.recovery_phone:
-        return JsonResponse({"error": NO_RECOVERY_PHONE_ERROR}, status=400)
-
-    otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.recovery_phone, user=user)
-    otp_device.generate_challenge()
-    return HttpResponse()
-
-
-@api_view(["POST"])
-def confirm_secondary_otp(request):
-    # check otp code for user
-    # mark phone as confirmed on user model
-    user = request.user
-    if not user.recovery_phone:
-        return JsonResponse({"error": NO_RECOVERY_PHONE_ERROR}, status=400)
-    device, _ = PhoneDevice.objects.get_or_create(phone_number=user.recovery_phone, user=user)
-    data = request.data
-    verified = device.verify_token(data.get("token"))
-    if not verified:
-        return JsonResponse({"error": "OTP token is incorrect"}, status=401)
-    user.recovery_phone_validated = True
-    user.recovery_phone_validation_deadline = None
-    user.save()
-    return HttpResponse()
-
-
-@api_view(["POST"])
 @authentication_classes([SessionTokenAuthentication])
 def complete_profile(request):
     if not request.auth.is_phone_validated:
@@ -346,148 +296,6 @@ def complete_profile(request):
     )
 
 
-@api_view(["POST"])
-@permission_classes([])
-def recover_account(request):
-    data = request.data
-    if not data.get("phone"):
-        return JsonResponse({"error": "OTP missing required key phone"}, status=400)
-
-    user = ConnectUser.objects.get(phone_number=data["phone"], is_active=True)
-    if user.is_locked:
-        return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=401)
-    device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
-    device.generate_challenge()
-    secret = token_hex()
-    status, _ = RecoveryStatus.objects.get_or_create(user=user)
-    status.secret_key = secret
-    status.step = RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY
-    status.save()
-    return JsonResponse({"secret": secret})
-
-
-@api_view(["POST"])
-@permission_classes([])
-def confirm_recovery_otp(request):
-    data = request.data
-    required_keys = ["phone", "secret_key"]
-    missing = []
-    for key in required_keys:
-        if key not in data:
-            missing.append(key)
-    if missing:
-        missing_keys = ",".join(missing)
-        return JsonResponse({"error": f"OTP missing required key {missing_keys}"}, status=400)
-    phone_number = data["phone"]
-    secret_key = data["secret_key"]
-    user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
-    status = RecoveryStatus.objects.get(user=user)
-    if status.secret_key != secret_key:
-        return HttpResponse(status=401)
-    if status.step != RecoveryStatus.RecoverySteps.CONFIRM_PRIMARY:
-        return HttpResponse(status=401)
-    device = PhoneDevice.objects.get(phone_number=user.phone_number, user=user)
-    verified = device.verify_token(data.get("token"))
-    if not verified:
-        return JsonResponse({"error": "OTP token is incorrect"}, status=401)
-    status.step = RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
-    status.save()
-    return HttpResponse()
-
-
-@api_view(["POST"])
-@permission_classes([])
-def recover_secondary_phone(request):
-    data = request.data
-    phone_number = data["phone"]
-    secret_key = data["secret_key"]
-    user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
-    status = RecoveryStatus.objects.get(user=user)
-    if status.secret_key != secret_key:
-        return HttpResponse(status=401)
-    if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
-        return HttpResponse(status=401)
-    if not user.recovery_phone:
-        return JsonResponse({"error": NO_RECOVERY_PHONE_ERROR}, status=400)
-    otp_device, _ = PhoneDevice.objects.get_or_create(phone_number=user.recovery_phone, user=user)
-    otp_device.save()
-    otp_device.generate_challenge()
-    status.step = RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY
-    status.save()
-    return JsonResponse({"secondary_phone": user.recovery_phone.as_e164})
-
-
-@api_view(["POST"])
-@permission_classes([])
-def confirm_secondary_recovery_otp(request):
-    data = request.data
-    phone_number = data["phone"]
-    secret_key = data["secret_key"]
-    user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
-    status = RecoveryStatus.objects.get(user=user)
-    if status.secret_key != secret_key:
-        return HttpResponse(status=401)
-    if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
-        return HttpResponse(status=401)
-    device = PhoneDevice.objects.get(phone_number=user.recovery_phone, user=user)
-    verified = device.verify_token(data.get("token"))
-    if not verified:
-        return JsonResponse({"error": "OTP token is incorrect"}, status=401)
-    status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
-    status.save()
-    db_key = UserKey.get_or_create_key_for_user(user)
-    user_data = {
-        "name": user.name,
-        "username": user.username,
-        "secondary_phone": user.recovery_phone.as_e164,
-        "db_key": db_key.key,
-    }
-    user_data.update(user_payment_profile(user))
-    return JsonResponse(user_data)
-
-
-@api_view(["POST"])
-@permission_classes([])
-def confirm_password(request):
-    data = request.data
-    phone_number = data["phone"]
-    secret_key = data["secret_key"]
-    user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
-    status = RecoveryStatus.objects.get(user=user)
-    if status.secret_key != secret_key:
-        return HttpResponse(status=401)
-    if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
-        return HttpResponse(status=401)
-    password = data["password"]
-    if not check_password(password, user.password):
-        return HttpResponse(status=401)
-    status.delete()
-    return JsonResponse(user_data(user))
-
-
-@api_view(["POST"])
-@permission_classes([])
-def reset_password(request):
-    data = request.data
-    phone_number = data["phone"]
-    secret_key = data["secret_key"]
-    user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
-    status = RecoveryStatus.objects.get(user=user)
-    if status.secret_key != secret_key:
-        return HttpResponse(status=401)
-    if status.step != RecoveryStatus.RecoverySteps.RESET_PASSWORD:
-        return HttpResponse(status=401)
-    password = data["password"]
-    try:
-        validate_password(password)
-    except ValidationError as e:
-        return JsonResponse(e.message_dict, status=400)
-    user.set_password(password)
-    user.save()
-    status.delete()
-    return HttpResponse()
-
-
 @api_view(["GET"])
 @permission_classes([])
 def phone_available(request):
@@ -500,28 +308,6 @@ def phone_available(request):
         return HttpResponse()
     else:
         return HttpResponse(status=403)
-
-
-@api_view(["POST"])
-@permission_classes([])
-def change_phone(request):
-    data = request.data
-    user = request.user
-    error = None
-    if user.phone_validated:
-        error = "You cannot change a validated number"
-    elif user.phone_number != data["old_phone_number"]:
-        error = "Old phone number does not match"
-    if error:
-        return JsonResponse({"error": error}, status=400)
-    user.phone_number = data["new_phone_number"]
-
-    try:
-        user.full_clean()
-    except ValidationError as e:
-        return JsonResponse(e.message_dict, status=400)
-    user.save()
-    return HttpResponse()
 
 
 @api_view(["POST"])
@@ -541,6 +327,13 @@ def change_password(request):
     return HttpResponse()
 
 
+def _apply_demographic_fields(user, data):
+    sent_keys = [key for key in DEMOGRAPHIC_FIELDS if key in data]
+    for key in sent_keys:
+        setattr(user, DEMOGRAPHIC_FIELDS[key], data[key] or None)
+    return bool(sent_keys)
+
+
 @api_view(["POST"])
 def update_profile(request):
     data = request.data
@@ -553,6 +346,7 @@ def update_profile(request):
     if data.get("secondary_phone"):
         user.recovery_phone = data["secondary_phone"]
         changed = True
+    changed |= _apply_demographic_fields(user, data)
     if data.get("photo"):
         error_code = upload_photo_to_s3(data["photo"], user.username)
         if error_code:
@@ -609,33 +403,6 @@ def user_payment_profile(user):
         }
     except ObjectDoesNotExist:
         return {"payment_profile": {}}
-
-
-@api_view(["POST"])
-@permission_classes([])
-def confirm_recovery_pin(request):
-    data = request.data
-    phone_number = data["phone"]
-    secret_key = data["secret_key"]
-    user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
-    if user.is_locked:
-        return JsonResponse({"error_code": ErrorCodes.LOCKED_ACCOUNT}, status=401)
-    status = RecoveryStatus.objects.get(user=user)
-    if status.secret_key != secret_key:
-        return JsonResponse({"error_code": ErrorCodes.INVALID_SECRET_KEY}, status=401)
-    if status.step != RecoveryStatus.RecoverySteps.CONFIRM_SECONDARY:
-        return JsonResponse({"error_code": ErrorCodes.INVALID_STEP}, status=401)
-    recovery_pin = data["recovery_pin"]
-
-    try:
-        if not user.check_recovery_pin(recovery_pin):
-            return JsonResponse({"error_code": ErrorCodes.INCORRECT_CODE}, status=401)
-    except RecoveryPinNotSetError:
-        return JsonResponse({"error_code": ErrorCodes.NO_RECOVERY_PIN_SET}, status=400)
-
-    status.step = RecoveryStatus.RecoverySteps.RESET_PASSWORD
-    status.save()
-    return JsonResponse(user_data(user))
 
 
 def _verify_backup_code(user, backup_code):
@@ -705,6 +472,10 @@ def _complete_recovery_for_user(user, session):
 
         if user.email:
             response_data["email"] = user.email
+
+        for key, field in DEMOGRAPHIC_FIELDS.items():
+            value = getattr(user, field)
+            response_data[key] = value.isoformat() if isinstance(value, date) else value
 
         return response_data
 
@@ -847,19 +618,8 @@ class GetDemoUsers(ClientProtectedResourceMixin, View):
             phone_number__startswith=TEST_NUMBER_PREFIX,
             token__isnull=False,
         ).values("phone_number", "token")
-        demo_connect_users = (
-            ConnectUser.objects.filter(
-                phone_number__startswith=TEST_NUMBER_PREFIX,
-                deactivation_token__isnull=False,
-            )
-            .annotate(token=F("deactivation_token"))
-            .values("phone_number", "token")
-        )
 
-        demo_users = [
-            {**row, "phone_number": str(row["phone_number"])}
-            for row in list(demo_phone_devices) + list(demo_connect_users)
-        ]
+        demo_users = [{**row, "phone_number": str(row["phone_number"])} for row in demo_phone_devices]
         sorted_demo_users = sorted(
             demo_users,
             key=lambda x: x["phone_number"],
@@ -945,7 +705,7 @@ class ForwardHQInvite(APIView):
     """
     This view gets called by CommCareHQ to invite
         a ConnectID User. It takes invite metadata
-        and fowards it as a deeplink SMS to mobile
+        and forwards it as a deeplink push notification to mobile
     """
 
     authentication_classes = [ClientProtectedResourceAuth]
@@ -973,20 +733,22 @@ class ForwardHQInvite(APIView):
         )
         deeplink = f"https://connectid.dimagi.com/hq_invite/?{query_string}"
 
-        message = f"""
-        You are invited to join a CommCare project ({request.data["user_domain"]})
-        Please click on {deeplink} to join using your ConnectID
-        account.
-        Once you confirm, you will be able to login using your
-        ConnectID account. Your username is ({request.data["username"]})
-        Thanks.
-        -The ConnectID Team.
-        """
+        # Queued rather than sent here, and a broker failure still reports success, so the response is the
+        # same as for an unknown number and doesn't reveal that the account exists.
         try:
-            send_sms(user.phone_number, message)
-        except (SmsRateLimitedError, SmsCountryNotSupportedError) as e:
-            # Report success as for an unknown number, so the response doesn't reveal that the account exists.
-            logger.warning("HQ invite SMS not sent: %r", e)
+            send_bulk_notification_task.delay(
+                usernames=[user.username],
+                title="CommCare project invite",
+                body=f"You are invited to join the CommCare project {request.data['user_domain']}. Tap to join.",
+                data={
+                    "action": HQ_INVITE_ACTION,
+                    "deeplink": deeplink,
+                    "hq_domain": request.data["user_domain"],
+                    "hq_username": request.data["username"],
+                },
+            )
+        except KombuOperationalError:
+            logger.exception("HQ invite push not queued")
         return JsonResponse({"success": True})
 
 
@@ -1026,56 +788,6 @@ def accept_credential(request, invite_id):
         "Thank you for accepting this credential. You will now have access to opportunities open "
         "to holders of this credential."
     )
-
-
-@api_view(["POST"])
-@permission_classes([])
-def initiate_deactivation(request):
-    data = request.data
-    phone_number = data["phone_number"]
-    secret_key = data["secret_key"]
-    try:
-        user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
-    except ConnectUser.DoesNotExist:
-        return JsonResponse({"error_code": ErrorCodes.USER_DOES_NOT_EXIST}, status=400)
-    status = RecoveryStatus.objects.get(user=user)
-    if status.secret_key != secret_key:
-        return JsonResponse({"error_code": ErrorCodes.INVALID_SECRET_KEY}, status=401)
-    try:
-        user.initiate_deactivation()
-    except SmsRateLimitedError as e:
-        return JsonResponse(
-            {"error_code": ErrorCodes.RATE_LIMITED, "retry_after_seconds": e.retry_after_seconds}, status=429
-        )
-    except SmsCountryNotSupportedError:
-        return JsonResponse({"error_code": ErrorCodes.UNSUPPORTED_COUNTRY}, status=403)
-    return HttpResponse()
-
-
-@api_view(["POST"])
-@permission_classes([])
-def confirm_deactivation(request):
-    data = request.data
-    phone_number = data["phone_number"]
-    secret_key = data["secret_key"]
-    deactivation_token = data["token"]
-    try:
-        user = ConnectUser.objects.get(phone_number=phone_number, is_active=True)
-    except ConnectUser.DoesNotExist:
-        return JsonResponse({"error_code": ErrorCodes.USER_DOES_NOT_EXIST}, status=400)
-    status = RecoveryStatus.objects.get(user=user)
-    if status.secret_key != secret_key:
-        return JsonResponse({"error_code": ErrorCodes.INVALID_SECRET_KEY}, status=401)
-    if user.deactivation_token != deactivation_token:
-        return JsonResponse({"error_code": ErrorCodes.INVALID_TOKEN}, status=401)
-    if user.deactivation_token_valid_until < now():
-        return JsonResponse({"error_code": ErrorCodes.TOKEN_EXPIRED}, status=401)
-    user.is_active = False
-    user.save()
-    tokens = list(AccessToken.objects.filter(user=user)) + list(RefreshToken.objects.filter(user=user))
-    for token in tokens:
-        token.revoke()
-    return HttpResponse()
 
 
 class FetchUserCounts(ClientProtectedResourceMixin, View):

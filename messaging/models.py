@@ -3,7 +3,6 @@ import uuid
 from django.db import models
 from django.utils import timezone
 from firebase_admin import messaging
-from oauth2_provider.generators import generate_client_id, generate_client_secret
 
 from users.models import ConnectUser, ServerKeys
 from utils.storage import get_message_attachment_storage
@@ -15,11 +14,6 @@ class MessageServer(models.Model):
     callback_url = models.URLField(max_length=200)
     delivery_url = models.URLField(max_length=200)
     consent_url = models.URLField(max_length=200)
-    server_id = models.CharField(max_length=100, unique=True, default=generate_client_id, db_index=True)
-    secret_key = models.CharField(
-        max_length=255,
-        default=generate_client_secret,
-    )
     server_credentials = models.ForeignKey(ServerKeys, on_delete=models.PROTECT, null=True)
 
 
@@ -140,8 +134,8 @@ class Notification(models.Model):
         notification = None
         if self.title or self.body:
             notification = messaging.Notification(
-                title=self.title,
-                body=self.body,
+                title=self.title or None,
+                body=self.body or None,
             )
         return messaging.Message(
             data=data,
@@ -154,13 +148,14 @@ class Notification(models.Model):
     def is_received(self):
         return True if self.received else False
 
+    # Never None: the app reads the retrieve response with optString, which turns null into "null".
     @property
     def title(self):
-        return self.json.get("title", "")
+        return self.json.get("title") or ""
 
     @property
     def body(self):
-        return self.json.get("body", "")
+        return self.json.get("body") or ""
 
     @property
     def data(self):

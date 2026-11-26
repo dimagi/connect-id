@@ -235,6 +235,43 @@ def test_send_message_bulk_limits(authed_client, messages, expected_status, expe
         assert not Notification.objects.exists()
 
 
+def test_send_message_without_push_only_stores_notification(authed_client, fcm_device):
+    url = reverse("messaging:send_message")
+    data = {"username": fcm_device.user.username, "title": "t", "body": "b", "send_push": False}
+
+    with mock.patch("firebase_admin.messaging.send_each") as mock_send_each:
+        response = authed_client.post(url, data=json.dumps(data), content_type=APPLICATION_JSON)
+
+    assert response.status_code == 200, response.content
+    assert response.json() == {
+        "all_success": True,
+        "responses": [{"username": fcm_device.user.username, "status": "success"}],
+    }
+    mock_send_each.assert_not_called()
+    notification = Notification.objects.get(user=fcm_device.user)
+    assert notification.json["title"] == "t"
+    assert notification.json["body"] == "b"
+
+
+def test_send_message_bulk_mixes_push_and_drawer_only(authed_client, fcm_device):
+    other_device = FCMDeviceFactory()
+    url = reverse("messaging:send_message_bulk")
+    messages = [
+        {"usernames": [fcm_device.user.username], "body": "pushed"},
+        {"usernames": [other_device.user.username], "body": "drawer", "send_push": False},
+    ]
+
+    with mock.patch("firebase_admin.messaging.send_each", wraps=_fake_send_each) as mock_send_each:
+        response = authed_client.post(url, data=json.dumps({"messages": messages}), content_type=APPLICATION_JSON)
+
+    assert response.status_code == 200, response.content
+    assert response.json()["all_success"] is True
+    (sent,) = mock_send_each.call_args.args
+    assert [m.token for m in sent] == [fcm_device.registration_id]
+    assert Notification.objects.filter(user=fcm_device.user).count() == 1
+    assert Notification.objects.filter(user=other_device.user).count() == 1
+
+
 def test_send_message_bulk_async_queues_task(authed_client, fcm_device):
     url = reverse("messaging:send_message_bulk")
     messages = [{"usernames": [fcm_device.user.username], "body": "hello", "data": {"a": "b"}}]
@@ -309,8 +346,8 @@ def rest_message(channel_id=None):
     return {"channel": str(channel_id) if channel_id else None, "content": content, "message_id": str(uuid.uuid4())}
 
 
-def make_basic_auth_header(server_id: str, secret_key: str) -> str:
-    credentials = f"{server_id}:{secret_key}"
+def make_basic_auth_header(client_id: str, secret_key: str) -> str:
+    credentials = f"{client_id}:{secret_key}"
     encoded_credentials = base64.b64encode(credentials.encode()).decode()
     headers = f"Basic {encoded_credentials}"
     return {"HTTP_AUTHORIZATION": headers}
@@ -452,6 +489,18 @@ class TestSendMessageToMobile:
         assert "errors" in json_data
         assert json_data["errors"] == ErrorCodes.CHANNEL_DOES_NOT_EXIST
 
+    def test_send_to_channel_of_another_server(self, client, server: MessageServer):
+        other_channel = ChannelFactory(server=ServerFactory(server_credentials=ServerKeysFactory()))
+        data = rest_message(other_channel.channel_id)
+        headers = make_basic_auth_header(server.server_credentials.client_id, server.server_credentials.secret_key)
+
+        with mock.patch("messaging.views.send_bulk_notification_task") as mock_send_bulk_task:
+            response = client.post(self.url, data=data, content_type=APPLICATION_JSON, **headers)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["errors"] == ErrorCodes.CHANNEL_DOES_NOT_EXIST
+        assert not Message.objects.filter(channel=other_channel).exists()
+        mock_send_bulk_task.delay.assert_not_called()
+
     def test_send_with_no_consent(self, client, channel: Channel, server: MessageServer):
         channel.user_consent = False
         channel.save()
@@ -553,6 +602,51 @@ class TestSendMessageView:
 
         assert response.status_code == status.HTTP_201_CREATED
         assert json_data["message_id"] == [pending_msg.message_id]
+
+    def test_send_to_another_users_channel(self, auth_device):
+        other_channel = ChannelFactory()
+        data = rest_message(other_channel.channel_id)
+
+        with patch("messaging.views.send_messages_to_service_and_mark_status") as mock_send:
+            response = auth_device.post(self.url, json.dumps(data), content_type=APPLICATION_JSON)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json() == {"errors": ["invalid channel_id"]}
+        assert not Message.objects.filter(channel=other_channel).exists()
+        mock_send.assert_not_called()
+
+    def test_one_foreign_channel_rejects_the_whole_batch(self, auth_device, channel):
+        data = [rest_message(channel.channel_id), rest_message(ChannelFactory().channel_id)]
+
+        with patch("messaging.views.send_messages_to_service_and_mark_status") as mock_send:
+            response = auth_device.post(self.url, json.dumps(data), content_type=APPLICATION_JSON)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert not Message.objects.exists()
+        mock_send.assert_not_called()
+
+    def test_send_to_malformed_channel_id(self, auth_device):
+        data = rest_message()
+        data["channel"] = "not-a-uuid"
+
+        response = auth_device.post(self.url, json.dumps(data), content_type=APPLICATION_JSON)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json() == {"errors": ["invalid channel_id"]}
+
+    def test_reusing_another_users_message_id_does_not_resend_it(self, auth_device, channel):
+        other_message = MessageFactory(channel=ChannelFactory(), status=MessageStatus.PENDING)
+        data = rest_message(channel.channel_id)
+        data["message_id"] = str(other_message.message_id)
+
+        with patch("messaging.views.send_messages_to_service_and_mark_status") as mock_send:
+            response = auth_device.post(self.url, json.dumps(data), content_type=APPLICATION_JSON)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json() == {"errors": ["message_id already exists"]}
+        mock_send.assert_not_called()
+        other_message.refresh_from_db()
+        assert other_message.status == MessageStatus.PENDING
 
     def test_status_advances_to_sent_to_service_after_successful_dispatch(self, auth_device, channel):
         data = rest_message(channel.channel_id)
@@ -671,6 +765,18 @@ class TestUpdateConsentView:
         response = auth_device.post(url, data, content_type=APPLICATION_JSON)
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    def test_another_users_channel(self, auth_device):
+        other_channel = ChannelFactory(user_consent=True)
+        data = json.dumps({"channel": str(other_channel.channel_id), "consent": False})
+
+        with patch("messaging.views.make_request") as mock_make_request:
+            response = auth_device.post(self.url, data, content_type=APPLICATION_JSON)
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        other_channel.refresh_from_db()
+        assert other_channel.user_consent is True
+        mock_make_request.assert_not_called()
+
     def test_failure_from_hq(self, auth_device, channel, server):
         with patch("messaging.views.make_request") as mock_make_request:
             mock_make_request.side_effect = CommCareHQAPIException("HQ request failed")
@@ -729,9 +835,9 @@ class TestUpdateReceivedView:
         assert Message.objects.filter(received__isnull=False).count() == 0
 
     @patch("messaging.views.send_messages_to_service_and_mark_status")
-    def test_grouped_channel_messages(self, mock_send_messages, auth_device):
-        channel1 = ChannelFactory.create(server=ServerFactory.create())
-        channel2 = ChannelFactory.create(server=ServerFactory.create())
+    def test_grouped_channel_messages(self, mock_send_messages, auth_device, user):
+        channel1 = ChannelFactory.create(connect_user=user, server=ServerFactory.create())
+        channel2 = ChannelFactory.create(connect_user=user, server=ServerFactory.create())
         messages1 = MessageFactory.create_batch(3, channel=channel1)
         messages2 = MessageFactory.create_batch(2, channel=channel2)
 
@@ -763,6 +869,39 @@ class TestUpdateReceivedView:
             all(msg["received_on"] for msg in data[str(ch.channel_id)]["messages"]) for ch in [channel1, channel2]
         )
         assert msg_status == MessageStatus.CONFIRMED_RECEIVED
+
+    @patch("messaging.views.send_messages_to_service_and_mark_status")
+    def test_another_users_messages(self, mock_send_messages, auth_device):
+        other_message = MessageFactory(channel=ChannelFactory(), status=MessageStatus.PENDING)
+
+        response = auth_device.post(
+            self.url, json.dumps({"messages": [str(other_message.message_id)]}), content_type=APPLICATION_JSON
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        other_message.refresh_from_db()
+        assert other_message.received is None
+        assert other_message.status == MessageStatus.PENDING
+        mock_send_messages.assert_not_called()
+
+    @patch("messaging.views.send_messages_to_service_and_mark_status")
+    def test_only_own_messages_are_marked(self, mock_send_messages, auth_device, channel):
+        own_message = MessageFactory(channel=channel)
+        other_message = MessageFactory(channel=ChannelFactory())
+
+        response = auth_device.post(
+            self.url,
+            json.dumps({"messages": [str(own_message.message_id), str(other_message.message_id)]}),
+            content_type=APPLICATION_JSON,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        own_message.refresh_from_db()
+        other_message.refresh_from_db()
+        assert own_message.status == MessageStatus.DELIVERED
+        assert other_message.received is None
+        data, _ = mock_send_messages.call_args.args
+        assert list(data) == [str(channel.channel_id)]
 
     @patch("messaging.views.send_messages_to_service_and_mark_status")
     def test_reack_of_confirmed_message_does_not_downgrade_or_redispatch(
@@ -804,6 +943,47 @@ class TestRetrieveNotificationsView:
         # Check the channel we created appears in the channels list
         channel_ids = [c["channel_id"] for c in json_data["channels"]]
         assert str(channel.channel_id) in channel_ids
+
+    def test_retrieve_includes_stored_title_and_body(self, auth_device, fcm_device):
+        send_bulk_notification(
+            NotificationData(
+                usernames=[fcm_device.user.username],
+                title="drawer title",
+                body="drawer body",
+                data={"key": "value"},
+                send_push=False,
+            )
+        )
+
+        response = auth_device.get(self.url)
+
+        assert response.status_code == status.HTTP_200_OK
+        (notification,) = response.json()["notifications"]
+        assert notification["title"] == "drawer title"
+        assert notification["body"] == "drawer body"
+        assert notification["key"] == "value"
+
+    def test_retrieve_prefers_title_and_body_in_data(self, auth_device, fcm_device):
+        NotificationFactory(
+            user=fcm_device.user,
+            json={"title": "outer", "body": "outer", "data": {"title": "inner", "body": "inner"}},
+        )
+
+        response = auth_device.get(self.url)
+
+        (notification,) = response.json()["notifications"]
+        assert notification["title"] == "inner"
+        assert notification["body"] == "inner"
+
+    def test_retrieve_returns_empty_string_for_missing_title_and_body(self, auth_device, fcm_device):
+        # Never null: the app reads these with optString, which turns null into "null".
+        NotificationFactory(user=fcm_device.user, json={"body": None, "data": {}})
+
+        response = auth_device.get(self.url)
+
+        (notification,) = response.json()["notifications"]
+        assert notification["title"] == ""
+        assert notification["body"] == ""
 
     def test_retrieve_messages_no_data(self, auth_device):
         Notification.objects.all().delete()
@@ -866,6 +1046,23 @@ class TestUpdateNotificationReceivedView:
 
 @pytest.mark.django_db
 class TestSendBulkNotificationUtil:
+    def test_without_push_stores_notification_without_device(self, user):
+        with mock.patch("firebase_admin.messaging.send_each") as mock_send_each:
+            ret = send_bulk_notification(NotificationData(usernames=[user.username], body="hi", send_push=False))
+
+        assert ret == {"all_success": True, "responses": [{"username": user.username, "status": "success"}]}
+        mock_send_each.assert_not_called()
+        assert Notification.objects.filter(user=user).count() == 1
+
+    def test_without_push_skips_inactive_user(self, user):
+        user.is_active = False
+        user.save()
+
+        ret = send_bulk_notification(NotificationData(usernames=[user.username], body="hi", send_push=False))
+
+        assert ret == {"all_success": False, "responses": [{"username": user.username, "status": "deactivated"}]}
+        assert not Notification.objects.exists()
+
     def test_send_notification(self, fcm_device):
         with mock.patch("firebase_admin.messaging.send_each", wraps=_fake_send_each) as mock_send_message:
             fcm_notification = NotificationData(
@@ -1079,6 +1276,12 @@ class TestSendBulkNotificationTask:
         assert sent.usernames == ["user1"]
         assert sent.data == {"foo": "bar"}
         assert sent.fcm_options == {"analytics_label": "x"}
+        assert sent.send_push is True
+
+    def test_passes_send_push(self):
+        with mock.patch("messaging.tasks.send_bulk_notification") as mock_send:
+            send_bulk_notification_task.apply(kwargs={"usernames": ["user1"], "send_push": False})
+        assert mock_send.call_args.args[0].send_push is False
 
     def test_reraises_after_retries_exhausted(self):
         # With retries seeded at max_retries, autoretry_for re-raises the original exception,

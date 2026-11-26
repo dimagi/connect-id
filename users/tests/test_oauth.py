@@ -3,16 +3,17 @@ from datetime import timedelta
 from unittest.mock import MagicMock
 
 import pytest
+from axes.models import AccessAttempt
 from django.test import override_settings
 from django.urls import reverse
 from django.utils.timezone import now
 from oauth2_provider.models import AccessToken, Application, RefreshToken
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.test import APIClient
 
 from users.const import ErrorCodes
 from users.factories import UserDeviceInfoFactory, UserFactory
 from users.oauth import ConnectOAuth2Validator, LoginFromDifferentDeviceError
+from users.tasks import clear_expired_oauth_tokens
 
 
 def _oauth_request_mock():
@@ -175,16 +176,27 @@ class TestOAuth2TokenEndpoint:
         assert response.json()["error_code"] == ErrorCodes.LOGIN_FROM_DIFFERENT_DEVICE
 
     @override_settings(AXES_ENABLED=True, AXES_FAILURE_LIMIT=1)
-    def test_password_grant_lockout_after_axes_failure_limit(self, client, password_grant_app):
-        """Pins that django-axes still fires user_locked_out -> users/signals.py on lockout."""
-        user = UserFactory(password="correctpass")
+    def test_password_grant_failures_are_not_locked_out_by_axes(self, client, password_grant_app):
+        """django-axes guards the admin login only. Failed API logins are neither recorded nor locked out."""
+        raw_password = "correctpass"
+        user = UserFactory(password=raw_password)
+        UserDeviceInfoFactory(user=user, raw_password=raw_password)
 
-        with pytest.raises(PermissionDenied):
-            _post_token(
+        for _ in range(3):
+            response = _post_token(
                 client,
                 password_grant_app,
                 {"grant_type": "password", "username": user.username, "password": "wrongpass"},
             )
+            assert response.status_code == 400
+        response = _post_token(
+            client,
+            password_grant_app,
+            {"grant_type": "password", "username": user.username, "password": raw_password},
+        )
+
+        assert response.status_code == 200
+        assert not AccessAttempt.objects.exists()
 
     def test_client_credentials_grant_issues_token(self, client, oauth_app):
         response = _post_token(client, oauth_app, {"grant_type": "client_credentials"})
@@ -284,6 +296,29 @@ class TestOAuth2TokenRevocation:
         assert not AccessToken.objects.filter(pk=access_token.pk).exists()
         refresh_token.refresh_from_db()
         assert refresh_token.revoked is not None
+
+
+@pytest.mark.django_db
+class TestClearExpiredOAuthTokens:
+    def _refresh_token(self, user, app, name, access_expired_days_ago):
+        access_token = AccessToken.objects.create(
+            user=user,
+            application=app,
+            token=f"access-{name}",
+            expires=now() - timedelta(days=access_expired_days_ago),
+        )
+        return RefreshToken.objects.create(
+            user=user, application=app, token=f"refresh-{name}", access_token=access_token
+        )
+
+    def test_deletes_refresh_tokens_idle_longer_than_90_days(self, oauth_app, user):
+        stale = self._refresh_token(user, oauth_app, "stale", access_expired_days_ago=91)
+        recent = self._refresh_token(user, oauth_app, "recent", access_expired_days_ago=89)
+
+        clear_expired_oauth_tokens()
+
+        assert not RefreshToken.objects.filter(pk=stale.pk).exists()
+        assert RefreshToken.objects.filter(pk=recent.pk).exists()
 
 
 @pytest.mark.django_db

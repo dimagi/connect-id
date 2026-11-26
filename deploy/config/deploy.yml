@@ -41,21 +41,21 @@ servers:
 # plain HTTP on port 80 and forwards every request to the app.
 proxy:
   app_port: 8000
-  # The app reads the client IP from X-Forwarded-For (rate limiting, CIDR allowlist).
-  # This is the default when ssl is off, but stated so turning ssl on later can't silently drop it.
+  # Required: keeps the ALB's X-Forwarded-For, to which kamal-proxy then appends the ALB's address. The app reads
+  # the client two entries from the right (NUM_PROXIES=2: the ALB, then kamal-proxy). Without it the header would
+  # hold only the ALB's address. It is the default while ssl is off, but stated so turning ssl on can't drop it.
   forward_headers: true
   healthcheck:
     path: /up
     interval: 5
     timeout: 5
   run:
-    # Kamal adds `--log-opt max-size` by default, which the awslogs driver rejects
-    log_max_size: ''
+    # kamal-proxy logs every request with its path and full query string, which can hold phone numbers
+    # (e.g. ?phone_number=) and tokens (/status/?token=), and it has no option to turn that off or redact it.
+    # So its logs stay on the host, in a small rotated file read with `kamal proxy logs`, and are not shipped to
+    # CloudWatch like the app's.
     options:
-      log-driver: awslogs
-      log-opt:
-        - awslogs-region=us-east-1
-        - awslogs-group=connect-id
+      log-driver: json-file
 
 # The web container runs migrations before starting gunicorn (docker/start_migrate),
 # so allow time for a slow migration before the deploy gives up on /up.

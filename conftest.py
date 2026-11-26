@@ -6,6 +6,7 @@ from constance import config as constance_config
 from constance.backends.memory import MemoryBackend
 from django.conf import settings
 from django.core.cache import caches
+from django.utils.functional import empty
 from django.utils.timezone import now
 from oauth2_provider.models import AccessToken, Application
 from rest_framework.test import APIClient
@@ -15,7 +16,6 @@ from users.factories import (
     ConfigurationSessionFactory,
     FCMDeviceFactory,
     IssuingAuthorityFactory,
-    RecoveryStatusFactory,
     ServerKeysFactory,
     UserFactory,
 )
@@ -26,7 +26,7 @@ def production_behaviour(settings, tmp_path):
     """Tests exercise the production code paths whatever the developer's .env says.
 
     The exceptions: each file storage bucket is pointed at its own temp directory so no test touches
-    S3, and the rate limit cache is an emptied in-memory cache so no test needs Redis. Tests of the
+    S3, and the rate limit and throttle caches are emptied in-memory caches so no test needs Redis. Tests of the
     opt-outs turn them on themselves.
     """
     settings.PLAYSTORE_INTEGRITY_DISABLED = False
@@ -36,8 +36,10 @@ def production_behaviour(settings, tmp_path):
     settings.CACHES = {
         **settings.CACHES,
         "rate_limit": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "rate_limit"},
+        "throttle": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "throttle"},
     }
     caches["rate_limit"].clear()
+    caches["throttle"].clear()
     settings.STORAGES = {
         **settings.STORAGES,
         **{
@@ -58,7 +60,11 @@ def config(monkeypatch):
     """
     backend = MemoryBackend()
     backend._storage = {}
-    monkeypatch.setattr(constance_config, "_backend", backend)
+    # Patch the Config that constance's LazyConfig wraps, not the lazy proxy: `_backend` lives on the wrapped
+    # object, and from pytest 9.2 undoing a patch on the proxy deletes the real `_backend` instead of restoring it.
+    if constance_config._wrapped is empty:
+        constance_config._setup()
+    monkeypatch.setattr(constance_config._wrapped, "_backend", backend)
     return constance_config
 
 
@@ -143,19 +149,6 @@ def authed_client_token(authed_client, valid_token):
 def authed_client_token_v3(authed_client_token):
     authed_client_token.defaults["HTTP_ACCEPT"] = f"application/json; version={settings.API_VERSION.V3}"
     return authed_client_token
-
-
-@pytest.fixture
-def recovery_status():
-    return RecoveryStatusFactory()
-
-
-@pytest.fixture
-def recovery_status_with_expired_token_user():
-    status = RecoveryStatusFactory()
-    status.user.deactivation_token_valid_until = now() - timedelta(days=1)
-    status.user.save()
-    return status
 
 
 @pytest.fixture

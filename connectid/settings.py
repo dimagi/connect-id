@@ -65,6 +65,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "allow_cidr.middleware.AllowCIDRMiddleware",
+    "utils.middleware.RequestLoggingMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -180,6 +181,10 @@ LOGGING = {
         "propagate": False,
     },
     "loggers": {
+        # One line per request, from utils.middleware.RequestLoggingMiddleware. Set to WARNING to turn it off.
+        "connectid.requests": {
+            "level": env("REQUEST_LOG_LEVEL", default="INFO"),
+        },
         "django.security.DisallowedHost": {
             "handlers": ["null"],
             "propagate": False,
@@ -196,6 +201,12 @@ class APIVersion:
 
 API_VERSION = APIVersion
 
+# Number of reverse proxies in front of the app that each append the address they received the request from to
+# X-Forwarded-For. The client's address is taken that many entries from the right, so entries the client sent
+# itself are never used. Too low keys every client on a proxy's address; too high lets clients pick their own.
+# 0 ignores X-Forwarded-For and uses REMOTE_ADDR.
+NUM_PROXIES = env.int("NUM_PROXIES", default=2)
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "users.auth.DeviceBasicAuthentication",
@@ -205,10 +216,14 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
     "DEFAULT_THROTTLE_CLASSES": [
-        "rest_framework.throttling.AnonRateThrottle",
-        "rest_framework.throttling.UserRateThrottle",
+        # Both keep their counts in the shared "throttle" cache. The user throttle also gives each message
+        # server / client-credentials caller its own bucket.
+        "utils.rest_framework.SharedAnonRateThrottle",
+        "utils.rest_framework.ServiceAwareUserRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {"anon": "1000/day", "user": "10000/day"},
+    # Without this DRF keys a client on the whole X-Forwarded-For header, which the client controls.
+    "NUM_PROXIES": NUM_PROXIES,
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
     "DEFAULT_VERSION": API_VERSION.V2,
     "ALLOWED_VERSIONS": [
@@ -219,13 +234,21 @@ REST_FRAMEWORK = {
 }
 
 
-AXES_COOLOFF_TIME = 6
+# django-axes locks out the Django admin login after repeated failures. The API is left alone (see
+# users.axes.AdminOnlyAxesHandler). AXES_ENABLED=False switches it off, e.g. if a lockout needs bypassing.
+AXES_ENABLED = env.bool("AXES_ENABLED", default=True)
+AXES_HANDLER = "users.axes.AdminOnlyAxesHandler"
+AXES_ONLY_ADMIN_SITE = True
+AXES_FAILURE_LIMIT = 5
+AXES_COOLOFF_TIME = 1  # hours
+AXES_RESET_ON_SUCCESS = True
+# Lock by username alone: the client IP behind the proxy can't be relied on, since X-Forwarded-For may be
+# client-supplied. The IP is still recorded on each attempt for reference.
+AXES_LOCKOUT_PARAMETERS = ["username"]
 AXES_IPWARE_META_PRECEDENCE_ORDER = [
     "HTTP_X_FORWARDED_FOR",
     "REMOTE_ADDR",
 ]
-
-AXES_ENABLED = False
 
 FCM_CREDENTIALS = None
 
@@ -275,6 +298,14 @@ CACHES = {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
         "LOCATION": env("RATE_LIMIT_REDIS_URL", default=CELERY_BROKER_URL),
         "KEY_PREFIX": "rate_limit",
+        "OPTIONS": {"socket_connect_timeout": 1, "socket_timeout": 1},
+    },
+    # DRF throttle history (utils.rest_framework). Shared, so a caller's limit counts its requests to every worker
+    # and host. If Redis is down, throttling is skipped rather than failing requests (utils.cache).
+    "throttle": {
+        "BACKEND": "utils.cache.FailSoftRedisCache",
+        "LOCATION": env("RATE_LIMIT_REDIS_URL", default=CELERY_BROKER_URL),
+        "KEY_PREFIX": "throttle",
         "OPTIONS": {"socket_connect_timeout": 1, "socket_timeout": 1},
     },
     # In front of the runtime settings (django-constance) in the database. Shared, so an admin edit reaches
@@ -340,7 +371,7 @@ ALLOWED_CIDR_NETS = env.list("DJANGO_ALLOWED_CIDR_NETS", default=[])
 
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
-# Twilio settings. Still read directly by the carrier lookup in utils/twilio.py.
+# Twilio settings. Only used to build SMS_VENDORS below.
 TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default=None)
 TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default=None)
 TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default=None)
@@ -486,6 +517,10 @@ OAUTH2_PROVIDER = {
     "SCOPES": {"openid": "OpenID Connect scope", "sync": "sync with commcarehq"},
     "PKCE_REQUIRED": False,
     "OAUTH2_VALIDATOR_CLASS": "users.oauth.ConnectOAuth2Validator",
+    # django-oauth-toolkit does not check this when a refresh token is used. The weekly `cleartokens`
+    # task (users.tasks.clear_expired_oauth_tokens) deletes refresh tokens whose access token expired
+    # more than this long ago, plus revoked ones. Refresh tokens rotate on use, so this is an idle limit.
+    "REFRESH_TOKEN_EXPIRE_SECONDS": env.int("REFRESH_TOKEN_EXPIRE_SECONDS", default=90 * 24 * 60 * 60),
 }
 
 FCM_PRIVATE_KEY = env.str("FCM_PRIVATE_KEY", multiline=True, default="")
