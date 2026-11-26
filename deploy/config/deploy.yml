@@ -69,4 +69,6 @@ healthcheck:
   path: /up
   port: 8000
   max_attempts: 10
-  interval: 20s
+  # After cutting the old container's cord, Kamal waits about 55s (1+2+...+max_attempts seconds) for Docker to mark
+  # it unhealthy, which takes 3 failed checks. At 20s that took 40-60s and deploys failed when it ran over.
+  interval: 10s
