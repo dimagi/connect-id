@@ -5,7 +5,7 @@ requires-python = "==3.11.*"
 dependencies = [
     "boto3==1.44.9",
     "celery==5.7.0",
-    "django>=5.2,<5.3",
+    "django>=5.2.19,<5.3",
     "django-allow-cidr==0.8.0",
     "django-anymail[amazon-ses]>=15.0",
     "django-axes[ipware]==8.3.1",
