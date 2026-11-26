@@ -7,7 +7,7 @@ dependencies = [
     "celery==5.7.0",
     "django>=5.2,<5.3",
     "django-allow-cidr==0.8.0",
-    "django-anymail[amazon-ses]>=15.0",
+    "django-anymail[amazon-ses]>=15.2",
     "django-axes[ipware]==8.3.1",
     "django-celery-beat==2.9.0",
     "django-constance==4.5.0",
