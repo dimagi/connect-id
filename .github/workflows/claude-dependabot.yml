@@ -175,7 +175,7 @@ jobs:
           # Makes a bare `gh pr view <N>` resolve to this repo even if an
           # explicit --repo is ever missed.
           GH_REPO: ${{ github.repository }}
-        uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc # v1.0.276
+        uses: anthropics/claude-code-action@acfe7992852970efb4fee683d63d628e3e52df67 # v1.0.286
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # Workload identity federation, in place of anthropic_api_key. Setting
