@@ -134,8 +134,8 @@ class Notification(models.Model):
         notification = None
         if self.title or self.body:
             notification = messaging.Notification(
-                title=self.title,
-                body=self.body,
+                title=self.title or None,
+                body=self.body or None,
             )
         return messaging.Message(
             data=data,
@@ -148,13 +148,14 @@ class Notification(models.Model):
     def is_received(self):
         return True if self.received else False
 
+    # Never None: the app reads the retrieve response with optString, which turns null into "null".
     @property
     def title(self):
-        return self.json.get("title", "")
+        return self.json.get("title") or ""
 
     @property
     def body(self):
-        return self.json.get("body", "")
+        return self.json.get("body") or ""
 
     @property
     def data(self):

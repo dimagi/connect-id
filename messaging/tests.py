@@ -235,6 +235,43 @@ def test_send_message_bulk_limits(authed_client, messages, expected_status, expe
         assert not Notification.objects.exists()
 
 
+def test_send_message_without_push_only_stores_notification(authed_client, fcm_device):
+    url = reverse("messaging:send_message")
+    data = {"username": fcm_device.user.username, "title": "t", "body": "b", "send_push": False}
+
+    with mock.patch("firebase_admin.messaging.send_each") as mock_send_each:
+        response = authed_client.post(url, data=json.dumps(data), content_type=APPLICATION_JSON)
+
+    assert response.status_code == 200, response.content
+    assert response.json() == {
+        "all_success": True,
+        "responses": [{"username": fcm_device.user.username, "status": "success"}],
+    }
+    mock_send_each.assert_not_called()
+    notification = Notification.objects.get(user=fcm_device.user)
+    assert notification.json["title"] == "t"
+    assert notification.json["body"] == "b"
+
+
+def test_send_message_bulk_mixes_push_and_drawer_only(authed_client, fcm_device):
+    other_device = FCMDeviceFactory()
+    url = reverse("messaging:send_message_bulk")
+    messages = [
+        {"usernames": [fcm_device.user.username], "body": "pushed"},
+        {"usernames": [other_device.user.username], "body": "drawer", "send_push": False},
+    ]
+
+    with mock.patch("firebase_admin.messaging.send_each", wraps=_fake_send_each) as mock_send_each:
+        response = authed_client.post(url, data=json.dumps({"messages": messages}), content_type=APPLICATION_JSON)
+
+    assert response.status_code == 200, response.content
+    assert response.json()["all_success"] is True
+    (sent,) = mock_send_each.call_args.args
+    assert [m.token for m in sent] == [fcm_device.registration_id]
+    assert Notification.objects.filter(user=fcm_device.user).count() == 1
+    assert Notification.objects.filter(user=other_device.user).count() == 1
+
+
 def test_send_message_bulk_async_queues_task(authed_client, fcm_device):
     url = reverse("messaging:send_message_bulk")
     messages = [{"usernames": [fcm_device.user.username], "body": "hello", "data": {"a": "b"}}]
@@ -907,6 +944,47 @@ class TestRetrieveNotificationsView:
         channel_ids = [c["channel_id"] for c in json_data["channels"]]
         assert str(channel.channel_id) in channel_ids
 
+    def test_retrieve_includes_stored_title_and_body(self, auth_device, fcm_device):
+        send_bulk_notification(
+            NotificationData(
+                usernames=[fcm_device.user.username],
+                title="drawer title",
+                body="drawer body",
+                data={"key": "value"},
+                send_push=False,
+            )
+        )
+
+        response = auth_device.get(self.url)
+
+        assert response.status_code == status.HTTP_200_OK
+        (notification,) = response.json()["notifications"]
+        assert notification["title"] == "drawer title"
+        assert notification["body"] == "drawer body"
+        assert notification["key"] == "value"
+
+    def test_retrieve_prefers_title_and_body_in_data(self, auth_device, fcm_device):
+        NotificationFactory(
+            user=fcm_device.user,
+            json={"title": "outer", "body": "outer", "data": {"title": "inner", "body": "inner"}},
+        )
+
+        response = auth_device.get(self.url)
+
+        (notification,) = response.json()["notifications"]
+        assert notification["title"] == "inner"
+        assert notification["body"] == "inner"
+
+    def test_retrieve_returns_empty_string_for_missing_title_and_body(self, auth_device, fcm_device):
+        # Never null: the app reads these with optString, which turns null into "null".
+        NotificationFactory(user=fcm_device.user, json={"body": None, "data": {}})
+
+        response = auth_device.get(self.url)
+
+        (notification,) = response.json()["notifications"]
+        assert notification["title"] == ""
+        assert notification["body"] == ""
+
     def test_retrieve_messages_no_data(self, auth_device):
         Notification.objects.all().delete()
         response = auth_device.get(self.url)
@@ -968,6 +1046,23 @@ class TestUpdateNotificationReceivedView:
 
 @pytest.mark.django_db
 class TestSendBulkNotificationUtil:
+    def test_without_push_stores_notification_without_device(self, user):
+        with mock.patch("firebase_admin.messaging.send_each") as mock_send_each:
+            ret = send_bulk_notification(NotificationData(usernames=[user.username], body="hi", send_push=False))
+
+        assert ret == {"all_success": True, "responses": [{"username": user.username, "status": "success"}]}
+        mock_send_each.assert_not_called()
+        assert Notification.objects.filter(user=user).count() == 1
+
+    def test_without_push_skips_inactive_user(self, user):
+        user.is_active = False
+        user.save()
+
+        ret = send_bulk_notification(NotificationData(usernames=[user.username], body="hi", send_push=False))
+
+        assert ret == {"all_success": False, "responses": [{"username": user.username, "status": "deactivated"}]}
+        assert not Notification.objects.exists()
+
     def test_send_notification(self, fcm_device):
         with mock.patch("firebase_admin.messaging.send_each", wraps=_fake_send_each) as mock_send_message:
             fcm_notification = NotificationData(
@@ -1181,6 +1276,12 @@ class TestSendBulkNotificationTask:
         assert sent.usernames == ["user1"]
         assert sent.data == {"foo": "bar"}
         assert sent.fcm_options == {"analytics_label": "x"}
+        assert sent.send_push is True
+
+    def test_passes_send_push(self):
+        with mock.patch("messaging.tasks.send_bulk_notification") as mock_send:
+            send_bulk_notification_task.apply(kwargs={"usernames": ["user1"], "send_push": False})
+        assert mock_send.call_args.args[0].send_push is False
 
     def test_reraises_after_retries_exhausted(self):
         # With retries seeded at max_retries, autoretry_for re-raises the original exception,
