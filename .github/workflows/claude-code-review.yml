@@ -107,7 +107,7 @@ jobs:
 
       - name: Run OpenCodeReview
         id: ocr
-        uses: alibaba/open-code-review@375f64cd6f67a48a135da83cfcf59c52669a09cb # v1.13.3
+        uses: alibaba/open-code-review@e74f2c6bd4422bd1e12d257d1725bcce1d6b9ddd # v1.14.2
         with:
           ocr_version: '1.12.8'
           llm_url: https://api.anthropic.com
