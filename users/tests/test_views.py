@@ -1,6 +1,6 @@
 import json
 import uuid
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from unittest import mock
 from unittest.mock import ANY, patch
 
@@ -934,6 +934,114 @@ class TestUpdateProfile:
 
         assert response.status_code == 400
         mock_push.assert_not_called()
+
+    DEMOGRAPHICS = {
+        "gender": "female",
+        "date_of_birth": "1994-03-21",
+        "languages": "eng,hau",
+        "education": "bachelors_degree",
+        "chw_experience": "3_5_years",
+        "tech_proficiency": "comfortable",
+    }
+
+    def _save_demographics(self, user, **fields):
+        user.phone_number = self.test_number
+        for field, value in fields.items():
+            setattr(user, field, value)
+        user.save()
+
+    def test_saves_all_demographic_fields(self, auth_device, user):
+        self._save_demographics(user)
+
+        response = auth_device.post(self.url, self.DEMOGRAPHICS, format="json")
+
+        assert response.status_code == 200
+        user.refresh_from_db()
+        assert user.gender == "female"
+        assert user.dob == date(1994, 3, 21)
+        assert user.languages == "eng,hau"
+        assert user.education == "bachelors_degree"
+        assert user.chw_experience == "3_5_years"
+        assert user.tech_proficiency == "comfortable"
+
+    def test_partial_update_leaves_other_demographic_fields_unchanged(self, auth_device, user):
+        self._save_demographics(user, gender="male", education="high_school")
+
+        response = auth_device.post(self.url, {"languages": "hin"}, format="json")
+
+        assert response.status_code == 200
+        user.refresh_from_db()
+        assert user.languages == "hin"
+        assert user.gender == "male"
+        assert user.education == "high_school"
+
+    def test_empty_string_clears_demographic_fields(self, auth_device, user):
+        self._save_demographics(user, gender="male", dob=date(1990, 1, 1), languages="eng")
+
+        response = auth_device.post(self.url, {"gender": "", "date_of_birth": "", "languages": ""}, format="json")
+
+        assert response.status_code == 200
+        user.refresh_from_db()
+        assert user.gender is None
+        assert user.dob is None
+        assert user.languages is None
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            {"name": "New Name"},
+            {"photo": "data:image/jpg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEB"},
+        ],
+    )
+    @mock.patch("users.views.push_profile_to_connect.delay")
+    def test_requests_without_demographic_keys_leave_them_unchanged(self, mock_push, auth_device, user, data):
+        self._save_demographics(user, gender="male", languages="eng", tech_proficiency="expert")
+
+        response = auth_device.post(self.url, data, format="json")
+
+        assert response.status_code == 200
+        user.refresh_from_db()
+        assert user.gender == "male"
+        assert user.languages == "eng"
+        assert user.tech_proficiency == "expert"
+
+    @pytest.mark.parametrize(
+        "data, error_field",
+        [
+            ({"date_of_birth": "21-03-1994"}, "dob"),
+            ({"languages": "English"}, "languages"),
+            ({"languages": "eng, hau"}, "languages"),
+            ({"languages": "en"}, "languages"),
+        ],
+    )
+    def test_invalid_demographic_value_is_rejected(self, auth_device, user, data, error_field):
+        self._save_demographics(user, gender="male")
+
+        response = auth_device.post(self.url, data, format="json")
+
+        assert response.status_code == 400
+        assert error_field in response.json()
+        user.refresh_from_db()
+        assert user.gender == "male"
+
+    def test_date_of_birth_after_tomorrow_is_rejected(self, auth_device, user):
+        self._save_demographics(user)
+        day_after_tomorrow = now().date() + timedelta(days=2)
+
+        response = auth_device.post(self.url, {"date_of_birth": day_after_tomorrow.isoformat()}, format="json")
+
+        assert response.status_code == 400
+        assert "dob" in response.json()
+
+    def test_date_of_birth_tomorrow_is_accepted(self, auth_device, user):
+        self._save_demographics(user)
+        tomorrow = now().date() + timedelta(days=1)
+
+        response = auth_device.post(self.url, {"date_of_birth": tomorrow.isoformat()}, format="json")
+
+        assert response.status_code == 200
+        user.refresh_from_db()
+        assert user.dob == tomorrow
 
 
 class TestValidateFirebaseIDToken:
@@ -3499,6 +3607,38 @@ class TestCompleteRecoveryApi:
         response = authed_client_token.post(self.url, data=payload, format="json")
         assert response.status_code == 200
         assert "email" not in response.json()
+
+    def test_demographic_fields_returned(self, authed_client_token, user, valid_token):
+        payload = self._prepare(RecoveryMethods.BACKUP_CODE, user, valid_token)
+        user.gender = "female"
+        user.dob = date(1994, 3, 21)
+        user.languages = "eng,hau"
+        user.education = "bachelors_degree"
+        user.chw_experience = "3_5_years"
+        user.tech_proficiency = "comfortable"
+        user.save()
+
+        response = authed_client_token.post(self.url, data=payload, format="json")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["gender"] == "female"
+        assert data["date_of_birth"] == "1994-03-21"
+        assert data["languages"] == "eng,hau"
+        assert data["education"] == "bachelors_degree"
+        assert data["chw_experience"] == "3_5_years"
+        assert data["tech_proficiency"] == "comfortable"
+
+    def test_unset_demographic_fields_returned_as_null(self, authed_client_token, user, valid_token):
+        payload = self._prepare(RecoveryMethods.BACKUP_CODE, user, valid_token)
+
+        response = authed_client_token.post(self.url, data=payload, format="json")
+
+        assert response.status_code == 200
+        data = response.json()
+        for key in ("gender", "date_of_birth", "languages", "education", "chw_experience", "tech_proficiency"):
+            assert key in data
+            assert data[key] is None
 
     def test_backup_code_marks_session_verified(self, authed_client_token, user, valid_token):
         payload = self._prepare(RecoveryMethods.BACKUP_CODE, user, valid_token)

@@ -27,6 +27,7 @@ from sms.limits import hit_user_otp_limit, release_user_otp_limit
 from users.exceptions import RateLimitedError, RecoveryPinNotSetError, UnsupportedCountryError
 from users.hashers import check_secret_password, make_secret_password
 from users.services import get_user_photo_base64
+from users.validators import validate_language_codes, validate_not_after_tomorrow
 from utils.rate_limit import BLOCKED, SUPPRESSED, log_event
 
 from .const import (
@@ -49,7 +50,12 @@ class ConnectUser(AbstractUser):
     recovery_phone = PhoneNumberField(blank=True)
     recovery_phone_validated = models.BooleanField(default=False)
     name = models.TextField(max_length=150, blank=True)
-    dob = models.DateField(blank=True, null=True)
+    dob = models.DateField(blank=True, null=True, validators=[validate_not_after_tomorrow])
+    gender = models.CharField(max_length=32, blank=True, null=True)
+    languages = models.CharField(max_length=1000, blank=True, null=True, validators=[validate_language_codes])
+    education = models.CharField(max_length=32, blank=True, null=True)
+    chw_experience = models.CharField(max_length=32, blank=True, null=True)
+    tech_proficiency = models.CharField(max_length=32, blank=True, null=True)
     ip_address = models.GenericIPAddressField(blank=True, null=True)
     # this is effectively a password so use set_recovery_pin to
     # store a hashed value rather than setting it directly

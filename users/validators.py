@@ -1,4 +1,8 @@
+from datetime import timedelta
+
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
+from django.utils.timezone import now
 from zxcvbn import zxcvbn
 
 from users.hashers import is_generated_secret
@@ -29,3 +33,14 @@ class NotGeneratedSecretValidator:
 
     def get_help_text(self):
         return "password must not be only lowercase hex characters"
+
+
+def validate_not_after_tomorrow(value):
+    if value > now().date() + timedelta(days=1):
+        raise ValidationError("date cannot be in the future")
+
+
+validate_language_codes = RegexValidator(
+    regex=r"^[a-z]{3}(,[a-z]{3})*$",
+    message="languages must be comma-separated ISO 639-3 codes",
+)
