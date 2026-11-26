@@ -234,13 +234,21 @@ REST_FRAMEWORK = {
 }
 
 
-AXES_COOLOFF_TIME = 6
+# django-axes locks out the Django admin login after repeated failures. The API is left alone (see
+# users.axes.AdminOnlyAxesHandler). AXES_ENABLED=False switches it off, e.g. if a lockout needs bypassing.
+AXES_ENABLED = env.bool("AXES_ENABLED", default=True)
+AXES_HANDLER = "users.axes.AdminOnlyAxesHandler"
+AXES_ONLY_ADMIN_SITE = True
+AXES_FAILURE_LIMIT = 5
+AXES_COOLOFF_TIME = 1  # hours
+AXES_RESET_ON_SUCCESS = True
+# Lock by username alone: the client IP behind the proxy can't be relied on, since X-Forwarded-For may be
+# client-supplied. The IP is still recorded on each attempt for reference.
+AXES_LOCKOUT_PARAMETERS = ["username"]
 AXES_IPWARE_META_PRECEDENCE_ORDER = [
     "HTTP_X_FORWARDED_FOR",
     "REMOTE_ADDR",
 ]
-
-AXES_ENABLED = False
 
 FCM_CREDENTIALS = None
 
