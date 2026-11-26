@@ -64,6 +64,8 @@ INSTALLED_APPS = [
 ] + LOCAL_APPS
 
 MIDDLEWARE = [
+    # First, so the /up probe skips the Host checks below: kamal-proxy sends the container ID as the Host
+    "utils.middleware.LivenessProbeMiddleware",
     "allow_cidr.middleware.AllowCIDRMiddleware",
     "utils.middleware.RequestLoggingMiddleware",
     "django.middleware.security.SecurityMiddleware",
