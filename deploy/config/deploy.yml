@@ -23,8 +23,6 @@ servers:
     options:
       env-file: '/home/connect/www/docker.env'
     cmd: /start_celery
-    labels:
-      traefik.enable: false
     logging:
       options:
         awslogs-group: 'connect-id-celery'
@@ -34,39 +32,49 @@ servers:
     options:
       env-file: '/home/connect/www/docker.env'
     cmd: /start_celery_beat
-    labels:
-      traefik.enable: false
     logging:
       options:
         awslogs-group: 'connect-id-celery'
 
+# kamal-proxy runs on the web host only (the primary role); the celery roles are not proxied.
+# TLS ends at the ALB in front of the web host, so no `ssl` or `host` here: the proxy serves
+# plain HTTP on port 80 and forwards every request to the app.
+proxy:
+  app_port: 8000
+  # Required: keeps the ALB's X-Forwarded-For, to which kamal-proxy then appends the ALB's address. The app reads
+  # the client two entries from the right (NUM_PROXIES=2: the ALB, then kamal-proxy). Without it the header would
+  # hold only the ALB's address. It is the default while ssl is off, but stated so turning ssl on can't drop it.
+  forward_headers: true
+  healthcheck:
+    path: /up
+    interval: 5
+    timeout: 5
+  run:
+    # kamal-proxy logs every request with its path and full query string, which can hold phone numbers
+    # (e.g. ?phone_number=) and tokens (/status/?token=), and it has no option to turn that off or redact it.
+    # So its logs stay on the host, in a small rotated file read with `kamal proxy logs`, and are not shipped to
+    # CloudWatch like the app's.
+    options:
+      log-driver: json-file
+
+# The web container runs migrations before starting gunicorn (docker/start_migrate),
+# so allow time for a slow migration before the deploy gives up on /up.
+deploy_timeout: 200
+
 registry:
   server: 037129986032.dkr.ecr.us-east-1.amazonaws.com
   username: AWS
-  password: <%= %x(./config/registry_password.sh) %>
+  password:
+    - KAMAL_REGISTRY_PASSWORD
 
 logging:
   driver: awslogs
   options:
     awslogs-region: 'us-east-1'
-    # Traefik only gets these global options; the roles set their own groups.
+    # Each role sets its own group
     awslogs-group: 'connect-id'
 
 builder:
-  multiarch: false
+  arch: amd64
   dockerfile: '../Dockerfile'
   context: '../'
-
-traefik:
-  args:
-    # Keep the X-Forwarded-For entries the ALB adds; Traefik deletes them from untrusted sources. The app reads the
-    # client from them (NUM_PROXIES). Only applied by `kamal traefik reboot`, not by a deploy.
-    # Defining any entrypoint drops Traefik's default one on :80, so the address has to be given too.
-    entrypoints.http.address: ':80'
-    entrypoints.http.forwardedheaders.trustedips: '172.31.0.0/16'
-
-healthcheck:
-  path: /up
-  port: 8000
-  max_attempts: 10
-  interval: 10s

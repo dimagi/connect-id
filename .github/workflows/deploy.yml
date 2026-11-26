@@ -220,13 +220,13 @@ jobs:
             -f state=in_progress \
             -f log_url="${LOG_URL}" > /dev/null
 
-      - name: Set up Ruby
+      # Kamal is pinned in deploy/Gemfile.lock and Ruby in deploy/.ruby-version
+      - name: Set up Ruby and Kamal
         if: steps.recheck.outputs.go == 'true'
-        uses: actions/setup-ruby@v1
-
-      - name: Install Kamal
-        if: steps.recheck.outputs.go == 'true'
-        run: gem install kamal -v '~> 1.9.2'
+        uses: ruby/setup-ruby@v1
+        with:
+          working-directory: ./deploy
+          bundler-cache: true
 
       - name: Install SSH key
         if: steps.recheck.outputs.go == 'true'
@@ -290,7 +290,7 @@ jobs:
       - id: deploy
         if: steps.recheck.outputs.go == 'true'
         working-directory: ./deploy
-        run: 'kamal deploy'
+        run: 'bundle exec kamal deploy'
 
       - name: Create Sentry release
         if: ${{ success() && steps.recheck.outputs.go == 'true' }}

@@ -26,7 +26,7 @@ def anon_key(forwarded_for=None, remote_addr="10.0.0.9"):
 
 
 def test_num_proxies_defaults_to_two(monkeypatch):
-    # Production has the ALB, then Traefik. Checked on a fresh copy of the settings module, so a NUM_PROXIES in the
+    # Production has the ALB, then kamal-proxy. Checked on a fresh copy of the settings module, so a NUM_PROXIES in the
     # environment running the tests doesn't change the answer.
     monkeypatch.setattr(environ.Env, "read_env", lambda *args, **kwargs: None)
     monkeypatch.delenv("NUM_PROXIES", raising=False)
@@ -40,7 +40,7 @@ def test_num_proxies_defaults_to_two(monkeypatch):
 
 def test_client_supplied_forwarded_for_entries_are_ignored(num_proxies):
     num_proxies(2)
-    # The client sent "1.2.3.4"; the ALB appended the client's address, then Traefik the ALB's
+    # The client sent "1.2.3.4"; the ALB appended the client's address, then kamal-proxy the ALB's
     assert anon_key("1.2.3.4, 203.0.113.7, 10.0.0.5") == "throttle_anon_203.0.113.7"
 
 
