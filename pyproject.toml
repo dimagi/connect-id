@@ -24,7 +24,7 @@ dependencies = [
     "google-api-python-client==2.202.0",
     "google-auth==2.63.0",
     "google-cloud-bigquery>=3.47.0",
-    "gunicorn==26.0.0",
+    "gunicorn==27.0.1",
     "phonenumberslite==9.0.44",
     "psycopg2==2.9.13",
     "redis==8.1.0",
