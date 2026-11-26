@@ -8,6 +8,29 @@ from rest_framework.settings import api_settings
 request_logger = logging.getLogger("connectid.requests")
 
 
+class LivenessProbeMiddleware:
+    """Answer the `/up` liveness probe before anything else in the stack, Host header checks included.
+
+    kamal-proxy health-checks a new container at `http://<container id>:8000/up`, so the Host header is the
+    container ID. ALLOWED_HOSTS (and AllowCIDRMiddleware, which only accepts a Host that is itself an allowed
+    IP) would reject that with a 400 and fail every deploy. `/up` reveals nothing and touches no other
+    service, so answering it for any Host is safe. Must be first in MIDDLEWARE.
+    """
+
+    PATHS = frozenset({"/up", "/up/"})
+
+    def __init__(self, get_response):
+        from connectid.views import up
+
+        self.get_response = get_response
+        self.up = up
+
+    def __call__(self, request):
+        if request.path_info in self.PATHS:
+            return self.up(request)
+        return self.get_response(request)
+
+
 class CurrentVersionMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response

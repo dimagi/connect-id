@@ -50,6 +50,15 @@ class TestUp:
     def test_reverse(self):
         assert reverse("up") == "/up"
 
+    def test_any_host(self, client):
+        # kamal-proxy's health check sends the container ID as the Host header
+        response = client.get("/up", HTTP_HOST="ccfc06950935:8000")
+        assert response.status_code == 200
+        assert response.content == b"OK"
+
+    def test_other_paths_still_check_the_host(self, client):
+        assert client.get("/status/", HTTP_HOST="ccfc06950935:8000").status_code == 400
+
 
 @pytest.mark.django_db(transaction=True)
 class TestStatusGeneral:
