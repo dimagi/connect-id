@@ -7,21 +7,46 @@ ssh:
   user: connect
   proxy_command: "aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p'"
 
+# The app's environment, the same for every role.
+# - clear: plain config, in this file.
+# - secret: from the connect-id/production secret in AWS Secrets Manager, via .kamal/secrets. A key here must be
+#   extracted there too. Add or rotate a value with bin/production_secret.py (README, "Production Deploy").
+# django-constance settings (country lists, SMS limits) are edited in admin, not here: docs/runtime-config.md.
+env:
+  clear:
+    # TODO before merging: the plain config from docker.env (`bin/production_secret.py clear`)
+  secret:
+    - SECRET_KEY
+    - DATABASE_URL
+    - CELERY_BROKER_URL
+    - RATE_LIMIT_REDIS_URL
+    - TWILIO_ACCOUNT_SID
+    - TWILIO_AUTH_TOKEN
+    - FCM_PRIVATE_KEY
+    - FCM_PRIVATE_KEY_ID
+    - GOOGLE_PRIVATE_KEY
+    - GOOGLE_PRIVATE_KEY_ID
+    - OIDC_RSA_PRIVATE_KEY
+    - BIGQUERY_GOOGLE_CREDENTIALS_JSON
+    - OCS_API_KEY
+    - GA_API_SECRET
+    - SUPERSET_UPLOAD_PASSWORD
+    - COMMCARE_CONNECT_CLIENT_SECRET
+    - MAPBOX_ACCESS_TOKEN
+    - SENTRY_DSN
+    - HEALTH_CHECK_TOKENS
+
 # Deploy to these servers.
 servers:
   web:
     hosts:
       - i-053c44cb9426822d0
-    options:
-      env-file: '/home/connect/www/docker.env'
     logging:
       options:
         awslogs-group: 'connect-id-web'
   celery:
     hosts:
       - i-090b0c432298694c5
-    options:
-      env-file: '/home/connect/www/docker.env'
     cmd: /start_celery
     logging:
       options:
@@ -29,8 +54,6 @@ servers:
   celery-beat:
     hosts:
       - i-090b0c432298694c5
-    options:
-      env-file: '/home/connect/www/docker.env'
     cmd: /start_celery_beat
     logging:
       options:

@@ -59,3 +59,22 @@ jobs:
 
       - name: Test with pytest
         run: uv run pytest
+
+  # Kamal changes some characters of a secret on its way from Secrets Manager to the container, and
+  # deploy/bin/production_secret.py stores values so that they come out unchanged. This checks that against the
+  # Kamal and dotenv versions in deploy/Gemfile.lock, so a Kamal upgrade that changes the escaping fails here.
+  kamal-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v7
+
+      - name: Set up Ruby and Kamal
+        uses: ruby/setup-ruby@v1
+        with:
+          working-directory: ./deploy
+          bundler-cache: true
+
+      - name: Round-trip secrets through Kamal
+        working-directory: ./deploy
+        run: python3 tests/kamal_roundtrip.py
