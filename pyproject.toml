@@ -28,7 +28,7 @@ dependencies = [
     "phonenumberslite==9.0.44",
     "psycopg2==2.9.13",
     "redis==8.1.0",
-    "sentry-sdk[django]==2.75.0",
+    "sentry-sdk[django]==3.0.0",
     "twilio==9.13.0",
     "whitenoise==6.12.0",
     "zxcvbn==4.5.0",
