@@ -60,7 +60,7 @@ def _unknown_types(secrets):
 def load_secrets(path=None):
     """{name: type} from deploy/config/secrets.yml, in file order. A secret with no type is plain."""
     path = path or SECRETS_FILE
-    entries = yaml.safe_load(Path(path).read_text()) or {}
+    entries = yaml.safe_load(Path(path).read_text())
     if not isinstance(entries, dict):
         raise SecretError(f"{path}: expected NAME: type entries")
     secrets = {name: kind or "plain" for name, kind in entries.items()}
@@ -292,12 +292,12 @@ def aws(args, region, stdin=None):
 
 
 def fetch_secret(args):
-    """The stored JSON as a dict, or None if the secret doesn't exist yet."""
+    """(whether the secret exists, its JSON as a dict: empty if it doesn't exist yet)."""
     result = aws(["get-secret-value", "--secret-id", args.secret_id, "--query", "SecretString"], args.region)
     if result.returncode == 0:
-        return json.loads(json.loads(result.stdout))
+        return True, json.loads(json.loads(result.stdout))
     if "ResourceNotFoundException" in result.stderr:
-        return None
+        return False, {}
     raise SecretError(f"could not read {args.secret_id}: {result.stderr.strip()}")
 
 
@@ -321,7 +321,7 @@ def write_secret(args, stored, exists):
 
 def cmd_list(args):
     secrets = load_secrets()
-    stored = fetch_secret(args) or {}
+    _, stored = fetch_secret(args)
     width = max(map(len, secrets))
     for name, kind in secrets.items():
         print(f"{name:<{width}}  {kind:<9}  {'set' if name in stored else 'MISSING'}")
@@ -350,8 +350,8 @@ def cmd_set(args):
         encoded = encode(container_target(kind, value))
     except SecretError as e:
         raise SecretError(f"{args.name}: {e}") from None
-    current = fetch_secret(args)
-    arn = write_secret(args, {**(current or {}), args.name: encoded}, exists=current is not None)
+    exists, current = fetch_secret(args)
+    arn = write_secret(args, {**current, args.name: encoded}, exists=exists)
     print(f"set {args.name} in {arn}")
     return 0
 
@@ -387,6 +387,12 @@ def import_plan(env, secrets, current):
     return {name: stored[name] for name in groups["add"] + groups["change"]}, groups
 
 
+def print_groups(groups):
+    for group, names in groups.items():
+        if names:
+            print(f"{group}: " + ", ".join(names))
+
+
 def confirmed(args, count):
     return args.yes or input(f"Write {count} keys to {args.secret_id}? [y/N] ").strip().lower() == "y"
 
@@ -395,23 +401,16 @@ def cmd_import(args):
     env, problems = parse_env_file(Path(args.file).read_text())
     for problem in problems:
         print(f"warning: {problem}", file=sys.stderr)
-    current = fetch_secret(args)
-    updates, groups = import_plan(env, load_secrets(), current or {})
-    for group, names in ((group, names) for group, names in groups.items() if names):
-        print(f"{group}: " + ", ".join(names))
+    exists, current = fetch_secret(args)
+    updates, groups = import_plan(env, load_secrets(), current)
+    print_groups(groups)
     if not updates:
         print("nothing to change")
         return 0
     if not confirmed(args, len(updates)):
         print("nothing changed")
         return 1
-    arn = write_secret(args, {**(current or {}), **updates}, exists=current is not None)
-    print(f"wrote {len(updates)} keys to {arn}")
-    return 0
-    if not args.yes and input(f"Write {len(updates)} keys to {args.secret_id}? [y/N] ").strip().lower() != "y":
-        print("nothing changed")
-        return 1
-    arn = write_secret(args, {**(current or {}), **updates}, exists=current is not None)
+    arn = write_secret(args, {**current, **updates}, exists=exists)
     print(f"wrote {len(updates)} keys to {arn}")
     return 0
 
@@ -428,8 +427,6 @@ def kamal_secrets_problems(secrets):
 def check_problems(secrets, stored, args):
     """Why a deploy would fail or deliver wrong values. Messages name keys, never values."""
     problems = kamal_secrets_problems(secrets)
-    if stored is None:
-        return [*problems, f"{args.secret_id} doesn't exist"]
     problems += [f"{name}: missing from {args.secret_id}" for name in secrets if name not in stored]
     for name in (name for name in secrets if name in stored):
         problems += deploy_problems(name, secrets[name], stored[name])
@@ -438,11 +435,11 @@ def check_problems(secrets, stored, args):
 
 def cmd_check(args):
     secrets = load_secrets()
-    stored = fetch_secret(args)
-    extra = sorted(set(stored or {}) - set(secrets))
+    exists, stored = fetch_secret(args)
+    extra = sorted(set(stored) - set(secrets))
     if extra:
         print(f"note: in {args.secret_id} but not in secrets.yml, so not deployed: " + ", ".join(extra))
-    problems = check_problems(secrets, stored, args)
+    problems = check_problems(secrets, stored, args) if exists else [f"{args.secret_id} doesn't exist"]
     if problems:
         print(f"{args.secret_id} is not ready to deploy:\n" + "".join(f"  {p}\n" for p in problems), end="")
         print("See README, Production Deploy, for fixing a value with `set`.")

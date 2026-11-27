@@ -276,7 +276,7 @@ def deploy_files(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def aws(monkeypatch):
+def aws(deploy_files, monkeypatch):
     fake = FakeAws()
     monkeypatch.setattr(ps.subprocess, "run", fake)
     return fake
@@ -301,7 +301,7 @@ def stdin(monkeypatch):
     return piped
 
 
-def test_list_shows_types_and_what_is_set(deploy_files, aws, capsys):
+def test_list_shows_types_and_what_is_set(aws, capsys):
     aws.existing = {"SECRET_KEY": "x", "OLD": "y"}
     assert ps.main(["list"]) == 0
     out = capsys.readouterr().out.splitlines()
@@ -311,7 +311,7 @@ def test_list_shows_types_and_what_is_set(deploy_files, aws, capsys):
     assert "x" not in "".join(line.split()[-1] for line in out)
 
 
-def test_set_creates_then_updates_without_printing_the_value(deploy_files, aws, stdin, capsys):
+def test_set_creates_then_updates_without_printing_the_value(aws, stdin, capsys):
     stdin.text = "sup3r$ecret\n"
     assert ps.main(["set", "SECRET_KEY"]) == 0
     stdin.text = PEM
@@ -325,14 +325,14 @@ def test_set_creates_then_updates_without_printing_the_value(deploy_files, aws, 
     assert "sup3r" not in out.out + out.err and "AAAA" not in out.out + out.err
 
 
-def test_set_prompts_without_echo_on_a_terminal(deploy_files, aws, monkeypatch):
+def test_set_prompts_without_echo_on_a_terminal(aws, monkeypatch):
     monkeypatch.setattr(ps.sys.stdin, "isatty", lambda: True, raising=False)
     monkeypatch.setattr(ps.getpass, "getpass", lambda prompt: "typed")
     assert ps.main(["set", "SECRET_KEY"]) == 0
     assert aws.writes[-1][1] == {"SECRET_KEY": "typed"}
 
 
-def test_set_refuses_unknown_names_and_bad_values(deploy_files, aws, stdin, capsys):
+def test_set_refuses_unknown_names_and_bad_values(aws, stdin, capsys):
     stdin.text = "x"
     assert ps.main(["set", "NOT_LISTED"]) == 1
     assert "not in secrets.yml" in capsys.readouterr().err
@@ -345,7 +345,7 @@ def test_set_refuses_unknown_names_and_bad_values(deploy_files, aws, stdin, caps
     assert aws.writes == []
 
 
-def test_import_shows_the_diff_and_asks_first(deploy_files, aws, tmp_path, monkeypatch, capsys):
+def test_import_shows_the_diff_and_asks_first(aws, tmp_path, monkeypatch, capsys):
     aws.existing = {"SECRET_KEY": ps.encode("old"), "OTHER": "kept"}
     env_file = tmp_path / "docker.env"
     env_file.write_text(f"SECRET_KEY=n$w\nOIDC_RSA_PRIVATE_KEY={PEM_ESCAPED}\nDEBUG=False\n")
@@ -368,7 +368,7 @@ def test_import_shows_the_diff_and_asks_first(deploy_files, aws, tmp_path, monke
     assert "nothing to change" in capsys.readouterr().out
 
 
-def test_import_refuses_values_kamal_cannot_deliver(deploy_files, aws, tmp_path, capsys):
+def test_import_refuses_values_kamal_cannot_deliver(aws, tmp_path, capsys):
     env_file = tmp_path / "docker.env"
     env_file.write_text("SECRET_KEY=back\\slash\n")
     assert ps.main(["import", "--yes", str(env_file)]) == 1
@@ -377,7 +377,7 @@ def test_import_refuses_values_kamal_cannot_deliver(deploy_files, aws, tmp_path,
     assert aws.writes == []
 
 
-def test_check(deploy_files, aws, capsys):
+def test_check(aws, capsys):
     aws.existing = {"SECRET_KEY": ps.encode("a$b"), "OIDC_RSA_PRIVATE_KEY": ps.encode(PEM_ESCAPED), "EXTRA": "x"}
     assert ps.main(["check"]) == 0
     assert "not deployed: EXTRA" in capsys.readouterr().out
@@ -393,7 +393,7 @@ def test_check(deploy_files, aws, capsys):
     assert "doesn't exist" in capsys.readouterr().out
 
 
-def test_check_catches_kamal_secrets_out_of_step(deploy_files, aws, capsys):
+def test_check_catches_kamal_secrets_out_of_step(aws, capsys):
     ps.SECRETS_FILE.write_text("SECRET_KEY:\nOIDC_RSA_PRIVATE_KEY: multiline\nNEW_ONE:\n")
     aws.existing = {"SECRET_KEY": "a", "OIDC_RSA_PRIVATE_KEY": "b", "NEW_ONE": "c"}
     assert ps.main(["check"]) == 1
