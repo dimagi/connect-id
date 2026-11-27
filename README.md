@@ -121,8 +121,19 @@ Every role gets the same environment, from `deploy/`:
 django-constance settings (country lists, SMS and OTP limits) are not env vars in production: edit them in admin
 (see [docs/runtime-config.md](docs/runtime-config.md)).
 
-A changed value only reaches the containers on the next deploy. To pick it up without a code change, run the `Deploy`
-workflow by hand on `main` (see above).
+A changed value reaches the containers on the next deploy: the next merge to `main`, or a run of the `Deploy` workflow
+from GitHub Actions (Actions > Deploy > Run workflow, on `main`).
+
+#### Adding an env var
+
+Every env var the app reads (`connectid/settings.py`, `docker/`) must be handled one of three ways, or
+`deploy/tests/test_production_secret.py` fails:
+
+- **Plain config**: add it to `env.clear` in `deploy/config/deploy.yml`, quoted. Merging the PR deploys it. Change
+  a plain value the same way.
+- **Secret**: add it to `deploy/config/secrets.yml` and `deploy/.kamal/secrets`, and store its value before merging
+  (see "Adding a secret" below).
+- **Not set in production**, so the `settings.py` default applies: add it to `NOT_DEPLOYED` in that test.
 
 #### Managing secrets
 
@@ -138,13 +149,13 @@ uv run deploy/bin/production_secret.py check                 # what would stop a
 uv run deploy/bin/production_secret.py import docker.env     # copy values from an env file, after a yes/no on the diff
 ```
 
-**Rotating a secret**: `set` it, then run the `Deploy` workflow by hand on `main`.
+**Rotating a secret**: `set` it, then `check` it. It goes out with the next deploy; to ship it now, run the `Deploy`
+workflow from GitHub Actions (Actions > Deploy > Run workflow, on `main`).
 
 **Adding a secret**: in a PR, add `NAME: type` to `deploy/config/secrets.yml` (type is blank for a plain value,
 `multiline` for one read with `env.str(..., multiline=True)` such as a PEM key, or `json`) and a
 `NAME=$(kamal secrets extract NAME ${SECRETS})` line to `deploy/.kamal/secrets`. Then, from that branch, `set` it
-**before** merging, since merging deploys it. A new env var the app reads must go in `secrets.yml`, in `env.clear`, or
-on the not-deployed list in `deploy/tests/test_production_secret.py`; that test fails otherwise.
+and `check` **before** merging, since merging deploys it.
 
 **Removing a secret**: take it out of both files first, and delete it from the secret after that deploy.
 
