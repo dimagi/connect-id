@@ -7,21 +7,52 @@ ssh:
   user: connect
   proxy_command: "aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p'"
 
+# The app's environment, the same for every role.
+# - clear: plain config, in this file.
+# - secret: from the connect-id/production secret in AWS Secrets Manager, listed in config/secrets.yml and fetched by
+#   .kamal/secrets. Manage values with bin/production_secret.py (README, "Production Deploy").
+# django-constance settings (country lists, SMS limits) are edited in admin, not here: docs/runtime-config.md.
+env:
+  clear:
+    BIGQUERY_CONFIGURATION_SESSION_TABLE: 'personalid_config_sessions'
+    BIGQUERY_DATASET_ID: 'analytics_153906101'
+    COMMCARE_CONNECT_CLIENT_ID: '89kwTID4ZQ4ZgqofrcnhQ19Qf0vbAvJm87PwM2fT'
+    CSRF_TRUSTED_ORIGINS: 'https://connectid.dimagi.com,https://connect.dimagi.com,https://ec2-54-174-77-95.compute-1.amazonaws.com'
+    DEFAULT_FROM_EMAIL: 'personalid-noreply@dimagi.com'
+    DJANGO_ALLOWED_CIDR_NETS: '172.31.0.0/16'
+    DJANGO_ALLOWED_HOSTS: 'connectid.dimagi.com,connect.dimagi.com,ec2-54-174-77-95.compute-1.amazonaws.com,127.0.0.1'
+    DJANGO_EMAIL_BACKEND: 'anymail.backends.amazon_ses.EmailBackend'
+    FCM_CLIENT_EMAIL: 'firebase-adminsdk-5g9cf@commcare-a57e4.iam.gserviceaccount.com'
+    FCM_CLIENT_ID: '107009008224476873861'
+    FCM_CLIENT_X509_CERT_URL: 'https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-5g9cf%40commcare-a57e4.iam.gserviceaccount.com'
+    FCM_PROJECT_ID: 'commcare-a57e4'
+    FIREBASE_APP_ID: '1:768065119425:android:bf4b2396fb9805b2'
+    GOOGLE_CLIENT_EMAIL: 'connectid@commcare-a57e4.iam.gserviceaccount.com'
+    GOOGLE_CLIENT_ID: '110472826955406601952'
+    GOOGLE_CLIENT_X509_CERT_URL: 'https://www.googleapis.com/robot/v1/metadata/x509/connectid%40commcare-a57e4.iam.gserviceaccount.com'
+    GOOGLE_PROJECT_ID: 'commcare-a57e4'
+    OCS_CULTURAL_NAME_BOT_ID: '62c71ed1-3baa-4dd0-8efc-17cf802e0a1a'
+    RICH_MESSAGING_ENABLED: 'True'
+    SUPERSET_UPLOAD_BASE_URL: 'https://connect-superset.dimagi.com'
+    SUPERSET_UPLOAD_DATABASE_ID: '4'
+    SUPERSET_UPLOAD_TABLE_NAME: 'connectid_users'
+    SUPERSET_UPLOAD_TABLE_SCHEMA: 'extended'
+    SUPERSET_UPLOAD_USERNAME: 'personalid_uploader'
+    TWILIO_MESSAGING_SERVICE: 'MGe3316749783a08bf7d05c61a482a1298'
+  # Every key in config/secrets.yml (Kamal renders this file with ERB, from the deploy/ directory)
+  secret: <%= YAML.load_file("config/secrets.yml").keys.inspect %>
+
 # Deploy to these servers.
 servers:
   web:
     hosts:
       - i-053c44cb9426822d0
-    options:
-      env-file: '/home/connect/www/docker.env'
     logging:
       options:
         awslogs-group: 'connect-id-web'
   celery:
     hosts:
       - i-090b0c432298694c5
-    options:
-      env-file: '/home/connect/www/docker.env'
     cmd: /start_celery
     logging:
       options:
@@ -29,8 +60,6 @@ servers:
   celery-beat:
     hosts:
       - i-090b0c432298694c5
-    options:
-      env-file: '/home/connect/www/docker.env'
     cmd: /start_celery_beat
     logging:
       options:

@@ -1,0 +1,7 @@
+#!/bin/sh
+# Runs before every `kamal deploy` (and redeploy/rollback), after the image is pushed and before any container
+# changes. Stops the deploy if the connect-id/production secret is missing a key from config/secrets.yml, or has a
+# value that would not reach the containers as intended, e.g. a '$' added by hand in the AWS console, which Kamal
+# would expand. Prints key names only. Needs uv (set up by the Deploy workflow).
+set -eu
+exec uv run --quiet "$(dirname "$0")/../../bin/production_secret.py" check

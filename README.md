@@ -109,4 +109,59 @@ The web host sits behind an ALB, which terminates TLS. kamal-proxy runs on the w
 and switches traffic to the new container once `/up` answers. It keeps the ALB's `X-Forwarded-For` and appends
 the ALB's address, which is why `NUM_PROXIES` is 2. The celery and celery-beat roles are not proxied.
 
-App environment variables are read on each host from `/home/connect/www/docker.env`.
+### App environment
+
+Every role gets the same environment, from `deploy/`:
+
+- **Plain config** (hosts, client IDs, table names): `env.clear` in `config/deploy.yml`.
+- **Secrets**: the `connect-id/production` secret in AWS Secrets Manager (us-east-1), one JSON key per env var.
+  `config/secrets.yml` lists them with their type; `.kamal/secrets` fetches the secret once per deploy and extracts
+  each key, and `env.secret` in `config/deploy.yml` reads its list from `config/secrets.yml`.
+
+django-constance settings (country lists, SMS and OTP limits) are not env vars in production: edit them in admin
+(see [docs/runtime-config.md](docs/runtime-config.md)).
+
+A changed value reaches the containers on the next deploy: the next merge to `main`, or a run of the `Deploy` workflow
+from GitHub Actions (Actions > Deploy > Run workflow, on `main`).
+
+#### Adding an env var
+
+Every env var the app reads (`connectid/settings.py`, `docker/`) must be handled one of three ways, or
+`deploy/tests/test_production_secret.py` fails:
+
+- **Plain config**: add it to `env.clear` in `deploy/config/deploy.yml`, quoted. Merging the PR deploys it. Change
+  a plain value the same way.
+- **Secret**: add it to `deploy/config/secrets.yml` and `deploy/.kamal/secrets`, and store its value before merging
+  (see "Adding a secret" below).
+- **Not set in production**, so the `settings.py` default applies: add it to `NOT_DEPLOYED` in
+  `deploy/tests/test_production_secret.py`.
+
+#### Managing secrets
+
+Use `deploy/bin/production_secret.py` with [uv](https://docs.astral.sh/uv/) and the AWS CLI (logged in with
+`aws sso login`), not the AWS console. On the way to the container Kamal expands `$NAME` in a secret and escapes
+newlines and backslashes; the script stores each value in the form that comes out unchanged. It never prints a value.
+
+```bash
+uv run deploy/bin/production_secret.py list                  # every secret, its type, and whether it is set
+uv run deploy/bin/production_secret.py set TWILIO_AUTH_TOKEN # prompts for the value, without echoing it
+uv run deploy/bin/production_secret.py set OIDC_RSA_PRIVATE_KEY < key.pem    # multiline and json: pipe it in
+uv run deploy/bin/production_secret.py check                 # what would stop a deploy
+uv run deploy/bin/production_secret.py import docker.env     # copy values from an env file, after a yes/no on the diff
+```
+
+**Rotating a secret**: `set` it, then `check` it. It goes out with the next deploy; to ship it now, run the `Deploy`
+workflow from GitHub Actions (Actions > Deploy > Run workflow, on `main`).
+
+**Adding a secret**: in a PR, add `NAME: type` to `deploy/config/secrets.yml` (type is blank for a plain value,
+`multiline` for one read with `env.str(..., multiline=True)` such as a PEM key, or `json`) and a
+`NAME=$(kamal secrets extract NAME ${SECRETS})` line to `deploy/.kamal/secrets`. Then, from that branch, `set` it
+and `check` **before** merging, since merging deploys it.
+
+**Removing a secret**: take it out of both files first, and delete it from the secret after that deploy.
+
+Before every deploy the pre-deploy hook (`deploy/.kamal/hooks/pre-deploy`) runs `check` and stops the deploy, before
+any container changes, if a key is missing or a value would not arrive as intended (e.g. a `$` added in the console).
+
+The deploy role (`github_deploy`) can read this one secret (`secretsmanager:GetSecretValue`) and call
+`secretsmanager:BatchGetSecretValue`, which Kamal uses. Writing it takes your own AWS access.
