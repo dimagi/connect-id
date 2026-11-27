@@ -390,6 +390,18 @@ def test_import_refuses_to_overwrite_a_change_made_while_it_waited(aws, tmp_path
     assert aws.existing["OIDC_RSA_PRIVATE_KEY"] == "set meanwhile"
 
 
+def test_import_without_a_terminal_writes_nothing(aws, tmp_path, monkeypatch):
+    env_file = tmp_path / "docker.env"
+    env_file.write_text("SECRET_KEY=new\n")
+
+    def no_terminal(prompt):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", no_terminal)
+    assert ps.main(["import", str(env_file)]) == 1
+    assert aws.writes == []
+
+
 def test_import_refuses_values_kamal_cannot_deliver(aws, tmp_path, capsys):
     env_file = tmp_path / "docker.env"
     env_file.write_text("SECRET_KEY=back\\slash\n")

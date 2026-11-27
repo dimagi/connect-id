@@ -317,6 +317,8 @@ def write_secret(args, stored, version):
     """Store the whole JSON as the secret's new value, if it is still at `version` (None: create it). Returns its ARN.
 
     Secrets Manager stores the JSON whole, so a write based on an older read would undo whatever was written since.
+    This catches a change made after the read, e.g. while `import` waits for its yes/no. It is best effort:
+    put-secret-value has no version condition, so a write landing between the check and the put isn't caught.
     create-secret fails by itself if the secret was created in the meantime.
     """
     if version:
@@ -407,7 +409,12 @@ def print_groups(groups):
 
 
 def confirmed(args, count):
-    return args.yes or input(f"Write {count} keys to {args.secret_id}? [y/N] ").strip().lower() == "y"
+    if args.yes:
+        return True
+    try:
+        return input(f"Write {count} keys to {args.secret_id}? [y/N] ").strip().lower() == "y"
+    except EOFError:  # no terminal to ask: that's a no
+        return False
 
 
 def cmd_import(args):
