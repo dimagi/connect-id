@@ -299,19 +299,29 @@ def fetch_secret(args):
     raise SecretError(f"could not read {args.secret_id}: {result.stderr.strip()}")
 
 
+def ensure_unchanged(args, version):
+    """Refuse to write if the secret has a newer version than the one read: the write would undo that change."""
+    current = json.loads(_get_secret(args, "VersionId").stdout or "null")
+    if current != version:
+        raise SecretError(f"{args.secret_id} changed since it was read, nothing written: run the command again")
+
+
+def write_command(args, version):
+    if version:
+        return ["put-secret-value", "--secret-id", args.secret_id]
+    command = ["create-secret", "--name", args.secret_id, "--description", "connect-id app env (see deploy/)"]
+    return command + (["--kms-key-id", args.kms_key_id] if args.kms_key_id else [])
+
+
 def write_secret(args, stored, version):
     """Store the whole JSON as the secret's new value, if it is still at `version` (None: create it). Returns its ARN.
 
     Secrets Manager stores the JSON whole, so a write based on an older read would undo whatever was written since.
+    create-secret fails by itself if the secret was created in the meantime.
     """
-    if version and json.loads(_get_secret(args, "VersionId").stdout or "null") != version:
-        raise SecretError(f"{args.secret_id} changed since it was read, nothing written: run the command again")
     if version:
-        command = ["put-secret-value", "--secret-id", args.secret_id]
-    else:
-        command = ["create-secret", "--name", args.secret_id, "--description", "connect-id app env (see deploy/)"]
-        command += ["--kms-key-id", args.kms_key_id] if args.kms_key_id else []
-    command += ["--secret-string", "file:///dev/stdin", "--query", "ARN"]
+        ensure_unchanged(args, version)
+    command = [*write_command(args, version), "--secret-string", "file:///dev/stdin", "--query", "ARN"]
     result = aws(command, args.region, stdin=json.dumps(stored, ensure_ascii=False))
     if result.returncode != 0:
         raise SecretError(result.stderr.strip())
