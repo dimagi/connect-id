@@ -1,20 +1,25 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pyyaml"]
+# ///
 """Checks, against the real Kamal gem, that values stored by bin/production_secret.py reach the container unchanged.
 
 Run from deploy/ with Ruby and the bundle installed (CI's kamal-secrets job does this):
 
-    python3 tests/kamal_roundtrip.py
+    uv run tests/kamal_roundtrip.py
 
-It loads the committed config/deploy.yml and .kamal/secrets with Kamal itself, with a stand-in `aws` command that
-serves made-up values, and compares what Kamal would write to each role's env file (read the way Docker reads
---env-file) with the values the containers should get. Then it checks bin/production_secret.py's model of Kamal
-(container_value) against Kamal on random strings, so a Kamal or dotenv upgrade that changes the escaping fails
-here rather than in production.
+It loads the committed config/deploy.yml, config/secrets.yml and .kamal/secrets with Kamal itself, with a
+stand-in `aws` command that serves made-up values, and compares what Kamal would write to each role's env file (read
+the way Docker reads --env-file) with the values the containers should get. Then it checks bin/production_secret.py's
+model of Kamal (container_value) against Kamal on random strings, so a Kamal or dotenv upgrade that changes the
+escaping fails here rather than in production.
 """
 
 import json
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -94,13 +99,13 @@ CLEAR = {"PLAIN": "x", "LIST": "a.example.com,b.example.com", "QUOTES": 'it\'s "
 def make_workdir(tmp):
     """A copy of deploy/ in tmp, with the test env.clear and a stand-in aws. Returns the env to run Kamal with."""
     shutil.copytree(DEPLOY_DIR / ".kamal", tmp / ".kamal", ignore=shutil.ignore_patterns("hooks"))
-    (tmp / "config").mkdir()
-    config = (DEPLOY_DIR / "config" / "deploy.yml").read_text()
-    # The committed env.clear is swapped for the test values
-    before, _, after = config.partition("env:\n  clear:\n")
-    _, _, after = after.partition("  secret:\n")
+    shutil.copytree(DEPLOY_DIR / "config", tmp / "config")
+    config = (tmp / "config" / "deploy.yml").read_text()
+    # The committed env.clear entries are swapped for the test values
     clear_yaml = "".join(f"    {k}: {json.dumps(v)}\n" for k, v in CLEAR.items())
-    (tmp / "config" / "deploy.yml").write_text(f"{before}env:\n  clear:\n{clear_yaml}  secret:\n{after}")
+    config, count = re.subn(r"(?m)(^  clear:\n)(^    \S.*\n)*", lambda m: m.group(1) + clear_yaml, config)
+    assert count == 1, "env.clear not found in deploy.yml"
+    (tmp / "config" / "deploy.yml").write_text(config)
     (tmp / "bin").mkdir()
     (tmp / "bin" / "aws").write_text(FAKE_AWS)
     (tmp / "bin" / "aws").chmod(0o755)

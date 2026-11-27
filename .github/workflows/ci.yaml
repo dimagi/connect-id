@@ -77,6 +77,9 @@ jobs:
           working-directory: ./deploy
           bundler-cache: true
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
       - name: Round-trip secrets through Kamal
         working-directory: ./deploy
-        run: python3 tests/kamal_roundtrip.py
+        run: uv run tests/kamal_roundtrip.py

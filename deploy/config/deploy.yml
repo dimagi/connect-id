@@ -9,8 +9,8 @@ ssh:
 
 # The app's environment, the same for every role.
 # - clear: plain config, in this file.
-# - secret: from the connect-id/production secret in AWS Secrets Manager, via .kamal/secrets. A key here must be
-#   extracted there too. Add or rotate a value with bin/production_secret.py (README, "Production Deploy").
+# - secret: from the connect-id/production secret in AWS Secrets Manager, listed in config/secrets.yml and fetched by
+#   .kamal/secrets. Manage values with bin/production_secret.py (README, "Production Deploy").
 # django-constance settings (country lists, SMS limits) are edited in admin, not here: docs/runtime-config.md.
 env:
   clear:
@@ -39,25 +39,8 @@ env:
     SUPERSET_UPLOAD_TABLE_SCHEMA: 'extended'
     SUPERSET_UPLOAD_USERNAME: 'personalid_uploader'
     TWILIO_MESSAGING_SERVICE: 'MGe3316749783a08bf7d05c61a482a1298'
-  secret:
-    - SECRET_KEY
-    - DATABASE_URL
-    - CELERY_BROKER_URL
-    - TWILIO_ACCOUNT_SID
-    - TWILIO_AUTH_TOKEN
-    - FCM_PRIVATE_KEY
-    - FCM_PRIVATE_KEY_ID
-    - GOOGLE_PRIVATE_KEY
-    - GOOGLE_PRIVATE_KEY_ID
-    - OIDC_RSA_PRIVATE_KEY
-    - BIGQUERY_GOOGLE_CREDENTIALS_JSON
-    - OCS_API_KEY
-    - GA_API_SECRET
-    - SUPERSET_UPLOAD_PASSWORD
-    - COMMCARE_CONNECT_CLIENT_SECRET
-    - MAPBOX_ACCESS_TOKEN
-    - SENTRY_DSN
-    - HEALTH_CHECK_TOKENS
+  # Every key in config/secrets.yml (Kamal renders this file with ERB, from the deploy/ directory)
+  secret: <%= YAML.load_file("config/secrets.yml").keys.inspect %>
 
 # Deploy to these servers.
 servers:

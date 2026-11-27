@@ -1,151 +1,73 @@
-#!/usr/bin/env python3
-"""Manage the app's secrets in AWS Secrets Manager (the connect-id/production secret).
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pyyaml"]
+# ///
+"""Manage the app's secrets: the connect-id/production JSON secret in AWS Secrets Manager.
 
-Kamal reads that secret at deploy time (deploy/.kamal/secrets) and hands each key to the containers as an env var
-(`env.secret` in deploy/config/deploy.yml). Plain config is in `env.clear` there instead.
+    uv run deploy/bin/production_secret.py list            # every secret, its type, and whether it is set
+    uv run deploy/bin/production_secret.py set NAME        # prompts for the value (or reads it from stdin)
+    uv run deploy/bin/production_secret.py check           # what would stop a deploy; the pre-deploy hook runs it
+    uv run deploy/bin/production_secret.py import FILE     # copies values from an env file, after a yes/no on the diff
 
-    production_secret.py plan  SOURCE            # key names only: what goes where, what can't be stored
-    production_secret.py push  [--dry-run] SOURCE  # create or replace the secret from an env file
-    production_secret.py push  --merge SOURCE      # change only the keys in SOURCE (add or rotate a secret)
-    production_secret.py clear SOURCE            # print an `env.clear` block for deploy.yml (plain config only)
-    production_secret.py check                   # pre-deploy hook: every value in the secret is safe to deploy
+The secrets are listed in deploy/config/secrets.yml, each with its type. Kamal fetches the secret at deploy time
+(deploy/.kamal/secrets) and gives each key to the containers as an env var (env.secret in deploy/config/deploy.yml).
+Values are never printed or written to disk: the JSON goes to the AWS CLI on its stdin. Needs uv and the AWS CLI.
 
-SOURCE is a file in Docker's --env-file format (e.g. the old /home/connect/www/docker.env), or `-` for stdin.
-Only keys deployed as secrets, i.e. extracted in deploy/.kamal/secrets, are stored. Values are never printed or
-written to disk: the JSON goes to the AWS CLI on its stdin. Needs Python 3.9+ and the AWS CLI, nothing else.
-
-Why values are encoded: between Secrets Manager and the container, Kamal 2.12 changes values in two places.
+Why values are stored encoded: between Secrets Manager and the container, Kamal 2.12 changes values twice.
   1. It reads deploy/.kamal/secrets with dotenv, which expands `$NAME` and `${NAME}` in each secret's value (from the
      deploying machine's environment, else to nothing) and turns `\\$` into `$`.
   2. It writes the secrets into an env file for `docker run --env-file`, escaped with Ruby's String#dump (a newline
      becomes the two characters `\\n`, a backslash is doubled, ...). Docker doesn't unescape them. It also drops one
      trailing newline.
-So the stored value is the one that comes out of those two steps as the value the container should see: every `$`
-is written `\\$`, and escapes like `\\n` are stored as the character they stand for (a PEM key is stored with real
-newlines). `push` does this and checks the result by running Kamal's steps forward; `check` (run by the pre-deploy
-hook) refuses a deploy if a value would be changed by step 1, e.g. after a hand edit in the AWS console.
+So the script stores the value that comes out of those two steps as what the container should get: every `$` (except
+in `$(`) is written `\\$`, and escapes like `\\n` are stored as the character they stand for. It checks each value by
+running Kamal's steps forward, and refuses one Kamal can't deliver. Hand edits in the AWS console skip this, which is
+what `check` (and so the pre-deploy hook) catches.
 """
 
-from __future__ import annotations
-
 import argparse
+import getpass
 import json
 import re
 import subprocess
 import sys
 from pathlib import Path
 
+import yaml
+
 DEFAULT_SECRET_ID = "connect-id/production"
 DEFAULT_REGION = "us-east-1"
-KAMAL_SECRETS_FILE = Path(__file__).resolve().parent.parent / ".kamal" / "secrets"
+DEPLOY_DIR = Path(__file__).resolve().parent.parent
+SECRETS_FILE = DEPLOY_DIR / "config" / "secrets.yml"
+KAMAL_SECRETS_FILE = DEPLOY_DIR / ".kamal" / "secrets"
 
-# Every env var the app reads (connectid/settings.py, docker/start*, libraries) falls in exactly one group below.
-# deploy/tests/test_production_secret.py fails when settings.py reads one that isn't listed.
-
-# May be deployed as secrets. Which ones are, is the list in deploy/.kamal/secrets.
-SECRET_KEYS = frozenset(
-    {
-        "SECRET_KEY",
-        "DATABASE_URL",
-        "CELERY_BROKER_URL",
-        "RATE_LIMIT_REDIS_URL",
-        "TWILIO_ACCOUNT_SID",
-        "TWILIO_AUTH_TOKEN",
-        "FCM_PRIVATE_KEY",
-        "FCM_PRIVATE_KEY_ID",
-        "GOOGLE_PRIVATE_KEY",
-        "GOOGLE_PRIVATE_KEY_ID",
-        "OIDC_RSA_PRIVATE_KEY",
-        "BIGQUERY_GOOGLE_CREDENTIALS_JSON",
-        "OCS_API_KEY",
-        "GA_API_SECRET",
-        "SUPERSET_UPLOAD_PASSWORD",
-        "COMMCARE_CONNECT_CLIENT_SECRET",
-        "MAPBOX_ACCESS_TOKEN",
-        "SENTRY_DSN",
-        "HEALTH_CHECK_TOKENS",
-        # Only if the hosts use static AWS keys rather than their instance role
-        "AWS_ACCESS_KEY_ID",
-        "AWS_SECRET_ACCESS_KEY",
-    }
-)
-
-# Plain config: goes in `env.clear` in deploy.yml, never in the secret.
-CLEAR_KEYS = frozenset(
-    {
-        "AWS_DEFAULT_REGION",
-        "AWS_S3_MESSAGE_ATTACHMENTS_BUCKET_NAME",
-        "AWS_S3_PHOTO_BUCKET_NAME",
-        "AXES_ENABLED",
-        "BIGQUERY_CONFIGURATION_SESSION_TABLE",
-        "BIGQUERY_DATASET_ID",
-        "CELERY_TASK_ALWAYS_EAGER",
-        "CELERY_TASK_EAGER_PROPAGATES",
-        "COMMCARE_CONNECT_CLIENT_ID",
-        "CONNECT_DISABLED",
-        "CSRF_TRUSTED_ORIGINS",
-        "DEBUG",
-        "DEFAULT_FILE_STORAGE_BACKEND",
-        "DEFAULT_FROM_EMAIL",
-        "DJANGO_ALLOWED_CIDR_NETS",
-        "DJANGO_ALLOWED_HOSTS",
-        "DJANGO_EMAIL_BACKEND",
-        "EMAIL_OTP_VALIDITY_SECONDS",
-        "FCM_CLIENT_EMAIL",
-        "FCM_CLIENT_ID",
-        "FCM_CLIENT_X509_CERT_URL",
-        "FCM_HTTP_TIMEOUT_SECONDS",
-        "FCM_PROJECT_ID",
-        "FIREBASE_APP_ID",
-        "GOOGLE_CLIENT_EMAIL",
-        "GOOGLE_CLIENT_ID",
-        "GOOGLE_CLIENT_X509_CERT_URL",
-        "GOOGLE_PROJECT_ID",
-        "NUM_PROXIES",
-        "OCS_CULTURAL_NAME_BOT_ID",
-        "PLAYSTORE_INTEGRITY_DISABLED",
-        "REFRESH_TOKEN_EXPIRE_SECONDS",
-        "REQUEST_LOG_LEVEL",
-        "RICH_MESSAGING_ENABLED",
-        "SENTRY_ENVIRONMENT",
-        "SENTRY_RELEASE",
-        "SENTRY_TRACES_SAMPLE_RATE",
-        "SMS_DEFAULT_VENDOR",
-        "SUPERSET_UPLOAD_BASE_URL",
-        "SUPERSET_UPLOAD_DATABASE_ID",
-        "SUPERSET_UPLOAD_TABLE_NAME",
-        "SUPERSET_UPLOAD_TABLE_SCHEMA",
-        "SUPERSET_UPLOAD_USERNAME",
-        "TWILIO_MESSAGING_SERVICE",
-        "WEB_CONCURRENCY",
-    }
-)
-
-# django-constance seeds: only read the first time a setting is used, then the database wins
-# (docs/runtime-config.md). Not deployed.
-SEED_KEYS = frozenset(
-    {
-        "SMS_SUPPORTED_COUNTRY_CODES",
-        "BLACKLISTED_COUNTRY_CODES",
-        "PHONE_COUNTRY_HOURLY_LIMIT",
-        "PHONE_COUNTRY_DAILY_LIMIT",
-        "SMS_NUMBER_HOURLY_LIMIT",
-        "SMS_NUMBER_DAILY_LIMIT",
-        "OTP_USER_HOURLY_LIMIT",
-        "OTP_USER_DAILY_LIMIT",
-        "RATE_LIMIT_WARN_FRACTION",
-    }
-)
-
-
-# Read by settings.py with env.str(..., multiline=True): a literal \n in the value becomes a newline.
-MULTILINE_KEYS = frozenset({"FCM_PRIVATE_KEY", "GOOGLE_PRIVATE_KEY", "OIDC_RSA_PRIVATE_KEY"})
-# Parsed with json.loads by settings.py
-JSON_KEYS = frozenset({"BIGQUERY_GOOGLE_CREDENTIALS_JSON"})
+# How settings.py reads each type, and so what `set` expects:
+#   plain      one line, as is
+#   multiline  env.str(..., multiline=True): `set` takes the text with real newlines, e.g. a PEM key
+#   json       json.loads: `set` takes any JSON and stores it on one line
+TYPES = ("plain", "multiline", "json")
 
 
 class SecretError(Exception):
     pass
+
+
+def _unknown_types(secrets):
+    return [f"{name} ({kind})" for name, kind in secrets.items() if kind not in TYPES]
+
+
+def load_secrets(path=None):
+    """{name: type} from deploy/config/secrets.yml, in file order. A secret with no type is plain."""
+    path = path or SECRETS_FILE
+    entries = yaml.safe_load(Path(path).read_text()) or {}
+    if not isinstance(entries, dict):
+        raise SecretError(f"{path}: expected NAME: type entries")
+    secrets = {name: kind or "plain" for name, kind in entries.items()}
+    if _unknown_types(secrets):
+        unknown = ", ".join(_unknown_types(secrets))
+        raise SecretError(f"{path}: unknown type for {unknown}; use one of {', '.join(TYPES)}")
+    return secrets
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -295,109 +217,69 @@ def encode(value):
     return stored
 
 
-def _json_problem(key, seen):
-    if not seen:  # settings.py treats empty as unset
+# ---------------------------------------------------------------------------------------------------------------------
+# Types
+
+
+def container_target(kind, value):
+    """What the container should get for a value given to `set`, before Kamal's encoding."""
+    if kind == "json":
+        try:
+            return json.dumps(json.loads(value), ensure_ascii=False)
+        except ValueError:
+            raise SecretError("not valid JSON") from None
+    value = value.replace("\r\n", "\n")
+    if kind == "multiline":
+        return value.replace("\n", "\\n")
+    if "\n" in value:
+        raise SecretError("has a newline; if it should, give it type multiline in secrets.yml")
+    return value
+
+
+def _strings(value):
+    if isinstance(value, dict):
+        value = list(value.values())
+    if isinstance(value, list):
+        return [s for item in value for s in _strings(item)]
+    return [value] if isinstance(value, str) else []
+
+
+def _json_problem(seen):
+    if not seen:  # settings.py treats empty JSON as unset
         return None
     try:
         parsed = json.loads(seen)
     except ValueError:
-        return f"{key}: is not valid JSON once deployed (store it with `push`, not by hand)"
-    if isinstance(parsed, dict) and "\\" in str(parsed.get("private_key", "")):
-        return f"{key}: private_key would have literal backslashes (store it with `push`, not by hand)"
+        return "is not valid JSON once deployed (store it with `set`, not by hand)"
+    if any("\\" in s for s in _strings(parsed)):
+        return "would have literal backslashes inside its JSON strings (store it with `set`, not by hand)"
     return None
 
 
-def deploy_problems(key, stored):
-    """Why a stored value would not reach the container as intended (no values in the messages)."""
+def type_problem(kind, seen):
+    """Why the value a container gets (`seen`) would not work for its type, or None."""
+    if kind == "multiline" and "\\\\" in seen:
+        return "has a literal '\\n' (store it with `set`, not by hand)"
+    return _json_problem(seen) if kind == "json" else None
+    try:
+        parsed = json.loads(seen)
+    except ValueError:
+        return "is not valid JSON once deployed (store it with `set`, not by hand)"
+    if any("\\" in s for s in _strings(parsed)):
+        return "would have literal backslashes inside its JSON strings (store it with `set`, not by hand)"
+    return None
+
+
+def deploy_problems(name, kind, stored):
+    """Why a stored value would not reach the container as intended. Messages name the key, never the value."""
     if dotenv_substitute(stored) != re.sub(r"\\\$(?!\()", "$", stored):
-        return [f"{key}: has a '$' not written as '\\$', which Kamal would expand"]
-    seen = container_value(stored)
-    if key in MULTILINE_KEYS and "\\\\" in seen:
-        return [f"{key}: has a literal '\\n' (store the key with real newlines)"]
-    problem = _json_problem(key, seen) if key in JSON_KEYS else None
-    return [problem] if problem else []
+        return [f"{name}: has a '$' not written as '\\$', which Kamal would expand"]
+    problem = type_problem(kind, container_value(stored))
+    return [f"{name}: {problem}"] if problem else []
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Commands
-
-
-def read_source(source):
-    text = sys.stdin.read() if source == "-" else Path(source).read_text()
-    env, problems = parse_env_file(text)
-    for problem in problems:
-        print(f"warning: {problem}", file=sys.stderr)
-    return env
-
-
-def classify(env, deployed):
-    """Key names in env by group (see GROUP_HELP), each sorted. A key goes in the first group whose set has it."""
-    sets = [
-        ("secret", deployed),
-        ("secret, not deployed", SECRET_KEYS),
-        ("clear", CLEAR_KEYS),
-        ("seed", SEED_KEYS),
-    ]
-    groups = {name: [] for name in GROUP_HELP}
-    for key in sorted(env):
-        group = next((name for name, keys in sets if key in keys), "unknown")
-        groups[group].append(key)
-    return groups
-
-
-GROUP_HELP = {
-    "secret": "stored in the secret and deployed",
-    "secret, not deployed": "secret, but not in deploy/.kamal/secrets: add it there and to env.secret to deploy it",
-    "clear": "plain config: belongs in env.clear in deploy/config/deploy.yml",
-    "seed": "django-constance seed, dropped (the database holds the value)",
-    "unknown": "not read by the app, dropped. If the app does read it, classify it in production_secret.py",
-}
-
-
-def encode_all(env, keys):
-    stored, problems = {}, []
-    for key in keys:
-        try:
-            stored[key] = encode(env[key])
-        except SecretError as e:
-            problems.append(f"{key}: {e}")
-            continue
-        problems += deploy_problems(key, stored[key])
-    return stored, problems
-
-
-def print_keys(heading, keys):
-    if keys:
-        print(f"{heading}:")
-        print("".join(f"  {key}\n" for key in keys), end="")
-
-
-def cmd_plan(args):
-    env = read_source(args.source)
-    deployed = deployed_secret_keys()
-    groups = classify(env, set(deployed))
-    for name, keys in groups.items():
-        print_keys(f"{name} ({GROUP_HELP[name]})", keys)
-    missing = [key for key in deployed if key not in env]
-    print_keys("deployed but missing from the source (the deploy would fail)", missing)
-    _, problems = encode_all(env, groups["secret"])
-    for problem in problems:
-        print(f"error: {problem}")
-    return 1 if problems or missing else 0
-
-
-_SHELL_SENSITIVE = re.compile(r"\$\{|`|#[{$@]")
-
-
-def cmd_clear(args):
-    env = read_source(args.source)
-    print("env:\n  clear:")
-    for key in sorted(k for k in env if k in CLEAR_KEYS):
-        value = env[key]
-        if _SHELL_SENSITIVE.search(value):
-            print(f"    # {key}: has '${{', a backtick or '#{{', '#$' or '#@', which a shell would change")
-        print(f"    {key}: {json.dumps(value, ensure_ascii=False)}")
-    return 0
+# Secrets Manager
 
 
 def aws(args, region, stdin=None):
@@ -409,100 +291,163 @@ def aws(args, region, stdin=None):
     )
 
 
-def fetch_secret(secret_id, region):
-    result = aws(["get-secret-value", "--secret-id", secret_id, "--query", "SecretString"], region)
-    if result.returncode != 0:
-        raise SecretError(f"could not read {secret_id}: {result.stderr.strip()}")
-    return json.loads(json.loads(result.stdout))
-
-
-def secret_exists(secret_id, region):
-    result = aws(["describe-secret", "--secret-id", secret_id, "--query", "ARN"], region)
+def fetch_secret(args):
+    """The stored JSON as a dict, or None if the secret doesn't exist yet."""
+    result = aws(["get-secret-value", "--secret-id", args.secret_id, "--query", "SecretString"], args.region)
     if result.returncode == 0:
-        return True
+        return json.loads(json.loads(result.stdout))
     if "ResourceNotFoundException" in result.stderr:
-        return False
-    raise SecretError(f"could not look up {secret_id}: {result.stderr.strip()}")
+        return None
+    raise SecretError(f"could not read {args.secret_id}: {result.stderr.strip()}")
 
 
-def keys_to_push(env, deployed, merge):
-    """The deployed secret keys to store from env. Without --merge, every deployed key must be there."""
-    missing = [key for key in deployed if key not in env]
-    if missing and not merge:
-        raise SecretError("deployed but missing from the source: " + ", ".join(missing))
-    keys = [key for key in deployed if key in env]
-    if not keys:
-        raise SecretError("the source has no deployed secret keys")
-    return keys
-
-
-def encode_or_refuse(env, keys):
-    stored, problems = encode_all(env, keys)
-    if problems:
-        raise SecretError("not stored, fix these first:\n" + "\n".join(f"  {p}" for p in problems))
-    return stored
-
-
-def write_command(args, exists):
+def write_secret(args, stored, exists):
+    """Store the whole JSON as the secret's new value. Returns the secret's ARN."""
     if exists:
-        return ["put-secret-value", "--secret-id", args.secret_id]
-    command = ["create-secret", "--name", args.secret_id, "--description", "connect-id app env (see deploy/)"]
-    if args.kms_key_id:
-        command += ["--kms-key-id", args.kms_key_id]
-    return command
-
-
-def store(args, stored):
-    """Write the secret: create it, replace its value, or with --merge update the given keys. Returns its ARN."""
-    exists = secret_exists(args.secret_id, args.region)
-    if args.merge and not exists:
-        raise SecretError(f"{args.secret_id} doesn't exist yet, run push without --merge")
-    if args.merge:
-        stored = {**fetch_secret(args.secret_id, args.region), **stored}
-    payload = json.dumps(stored, ensure_ascii=False)
-    command = [*write_command(args, exists), "--secret-string", "file:///dev/stdin", "--query", "ARN"]
-    result = aws(command, args.region, stdin=payload)
+        command = ["put-secret-value", "--secret-id", args.secret_id]
+    else:
+        command = ["create-secret", "--name", args.secret_id, "--description", "connect-id app env (see deploy/)"]
+        command += ["--kms-key-id", args.kms_key_id] if args.kms_key_id else []
+    command += ["--secret-string", "file:///dev/stdin", "--query", "ARN"]
+    result = aws(command, args.region, stdin=json.dumps(stored, ensure_ascii=False))
     if result.returncode != 0:
         raise SecretError(result.stderr.strip())
-    return ("updated" if exists else "created"), json.loads(result.stdout)
+    return json.loads(result.stdout)
 
 
-def cmd_push(args):
-    env = read_source(args.source)
-    deployed = deployed_secret_keys()
-    keys = keys_to_push(env, deployed, args.merge)
-    stored = encode_or_refuse(env, keys)
-    action = "merge into" if args.merge else "replace"
-    print(f"{'would ' if args.dry_run else ''}{action} {args.secret_id}: " + ", ".join(keys))
-    ignored = sorted(key for key in env if key not in deployed)
-    if ignored:
-        print("not stored (not deployed as secrets): " + ", ".join(ignored))
-    if not args.dry_run:
-        outcome, arn = store(args, stored)
-        print(f"{outcome} {arn}")
+# ---------------------------------------------------------------------------------------------------------------------
+# Commands
+
+
+def cmd_list(args):
+    secrets = load_secrets()
+    stored = fetch_secret(args) or {}
+    width = max(map(len, secrets))
+    for name, kind in secrets.items():
+        print(f"{name:<{width}}  {kind:<9}  {'set' if name in stored else 'MISSING'}")
+    for name in sorted(set(stored) - set(secrets)):
+        print(f"{name:<{width}}  {'':<9}  in the secret but not in secrets.yml, so not deployed")
     return 0
 
 
-def stored_problems(stored, deployed, secret_id):
-    """Why the stored secret can't be deployed: deployed keys missing from it, or values Kamal would change."""
-    problems = [f"{key}: missing from {secret_id}" for key in deployed if key not in stored]
-    for key in (key for key in deployed if key in stored):
-        problems += deploy_problems(key, stored[key])
+def read_value(name, kind):
+    if not sys.stdin.isatty():
+        return sys.stdin.read().removesuffix("\n")
+    if kind != "plain":
+        print(f"{name} is {kind}: pipe it in, e.g. production_secret.py set {name} < file", file=sys.stderr)
+    return getpass.getpass(f"{name}: ")
+
+
+def cmd_set(args):
+    secrets = load_secrets()
+    if args.name not in secrets:
+        raise SecretError(f"{args.name} is not in {SECRETS_FILE.name}: add it there (and to .kamal/secrets) first")
+    kind = secrets[args.name]
+    value = read_value(args.name, kind)
+    if not value:
+        raise SecretError("empty value, nothing stored")
+    try:
+        encoded = encode(container_target(kind, value))
+    except SecretError as e:
+        raise SecretError(f"{args.name}: {e}") from None
+    current = fetch_secret(args)
+    arn = write_secret(args, {**(current or {}), args.name: encoded}, exists=current is not None)
+    print(f"set {args.name} in {arn}")
+    return 0
+
+
+def encode_for_import(env, secrets):
+    """{name: stored value} for the secrets in env. Raises SecretError naming every key that can't be stored."""
+    stored, problems = {}, []
+    for name in (name for name in secrets if name in env):
+        try:
+            stored[name] = encode(env[name])
+            problems += deploy_problems(name, secrets[name], stored[name])
+        except SecretError as e:
+            problems.append(f"{name}: {e}")
+    if problems:
+        raise SecretError("nothing imported, fix these first:\n" + "\n".join(f"  {p}" for p in problems))
+    return stored
+
+
+def diff_group(name, value, current):
+    if name not in current:
+        return "add"
+    return "unchanged" if current[name] == value else "change"
+
+
+def import_plan(env, secrets, current):
+    """(values to store, {group: [names]}) for importing an env file. Raises SecretError naming bad keys."""
+    stored = encode_for_import(env, secrets)
+    groups = {"add": [], "change": [], "unchanged": []}
+    for name, value in stored.items():
+        groups[diff_group(name, value, current)].append(name)
+    groups["not in the file, left as is"] = [name for name in secrets if name not in env]
+    groups["in the file but not in secrets.yml, ignored"] = sorted(set(env) - set(secrets))
+    return {name: stored[name] for name in groups["add"] + groups["change"]}, groups
+
+
+def confirmed(args, count):
+    return args.yes or input(f"Write {count} keys to {args.secret_id}? [y/N] ").strip().lower() == "y"
+
+
+def cmd_import(args):
+    env, problems = parse_env_file(Path(args.file).read_text())
+    for problem in problems:
+        print(f"warning: {problem}", file=sys.stderr)
+    current = fetch_secret(args)
+    updates, groups = import_plan(env, load_secrets(), current or {})
+    for group, names in ((group, names) for group, names in groups.items() if names):
+        print(f"{group}: " + ", ".join(names))
+    if not updates:
+        print("nothing to change")
+        return 0
+    if not confirmed(args, len(updates)):
+        print("nothing changed")
+        return 1
+    arn = write_secret(args, {**(current or {}), **updates}, exists=current is not None)
+    print(f"wrote {len(updates)} keys to {arn}")
+    return 0
+    if not args.yes and input(f"Write {len(updates)} keys to {args.secret_id}? [y/N] ").strip().lower() != "y":
+        print("nothing changed")
+        return 1
+    arn = write_secret(args, {**(current or {}), **updates}, exists=current is not None)
+    print(f"wrote {len(updates)} keys to {arn}")
+    return 0
+
+
+def kamal_secrets_problems(secrets):
+    """A problem if .kamal/secrets doesn't extract exactly the secrets in secrets.yml."""
+    extracted = deployed_secret_keys()
+    missing, extra = sorted(set(secrets) - set(extracted)), sorted(set(extracted) - set(secrets))
+    if missing or extra:
+        return [f".kamal/secrets doesn't match secrets.yml: missing {missing or '-'}, extra {extra or '-'}"]
+    return []
+
+
+def check_problems(secrets, stored, args):
+    """Why a deploy would fail or deliver wrong values. Messages name keys, never values."""
+    problems = kamal_secrets_problems(secrets)
+    if stored is None:
+        return [*problems, f"{args.secret_id} doesn't exist"]
+    problems += [f"{name}: missing from {args.secret_id}" for name in secrets if name not in stored]
+    for name in (name for name in secrets if name in stored):
+        problems += deploy_problems(name, secrets[name], stored[name])
     return problems
 
 
 def cmd_check(args):
-    stored = fetch_secret(args.secret_id, args.region)
-    deployed = deployed_secret_keys()
-    extra = sorted(set(stored) - set(deployed))
+    secrets = load_secrets()
+    stored = fetch_secret(args)
+    extra = sorted(set(stored or {}) - set(secrets))
     if extra:
-        print(f"note: in {args.secret_id} but not deployed: " + ", ".join(extra))
-    problems = stored_problems(stored, deployed, args.secret_id)
+        print(f"note: in {args.secret_id} but not in secrets.yml, so not deployed: " + ", ".join(extra))
+    problems = check_problems(secrets, stored, args)
     if problems:
-        print(f"{args.secret_id} is not safe to deploy:\n" + "".join(f"  {p}\n" for p in problems), end="")
-        print("Fix the values with deploy/bin/production_secret.py push --merge (see README, Production Deploy).")
+        print(f"{args.secret_id} is not ready to deploy:\n" + "".join(f"  {p}\n" for p in problems), end="")
+        print("See README, Production Deploy, for fixing a value with `set`.")
         return 1
-    print(f"{args.secret_id}: {len(deployed)} deployed keys OK")
+    print(f"{args.secret_id}: {len(secrets)} secrets OK")
     return 0
 
 
@@ -510,25 +455,23 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--secret-id", default=DEFAULT_SECRET_ID)
     parser.add_argument("--region", default=DEFAULT_REGION)
+    parser.add_argument("--kms-key-id", help="customer-managed KMS key, used only when creating the secret")
     commands = parser.add_subparsers(dest="command", required=True)
 
-    plan = commands.add_parser("plan", help="list key names by where they go; check every secret can be deployed")
-    plan.add_argument("source", help="env file, or - for stdin")
-    plan.set_defaults(run=cmd_plan)
+    list_ = commands.add_parser("list", help="list the secrets, their types and whether each is set")
+    list_.set_defaults(run=cmd_list)
 
-    push = commands.add_parser("push", help="store the deployed secret keys from an env file")
-    push.add_argument("source", help="env file, or - for stdin")
-    push.add_argument("--dry-run", action="store_true", help="print key names only, change nothing")
-    push.add_argument("--merge", action="store_true", help="only add or change the keys in the source")
-    push.add_argument("--kms-key-id", help="customer-managed KMS key, when creating the secret")
-    push.set_defaults(run=cmd_push)
+    set_ = commands.add_parser("set", help="set one secret; prompts for it, or reads it from stdin")
+    set_.add_argument("name")
+    set_.set_defaults(run=cmd_set)
 
-    clear = commands.add_parser("clear", help="print env.clear for deploy.yml from an env file (prints values)")
-    clear.add_argument("source", help="env file, or - for stdin")
-    clear.set_defaults(run=cmd_clear)
-
-    check = commands.add_parser("check", help="fail if a value in the secret would not deploy as intended")
+    check = commands.add_parser("check", help="list what would stop a deploy or deliver a wrong value")
     check.set_defaults(run=cmd_check)
+
+    import_ = commands.add_parser("import", help="copy the secrets from an env file (Docker --env-file format)")
+    import_.add_argument("file", help="e.g. <(ssh host cat docker.env)")
+    import_.add_argument("--yes", action="store_true", help="don't ask before writing")
+    import_.set_defaults(run=cmd_import)
 
     args = parser.parse_args(argv)
     try:
