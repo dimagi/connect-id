@@ -81,7 +81,7 @@ def _env_file_line(number, line):
         return None, None, None
     key, sep, value = line.partition("=")
     key = key.lstrip(" \t")
-    if not key or any(c in key for c in " \t"):
+    if not re.fullmatch(r"[^ \t]+", key):  # Docker refuses an empty name or one with spaces
         return None, None, f"line {number}: not KEY=value (skipped)"
     if not sep:
         return None, None, f"{key}: no '=', Docker copies it from the host's environment (skipped)"
