@@ -137,8 +137,6 @@ SEED_KEYS = frozenset(
     }
 )
 
-# Read by nothing in the app. Not deployed.
-UNUSED_KEYS = frozenset({"REDIS_URL"})
 
 # Read by settings.py with env.str(..., multiline=True): a literal \n in the value becomes a newline.
 MULTILINE_KEYS = frozenset({"FCM_PRIVATE_KEY", "GOOGLE_PRIVATE_KEY", "OIDC_RSA_PRIVATE_KEY"})
@@ -339,7 +337,6 @@ def classify(env, deployed):
         ("secret, not deployed", SECRET_KEYS),
         ("clear", CLEAR_KEYS),
         ("seed", SEED_KEYS),
-        ("unused", UNUSED_KEYS),
     ]
     groups = {name: [] for name in GROUP_HELP}
     for key in sorted(env):
@@ -353,8 +350,7 @@ GROUP_HELP = {
     "secret, not deployed": "secret, but not in deploy/.kamal/secrets: add it there and to env.secret to deploy it",
     "clear": "plain config: belongs in env.clear in deploy/config/deploy.yml",
     "seed": "django-constance seed, dropped (the database holds the value)",
-    "unused": "read by nothing, dropped",
-    "unknown": "not known to this script: classify it in production_secret.py",
+    "unknown": "not read by the app, dropped. If the app does read it, classify it in production_secret.py",
 }
 
 

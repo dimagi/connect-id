@@ -155,7 +155,7 @@ def test_roles_get_no_env_file():
 
 
 def test_key_groups_do_not_overlap():
-    groups = [ps.SECRET_KEYS, ps.CLEAR_KEYS, ps.SEED_KEYS, ps.UNUSED_KEYS]
+    groups = [ps.SECRET_KEYS, ps.CLEAR_KEYS, ps.SEED_KEYS]
     assert sum(len(g) for g in groups) == len(set().union(*groups))
     assert ps.MULTILINE_KEYS | ps.JSON_KEYS <= ps.SECRET_KEYS
 
