@@ -336,20 +336,18 @@ def read_source(source):
 
 
 def classify(env, deployed):
-    groups = {"secret": [], "secret, not deployed": [], "clear": [], "seed": [], "unused": [], "unknown": []}
+    """Key names in env by group (see GROUP_HELP), each sorted. A key goes in the first group whose set has it."""
+    sets = [
+        ("secret", deployed),
+        ("secret, not deployed", SECRET_KEYS),
+        ("clear", CLEAR_KEYS),
+        ("seed", SEED_KEYS),
+        ("unused", UNUSED_KEYS),
+    ]
+    groups = {name: [] for name in GROUP_HELP}
     for key in sorted(env):
-        if key in deployed:
-            groups["secret"].append(key)
-        elif key in SECRET_KEYS:
-            groups["secret, not deployed"].append(key)
-        elif key in CLEAR_KEYS:
-            groups["clear"].append(key)
-        elif key in SEED_KEYS:
-            groups["seed"].append(key)
-        elif key in UNUSED_KEYS:
-            groups["unused"].append(key)
-        else:
-            groups["unknown"].append(key)
+        group = next((name for name, keys in sets if key in keys), "unknown")
+        groups[group].append(key)
     return groups
 
 
@@ -492,16 +490,21 @@ def cmd_push(args):
     return 0
 
 
+def stored_problems(stored, deployed, secret_id):
+    """Why the stored secret can't be deployed: deployed keys missing from it, or values Kamal would change."""
+    problems = [f"{key}: missing from {secret_id}" for key in deployed if key not in stored]
+    for key in (key for key in deployed if key in stored):
+        problems += deploy_problems(key, stored[key])
+    return problems
+
+
 def cmd_check(args):
     stored = fetch_secret(args.secret_id, args.region)
     deployed = deployed_secret_keys()
-    problems = [f"{key}: missing from {args.secret_id}" for key in deployed if key not in stored]
-    for key in deployed:
-        if key in stored:
-            problems += deploy_problems(key, stored[key])
     extra = sorted(set(stored) - set(deployed))
     if extra:
         print(f"note: in {args.secret_id} but not deployed: " + ", ".join(extra))
+    problems = stored_problems(stored, deployed, args.secret_id)
     if problems:
         print(f"{args.secret_id} is not safe to deploy:\n" + "".join(f"  {p}\n" for p in problems), end="")
         print("Fix the values with deploy/bin/production_secret.py push --merge (see README, Production Deploy).")
