@@ -14,13 +14,31 @@ ssh:
 # django-constance settings (country lists, SMS limits) are edited in admin, not here: docs/runtime-config.md.
 env:
   clear:
-    # TODO before merging: the values of these keys from docker.env (`bin/production_secret.py clear`):
-    # BIGQUERY_CONFIGURATION_SESSION_TABLE BIGQUERY_DATASET_ID COMMCARE_CONNECT_CLIENT_ID CSRF_TRUSTED_ORIGINS
-    # DEFAULT_FROM_EMAIL DJANGO_ALLOWED_CIDR_NETS DJANGO_ALLOWED_HOSTS DJANGO_EMAIL_BACKEND FCM_CLIENT_EMAIL
-    # FCM_CLIENT_ID FCM_CLIENT_X509_CERT_URL FCM_PROJECT_ID FIREBASE_APP_ID GOOGLE_CLIENT_EMAIL GOOGLE_CLIENT_ID
-    # GOOGLE_CLIENT_X509_CERT_URL GOOGLE_PROJECT_ID OCS_CULTURAL_NAME_BOT_ID RICH_MESSAGING_ENABLED
-    # SUPERSET_UPLOAD_BASE_URL SUPERSET_UPLOAD_DATABASE_ID SUPERSET_UPLOAD_TABLE_NAME SUPERSET_UPLOAD_TABLE_SCHEMA
-    # SUPERSET_UPLOAD_USERNAME TWILIO_MESSAGING_SERVICE
+    BIGQUERY_CONFIGURATION_SESSION_TABLE: 'personalid_config_sessions'
+    BIGQUERY_DATASET_ID: 'analytics_153906101'
+    COMMCARE_CONNECT_CLIENT_ID: '89kwTID4ZQ4ZgqofrcnhQ19Qf0vbAvJm87PwM2fT'
+    CSRF_TRUSTED_ORIGINS: 'https://connectid.dimagi.com,https://connect.dimagi.com,https://ec2-54-174-77-95.compute-1.amazonaws.com'
+    DEFAULT_FROM_EMAIL: 'personalid-noreply@dimagi.com'
+    DJANGO_ALLOWED_CIDR_NETS: '172.31.0.0/16'
+    DJANGO_ALLOWED_HOSTS: 'connectid.dimagi.com,connect.dimagi.com,ec2-54-174-77-95.compute-1.amazonaws.com,127.0.0.1'
+    DJANGO_EMAIL_BACKEND: 'anymail.backends.amazon_ses.EmailBackend'
+    FCM_CLIENT_EMAIL: 'firebase-adminsdk-5g9cf@commcare-a57e4.iam.gserviceaccount.com'
+    FCM_CLIENT_ID: '107009008224476873861'
+    FCM_CLIENT_X509_CERT_URL: 'https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-5g9cf%40commcare-a57e4.iam.gserviceaccount.com'
+    FCM_PROJECT_ID: 'commcare-a57e4'
+    FIREBASE_APP_ID: '1:768065119425:android:bf4b2396fb9805b2'
+    GOOGLE_CLIENT_EMAIL: 'connectid@commcare-a57e4.iam.gserviceaccount.com'
+    GOOGLE_CLIENT_ID: '110472826955406601952'
+    GOOGLE_CLIENT_X509_CERT_URL: 'https://www.googleapis.com/robot/v1/metadata/x509/connectid%40commcare-a57e4.iam.gserviceaccount.com'
+    GOOGLE_PROJECT_ID: 'commcare-a57e4'
+    OCS_CULTURAL_NAME_BOT_ID: '62c71ed1-3baa-4dd0-8efc-17cf802e0a1a'
+    RICH_MESSAGING_ENABLED: 'True'
+    SUPERSET_UPLOAD_BASE_URL: 'https://connect-superset.dimagi.com'
+    SUPERSET_UPLOAD_DATABASE_ID: '4'
+    SUPERSET_UPLOAD_TABLE_NAME: 'connectid_users'
+    SUPERSET_UPLOAD_TABLE_SCHEMA: 'extended'
+    SUPERSET_UPLOAD_USERNAME: 'personalid_uploader'
+    TWILIO_MESSAGING_SERVICE: 'MGe3316749783a08bf7d05c61a482a1298'
   secret:
     - SECRET_KEY
     - DATABASE_URL
