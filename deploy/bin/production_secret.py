@@ -284,19 +284,29 @@ def aws(args, region, stdin=None):
     )
 
 
+def _get_secret(args, query):
+    return aws(["get-secret-value", "--secret-id", args.secret_id, "--query", query], args.region)
+
+
 def fetch_secret(args):
-    """(whether the secret exists, its JSON as a dict: empty if it doesn't exist yet)."""
-    result = aws(["get-secret-value", "--secret-id", args.secret_id, "--query", "SecretString"], args.region)
+    """(its JSON as a dict, its version). The version is None, and the dict empty, if the secret doesn't exist yet."""
+    result = _get_secret(args, "{values: SecretString, version: VersionId}")
     if result.returncode == 0:
-        return True, json.loads(json.loads(result.stdout))
+        secret = json.loads(result.stdout)
+        return json.loads(secret["values"]), secret["version"]
     if "ResourceNotFoundException" in result.stderr:
-        return False, {}
+        return {}, None
     raise SecretError(f"could not read {args.secret_id}: {result.stderr.strip()}")
 
 
-def write_secret(args, stored, exists):
-    """Store the whole JSON as the secret's new value. Returns the secret's ARN."""
-    if exists:
+def write_secret(args, stored, version):
+    """Store the whole JSON as the secret's new value, if it is still at `version` (None: create it). Returns its ARN.
+
+    Secrets Manager stores the JSON whole, so a write based on an older read would undo whatever was written since.
+    """
+    if version and json.loads(_get_secret(args, "VersionId").stdout or "null") != version:
+        raise SecretError(f"{args.secret_id} changed since it was read, nothing written: run the command again")
+    if version:
         command = ["put-secret-value", "--secret-id", args.secret_id]
     else:
         command = ["create-secret", "--name", args.secret_id, "--description", "connect-id app env (see deploy/)"]
@@ -314,7 +324,7 @@ def write_secret(args, stored, exists):
 
 def cmd_list(args):
     secrets = load_secrets()
-    _, stored = fetch_secret(args)
+    stored, _ = fetch_secret(args)
     width = max(map(len, secrets))
     for name, kind in secrets.items():
         print(f"{name:<{width}}  {kind:<9}  {'set' if name in stored else 'MISSING'}")
@@ -343,8 +353,8 @@ def cmd_set(args):
         encoded = encode(container_target(kind, value))
     except SecretError as e:
         raise SecretError(f"{args.name}: {e}") from None
-    exists, current = fetch_secret(args)
-    arn = write_secret(args, {**current, args.name: encoded}, exists=exists)
+    current, version = fetch_secret(args)
+    arn = write_secret(args, {**current, args.name: encoded}, version)
     print(f"set {args.name} in {arn}")
     return 0
 
@@ -394,7 +404,7 @@ def cmd_import(args):
     env, problems = parse_env_file(Path(args.file).read_text())
     for problem in problems:
         print(f"warning: {problem}", file=sys.stderr)
-    exists, current = fetch_secret(args)
+    current, version = fetch_secret(args)
     updates, groups = import_plan(env, load_secrets(), current)
     print_groups(groups)
     if not updates:
@@ -403,7 +413,7 @@ def cmd_import(args):
     if not confirmed(args, len(updates)):
         print("nothing changed")
         return 1
-    arn = write_secret(args, {**current, **updates}, exists=exists)
+    arn = write_secret(args, {**current, **updates}, version)
     print(f"wrote {len(updates)} keys to {arn}")
     return 0
 
@@ -428,11 +438,11 @@ def check_problems(secrets, stored, args):
 
 def cmd_check(args):
     secrets = load_secrets()
-    exists, stored = fetch_secret(args)
+    stored, version = fetch_secret(args)
     extra = sorted(set(stored) - set(secrets))
     if extra:
         print(f"note: in {args.secret_id} but not in secrets.yml, so not deployed: " + ", ".join(extra))
-    problems = check_problems(secrets, stored, args) if exists else [f"{args.secret_id} doesn't exist"]
+    problems = check_problems(secrets, stored, args) if version else [f"{args.secret_id} doesn't exist"]
     if problems:
         print(f"{args.secret_id} is not ready to deploy:\n" + "".join(f"  {p}\n" for p in problems), end="")
         print("See README, Production Deploy, for fixing a value with `set`.")

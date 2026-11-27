@@ -239,21 +239,29 @@ def test_multiline_secrets_are_read_as_multiline():
 
 
 class FakeAws:
-    """Stands in for the AWS CLI. `existing` is the stored secret, None if there's none."""
+    """Stands in for the AWS CLI. `existing` is the stored secret, None if there's none; `version` its VersionId."""
 
     def __init__(self, existing=None):
         self.existing = existing
+        self.version = 1
         self.writes = []
+
+    def store(self, values):
+        self.existing = values
+        self.version += 1
 
     def __call__(self, command, input=None, **kwargs):
         action = command[4]
         if action == "get-secret-value":
             if self.existing is None:
                 return subprocess.CompletedProcess(command, 254, "", "ResourceNotFoundException: nope")
-            return subprocess.CompletedProcess(command, 0, json.dumps(json.dumps(self.existing)), "")
+            if command[command.index("--query") + 1] == "VersionId":
+                return subprocess.CompletedProcess(command, 0, json.dumps(f"v{self.version}"), "")
+            out = {"values": json.dumps(self.existing), "version": f"v{self.version}"}
+            return subprocess.CompletedProcess(command, 0, json.dumps(out), "")
         if action in ("create-secret", "put-secret-value"):
             self.writes.append((action, json.loads(input)))
-            self.existing = json.loads(input)
+            self.store(json.loads(input))
             return subprocess.CompletedProcess(command, 0, '"arn:aws:secretsmanager:x:1:secret:connect-id/p-AbC"', "")
         raise AssertionError(command)
 
@@ -364,6 +372,22 @@ def test_import_shows_the_diff_and_asks_first(aws, tmp_path, monkeypatch, capsys
 
     assert ps.main(["import", str(env_file)]) == 0
     assert "nothing to change" in capsys.readouterr().out
+
+
+def test_import_refuses_to_overwrite_a_change_made_while_it_waited(aws, tmp_path, monkeypatch, capsys):
+    aws.existing = {"SECRET_KEY": "old"}
+    env_file = tmp_path / "docker.env"
+    env_file.write_text("SECRET_KEY=new\n")
+
+    def someone_else_writes(prompt):
+        aws.store({"SECRET_KEY": "old", "OIDC_RSA_PRIVATE_KEY": "set meanwhile"})
+        return "y"
+
+    monkeypatch.setattr("builtins.input", someone_else_writes)
+    assert ps.main(["import", str(env_file)]) == 1
+    assert "changed since it was read, nothing written" in capsys.readouterr().err
+    assert aws.writes == []
+    assert aws.existing["OIDC_RSA_PRIVATE_KEY"] == "set meanwhile"
 
 
 def test_import_refuses_values_kamal_cannot_deliver(aws, tmp_path, capsys):
