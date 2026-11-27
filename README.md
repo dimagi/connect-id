@@ -133,7 +133,8 @@ Every env var the app reads (`connectid/settings.py`, `docker/`) must be handled
   a plain value the same way.
 - **Secret**: add it to `deploy/config/secrets.yml` and `deploy/.kamal/secrets`, and store its value before merging
   (see "Adding a secret" below).
-- **Not set in production**, so the `settings.py` default applies: add it to `NOT_DEPLOYED` in that test.
+- **Not set in production**, so the `settings.py` default applies: add it to `NOT_DEPLOYED` in
+  `deploy/tests/test_production_secret.py`.
 
 #### Managing secrets
 
