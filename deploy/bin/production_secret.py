@@ -272,31 +272,44 @@ def container_value(stored):
     return kamal_env_file_value(ruby_chomp(dotenv_substitute(stored)))
 
 
+_DUMP_ESCAPE = re.compile(r"\\(x[0-9A-F]{2}|.)", re.DOTALL)
+
+
+def _undump(value):
+    """Reverse Ruby's String#dump escapes (\\n, \\\\, \\xHH, ...). Other backslashes are kept as they are."""
+
+    def replace(match):
+        escape = match.group(1)
+        if escape in _UNDUMP_ESCAPES:
+            return _UNDUMP_ESCAPES[escape]
+        if len(escape) == 3:
+            return chr(int(escape[1:], 16))
+        return match.group(0)
+
+    return _DUMP_ESCAPE.sub(replace, value)
+
+
 def encode(value):
     """The value to store so that the container gets `value`. Raises SecretError if Kamal can't deliver it."""
-    decoded, i = [], 0
-    while i < len(value):
-        char = value[i]
-        if char == "\\" and i + 1 < len(value):
-            following = value[i + 1]
-            if following in _UNDUMP_ESCAPES:
-                decoded.append(_UNDUMP_ESCAPES[following])
-                i += 2
-                continue
-            hex_digits = value[i + 2 : i + 4]
-            if following == "x" and re.fullmatch(r"[0-9A-F]{2}", hex_digits):
-                decoded.append(chr(int(hex_digits, 16)))
-                i += 4
-                continue
-        decoded.append(char)
-        i += 1
-    stored = "".join(decoded)
+    stored = _undump(value)
     if ruby_chomp(stored) != stored:
         stored += "\n"  # Kamal drops one trailing newline
     stored = re.sub(r"\$(?!\()", r"\\$", stored)  # dotenv leaves '$(' alone
     if container_value(stored) != value:
         raise SecretError("Kamal can't deliver this value unchanged")
     return stored
+
+
+def _json_problem(key, seen):
+    if not seen:  # settings.py treats empty as unset
+        return None
+    try:
+        parsed = json.loads(seen)
+    except ValueError:
+        return f"{key}: is not valid JSON once deployed (store it with `push`, not by hand)"
+    if isinstance(parsed, dict) and "\\" in str(parsed.get("private_key", "")):
+        return f"{key}: private_key would have literal backslashes (store it with `push`, not by hand)"
+    return None
 
 
 def deploy_problems(key, stored):
@@ -306,14 +319,8 @@ def deploy_problems(key, stored):
     seen = container_value(stored)
     if key in MULTILINE_KEYS and "\\\\" in seen:
         return [f"{key}: has a literal '\\n' (store the key with real newlines)"]
-    if key in JSON_KEYS and seen:  # settings.py treats empty as unset
-        try:
-            parsed = json.loads(seen)
-        except ValueError:
-            return [f"{key}: is not valid JSON once deployed (store it with `push`, not by hand)"]
-        if isinstance(parsed, dict) and "\\" in str(parsed.get("private_key", "")):
-            return [f"{key}: private_key would have literal backslashes (store it with `push`, not by hand)"]
-    return []
+    problem = _json_problem(key, seen) if key in JSON_KEYS else None
+    return [problem] if problem else []
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -368,22 +375,27 @@ def encode_all(env, keys):
     return stored, problems
 
 
+def print_keys(heading, keys):
+    if keys:
+        print(f"{heading}:")
+        print("".join(f"  {key}\n" for key in keys), end="")
+
+
 def cmd_plan(args):
     env = read_source(args.source)
     deployed = deployed_secret_keys()
     groups = classify(env, set(deployed))
     for name, keys in groups.items():
-        if keys:
-            print(f"{name} ({GROUP_HELP[name]}):")
-            print("".join(f"  {key}\n" for key in keys), end="")
+        print_keys(f"{name} ({GROUP_HELP[name]})", keys)
     missing = [key for key in deployed if key not in env]
-    if missing:
-        print("deployed but missing from the source (the deploy would fail):")
-        print("".join(f"  {key}\n" for key in missing), end="")
+    print_keys("deployed but missing from the source (the deploy would fail)", missing)
     _, problems = encode_all(env, groups["secret"])
     for problem in problems:
         print(f"error: {problem}")
     return 1 if problems or missing else 0
+
+
+_SHELL_SENSITIVE = re.compile(r"\$\{|`|#[{$@]")
 
 
 def cmd_clear(args):
@@ -391,10 +403,8 @@ def cmd_clear(args):
     print("env:\n  clear:")
     for key in sorted(k for k in env if k in CLEAR_KEYS):
         value = env[key]
-        if "${" in value or "`" in value or re.search(r"#[{$@]", value):
-            print(
-                f"    # {key} has '${{', a backtick or '#{{'/'#$'/'#@', which Kamal passes through a shell: check it"
-            )
+        if _SHELL_SENSITIVE.search(value):
+            print(f"    # {key}: has '${{', a backtick or '#{{', '#$' or '#@', which a shell would change")
         print(f"    {key}: {json.dumps(value, ensure_ascii=False)}")
     return 0
 
