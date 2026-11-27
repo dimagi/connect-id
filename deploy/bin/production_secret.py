@@ -220,11 +220,8 @@ def dotenv_substitute(value, env=None):
 
 
 def ruby_chomp(value):
-    if value.endswith("\r\n"):
-        return value[:-2]
-    if value.endswith(("\n", "\r")):
-        return value[:-1]
-    return value
+    """Ruby's String#chomp: drop one trailing \\r\\n, \\n or \\r."""
+    return re.sub(r"(?:\r\n|\n|\r)\Z", "", value, count=1)
 
 
 _DUMP_ESCAPES = {
