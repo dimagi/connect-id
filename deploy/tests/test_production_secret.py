@@ -4,7 +4,6 @@ The model of Kamal's escaping in production_secret.py is checked against the rea
 (CI's kamal-secrets job); these tests need no Ruby.
 """
 
-import importlib.util
 import json
 import re
 import subprocess
@@ -13,12 +12,11 @@ from pathlib import Path
 import pytest
 import yaml
 
+from deploy.bin import production_secret as ps
+
 DEPLOY_DIR = Path(__file__).resolve().parent.parent
 REPO_DIR = DEPLOY_DIR.parent
 
-_spec = importlib.util.spec_from_file_location("production_secret", DEPLOY_DIR / "bin" / "production_secret.py")
-ps = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(ps)
 
 PEM = "-----BEGIN TEST KEY-----\nAAAA\nBBBB\n-----END TEST KEY-----\n"
 PEM_ESCAPED = PEM.replace("\n", "\\n")  # as in an env file
