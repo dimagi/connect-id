@@ -87,78 +87,89 @@ def run_kamal(workdir, env):
     return json.loads(result.stdout)
 
 
+# Clear values with the characters that need care on Kamal's command line
+CLEAR = {"PLAIN": "x", "LIST": "a.example.com,b.example.com", "QUOTES": 'it\'s "q"', "DOLLAR": "a$b$1"}
+
+
+def make_workdir(tmp):
+    """A copy of deploy/ in tmp, with the test env.clear and a stand-in aws. Returns the env to run Kamal with."""
+    shutil.copytree(DEPLOY_DIR / ".kamal", tmp / ".kamal", ignore=shutil.ignore_patterns("hooks"))
+    (tmp / "config").mkdir()
+    config = (DEPLOY_DIR / "config" / "deploy.yml").read_text()
+    # The committed env.clear is swapped for the test values
+    before, _, after = config.partition("env:\n  clear:\n")
+    _, _, after = after.partition("  secret:\n")
+    clear_yaml = "".join(f"    {k}: {json.dumps(v)}\n" for k, v in CLEAR.items())
+    (tmp / "config" / "deploy.yml").write_text(f"{before}env:\n  clear:\n{clear_yaml}  secret:\n{after}")
+    (tmp / "bin").mkdir()
+    (tmp / "bin" / "aws").write_text(FAKE_AWS)
+    (tmp / "bin" / "aws").chmod(0o755)
+    return {
+        **os.environ,
+        "PATH": f"{tmp / 'bin'}{os.pathsep}{os.environ['PATH']}",
+        "FAKE_SECRET_FILE": str(tmp / "secret.json"),
+        "BUNDLE_GEMFILE": str(DEPLOY_DIR / "Gemfile"),
+    }
+
+
+def shell_args(clear_args):
+    """The KEY=value pairs a POSIX shell makes of Kamal's `--env KEY=value` arguments for `docker run`."""
+    pairs = [clear_args[i + 1] for i in range(0, len(clear_args), 2)]
+    script = "for a in " + " ".join(pairs) + '; do printf "%s\\0" "$a"; done'
+    out = subprocess.run(["sh", "-c", script], capture_output=True, text=True, check=True).stdout
+    return dict(p.split("=", 1) for p in out.split("\0") if p)
+
+
+def differences(label, want, got):
+    return [
+        f"{label} {key} differs ({value!r} -> {got.get(key)!r})"
+        for key, value in want.items()
+        if got.get(key) != value
+    ]
+
+
+def check_roles(tmp, env, keys):
+    """Values encoded by production_secret.py reach every role unchanged, and so do clear values."""
+    want = {key: VECTORS[i % len(VECTORS)] for i, key in enumerate(keys)}
+    (tmp / "secret.json").write_text(json.dumps({key: ps.encode(value) for key, value in want.items()}))
+    failures = []
+    for role, out in run_kamal(tmp, env).items():
+        got = docker_env_file(out["env_file"])
+        failures += differences(f"{role}:", want, got)
+        if set(got) - set(want):
+            failures.append(f"{role}: unexpected keys {sorted(set(got) - set(want))}")
+        failures += differences(f"{role}: clear", CLEAR, shell_args(out["clear_args"]))
+    return failures
+
+
+def check_model(tmp, env, keys, count=400):
+    """production_secret.py's model of Kamal (container_value) agrees with Kamal on random values."""
+    rng = random.Random(20261126)
+    alphabet = "ab$\\{}()#@\"' \n\r\tx-=,é\x01\x7fn"
+    samples = ["".join(rng.choice(alphabet) for _ in range(rng.randint(0, 12))) for _ in range(count)]
+    failures = []
+    for start in range(0, len(samples), len(keys)):
+        batch = {**{key: "" for key in keys}, **dict(zip(keys, samples[start : start + len(keys)]))}
+        (tmp / "secret.json").write_text(json.dumps(batch))
+        got = docker_env_file(run_kamal(tmp, env)["web"]["env_file"])
+        for key, sample in batch.items():
+            expected = ps.kamal_env_file_value(ps.ruby_chomp(ps.dotenv_substitute(sample, os.environ)))
+            if got.get(key) != expected:
+                failures.append(f"model: {sample!r} -> kamal {got.get(key)!r}, model {expected!r}")
+    return failures
+
+
 def main():
     keys = ps.deployed_secret_keys()
-    want = {key: VECTORS[i % len(VECTORS)] for i, key in enumerate(keys)}
-    stored = {key: ps.encode(value) for key, value in want.items()}
-
-    # Clear values with the characters that need care on Kamal's command line
-    clear = {"PLAIN": "x", "LIST": "a.example.com,b.example.com", "QUOTES": 'it\'s "q"', "DOLLAR": "a$b$1"}
-
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        shutil.copytree(DEPLOY_DIR / ".kamal", tmp / ".kamal", ignore=shutil.ignore_patterns("hooks"))
-        (tmp / "config").mkdir()
-        config = (DEPLOY_DIR / "config" / "deploy.yml").read_text()
-        # The committed env.clear (possibly still empty) is swapped for the test values
-        before, _, after = config.partition("env:\n  clear:\n")
-        _, _, after = after.partition("  secret:\n")
-        clear_yaml = "".join(f"    {k}: {json.dumps(v)}\n" for k, v in clear.items())
-        (tmp / "config" / "deploy.yml").write_text(f"{before}env:\n  clear:\n{clear_yaml}  secret:\n{after}")
-        (tmp / "bin").mkdir()
-        (tmp / "bin" / "aws").write_text(FAKE_AWS)
-        (tmp / "bin" / "aws").chmod(0o755)
-        (tmp / "secret.json").write_text(json.dumps(stored))
-        env = {
-            **os.environ,
-            "PATH": f"{tmp / 'bin'}{os.pathsep}{os.environ['PATH']}",
-            "FAKE_SECRET_FILE": str(tmp / "secret.json"),
-            "BUNDLE_GEMFILE": str(DEPLOY_DIR / "Gemfile"),
-        }
-        roles = run_kamal(tmp, env)
-
-        failures = []
-        for role, out in roles.items():
-            got = docker_env_file(out["env_file"])
-            for key, value in want.items():
-                if got.get(key) != value:
-                    failures.append(f"{role}: {key} differs ({value!r} -> {got.get(key)!r})")
-            extra = set(got) - set(want)
-            if extra:
-                failures.append(f"{role}: unexpected keys {sorted(extra)}")
-            # Clear values go on the `docker run` command line, run by a POSIX shell on the host
-            args = out["clear_args"]
-            pairs = [args[i + 1] for i in range(0, len(args), 2)]
-            script = "for a in " + " ".join(pairs) + '; do printf "%s\\0" "$a"; done'
-            shell = subprocess.run(["sh", "-c", script], capture_output=True, text=True, check=True).stdout
-            got_clear = dict(p.split("=", 1) for p in shell.split("\0") if p)
-            for key, value in clear.items():
-                if got_clear.get(key) != value:
-                    failures.append(f"{role}: clear {key} differs ({value!r} -> {got_clear.get(key)!r})")
-
-        # The Python model of Kamal against Kamal itself, on random values
-        rng = random.Random(20261126)
-        alphabet = "ab$\\{}()#@\"' \n\r\tx-=,é\x01\x7fn"
-        samples = ["".join(rng.choice(alphabet) for _ in range(rng.randint(0, 12))) for _ in range(400)]
-        (tmp / "secret.json").write_text(json.dumps({key: samples[0] for key in keys}))
-        secrets_file = (tmp / ".kamal" / "secrets").read_text()
-        for start in range(0, len(samples), len(keys)):
-            batch = dict(zip(keys, samples[start : start + len(keys)]))
-            batch = {**{key: "" for key in keys}, **batch}
-            (tmp / "secret.json").write_text(json.dumps(batch))
-            (tmp / ".kamal" / "secrets").write_text(secrets_file)
-            out = run_kamal(tmp, env)["web"]["env_file"]
-            got = docker_env_file(out)
-            for key, sample in batch.items():
-                expected = ps.kamal_env_file_value(ps.ruby_chomp(ps.dotenv_substitute(sample, os.environ)))
-                if got.get(key) != expected:
-                    failures.append(f"model: {sample!r} -> kamal {got.get(key)!r}, model {expected!r}")
-
+        env = make_workdir(tmp)
+        failures = check_roles(tmp, env, keys) + check_model(tmp, env, keys)
     if failures:
         print("\n".join(failures[:40]))
         print(f"FAILED: {len(failures)} differences")
         return 1
-    print(f"OK: {len(want)} secrets in {len(roles)} roles, {len(clear)} clear values, {len(samples)} model samples")
+    print(f"OK: {len(keys)} secrets in every role, {len(CLEAR)} clear values, model checked on random values")
     return 0
 
 

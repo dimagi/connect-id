@@ -65,6 +65,8 @@ jobs:
   # Kamal and dotenv versions in deploy/Gemfile.lock, so a Kamal upgrade that changes the escaping fails here.
   kamal-secrets:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout Code Repository
         uses: actions/checkout@v7

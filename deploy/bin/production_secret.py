@@ -154,25 +154,29 @@ class SecretError(Exception):
 # Env files, as Docker reads them (docker/cli opts/parse.go)
 
 
+def _env_file_line(number, line):
+    """(key, value, problem) for one line of a Docker --env-file. key is None when the line sets nothing."""
+    line = line.removesuffix("\r").lstrip()
+    if not line or line.startswith("#"):
+        return None, None, None
+    key, sep, value = line.partition("=")
+    key = key.lstrip(" \t")
+    if not key or any(c in key for c in " \t"):
+        return None, None, f"line {number}: not KEY=value (skipped)"
+    if not sep:
+        return None, None, f"{key}: no '=', Docker copies it from the host's environment (skipped)"
+    return key, value, None
+
+
 def parse_env_file(text):
     """Return ({key: value}, [problems]) for a Docker --env-file. Values are taken as is: Docker doesn't unquote or
     unescape them. Problems name keys only."""
     env, problems = {}, []
-    if text.startswith("﻿"):
-        text = text[1:]
-    for number, line in enumerate(text.split("\n"), start=1):
-        if line.endswith("\r"):
-            line = line[:-1]
-        line = line.lstrip()
-        if not line or line.startswith("#"):
-            continue
-        key, sep, value = line.partition("=")
-        key = key.lstrip(" \t")
-        if not key or any(c in key for c in " \t"):
-            problems.append(f"line {number}: not KEY=value (skipped)")
-            continue
-        if not sep:
-            problems.append(f"{key}: no '=', Docker copies it from the host's environment (skipped)")
+    for number, line in enumerate(text.removeprefix("\ufeff").split("\n"), start=1):
+        key, value, problem = _env_file_line(number, line)
+        if problem:
+            problems.append(problem)
+        if key is None:
             continue
         if key in env:
             problems.append(f"{key}: set more than once, the last value is used")
@@ -420,48 +424,61 @@ def secret_exists(secret_id, region):
     raise SecretError(f"could not look up {secret_id}: {result.stderr.strip()}")
 
 
+def keys_to_push(env, deployed, merge):
+    """The deployed secret keys to store from env. Without --merge, every deployed key must be there."""
+    missing = [key for key in deployed if key not in env]
+    if missing and not merge:
+        raise SecretError("deployed but missing from the source: " + ", ".join(missing))
+    keys = [key for key in deployed if key in env]
+    if not keys:
+        raise SecretError("the source has no deployed secret keys")
+    return keys
+
+
+def encode_or_refuse(env, keys):
+    stored, problems = encode_all(env, keys)
+    if problems:
+        raise SecretError("not stored, fix these first:\n" + "\n".join(f"  {p}" for p in problems))
+    return stored
+
+
+def write_command(args, exists):
+    if exists:
+        return ["put-secret-value", "--secret-id", args.secret_id]
+    command = ["create-secret", "--name", args.secret_id, "--description", "connect-id app env (see deploy/)"]
+    if args.kms_key_id:
+        command += ["--kms-key-id", args.kms_key_id]
+    return command
+
+
+def store(args, stored):
+    """Write the secret: create it, replace its value, or with --merge update the given keys. Returns its ARN."""
+    exists = secret_exists(args.secret_id, args.region)
+    if args.merge and not exists:
+        raise SecretError(f"{args.secret_id} doesn't exist yet, run push without --merge")
+    if args.merge:
+        stored = {**fetch_secret(args.secret_id, args.region), **stored}
+    payload = json.dumps(stored, ensure_ascii=False)
+    command = [*write_command(args, exists), "--secret-string", "file:///dev/stdin", "--query", "ARN"]
+    result = aws(command, args.region, stdin=payload)
+    if result.returncode != 0:
+        raise SecretError(result.stderr.strip())
+    return ("updated" if exists else "created"), json.loads(result.stdout)
+
+
 def cmd_push(args):
     env = read_source(args.source)
     deployed = deployed_secret_keys()
-    keys = [key for key in deployed if key in env]
-    missing = [key for key in deployed if key not in env]
-    ignored = sorted(key for key in env if key not in deployed)
-    if missing and not args.merge:
-        print("error: deployed but missing from the source: " + ", ".join(missing), file=sys.stderr)
-        return 1
-    if args.merge and not keys:
-        print("error: the source has no deployed secret keys", file=sys.stderr)
-        return 1
-    stored, problems = encode_all(env, keys)
-    if problems:
-        print("error: not stored, fix these first:\n" + "".join(f"  {p}\n" for p in problems), file=sys.stderr, end="")
-        return 1
-
+    keys = keys_to_push(env, deployed, args.merge)
+    stored = encode_or_refuse(env, keys)
     action = "merge into" if args.merge else "replace"
     print(f"{'would ' if args.dry_run else ''}{action} {args.secret_id}: " + ", ".join(keys))
+    ignored = sorted(key for key in env if key not in deployed)
     if ignored:
         print("not stored (not deployed as secrets): " + ", ".join(ignored))
-    if args.dry_run:
-        return 0
-
-    exists = secret_exists(args.secret_id, args.region)
-    if args.merge:
-        if not exists:
-            print(f"error: {args.secret_id} doesn't exist yet, run push without --merge", file=sys.stderr)
-            return 1
-        stored = {**fetch_secret(args.secret_id, args.region), **stored}
-    payload = json.dumps(stored, ensure_ascii=False)
-    if exists:
-        command = ["put-secret-value", "--secret-id", args.secret_id]
-    else:
-        command = ["create-secret", "--name", args.secret_id, "--description", "connect-id app env (see deploy/)"]
-        if args.kms_key_id:
-            command += ["--kms-key-id", args.kms_key_id]
-    result = aws([*command, "--secret-string", "file:///dev/stdin", "--query", "ARN"], args.region, stdin=payload)
-    if result.returncode != 0:
-        print(f"error: {result.stderr.strip()}", file=sys.stderr)
-        return 1
-    print(f"{'updated' if exists else 'created'} {json.loads(result.stdout)}")
+    if not args.dry_run:
+        outcome, arn = store(args, stored)
+        print(f"{outcome} {arn}")
     return 0
 
 
