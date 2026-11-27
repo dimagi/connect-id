@@ -261,13 +261,6 @@ def type_problem(kind, seen):
     if kind == "multiline" and "\\\\" in seen:
         return "has a literal '\\n' (store it with `set`, not by hand)"
     return _json_problem(seen) if kind == "json" else None
-    try:
-        parsed = json.loads(seen)
-    except ValueError:
-        return "is not valid JSON once deployed (store it with `set`, not by hand)"
-    if any("\\" in s for s in _strings(parsed)):
-        return "would have literal backslashes inside its JSON strings (store it with `set`, not by hand)"
-    return None
 
 
 def deploy_problems(name, kind, stored):
